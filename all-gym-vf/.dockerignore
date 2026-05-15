@@ -1,0 +1,10 @@
+.git
+.next
+node_modules
+npm-debug.log*
+.agent
+.agents
+.env.local
+.env*
+README.md
+PRD.md

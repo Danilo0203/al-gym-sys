@@ -1,0 +1,82 @@
+export type DataTableConfig = typeof dataTableConfig;
+
+export const dataTableConfig = {
+  textOperators: [
+    { label: 'Contiene', value: 'iLike' as const },
+    { label: 'No contiene', value: 'notILike' as const },
+    { label: 'Es', value: 'eq' as const },
+    { label: 'No es', value: 'ne' as const },
+    { label: 'Está vacío', value: 'isEmpty' as const },
+    { label: 'No está vacío', value: 'isNotEmpty' as const }
+  ],
+  numericOperators: [
+    { label: 'Es', value: 'eq' as const },
+    { label: 'No es', value: 'ne' as const },
+    { label: 'Es menor que', value: 'lt' as const },
+    { label: 'Es menor o igual que', value: 'lte' as const },
+    { label: 'Es mayor que', value: 'gt' as const },
+    { label: 'Es mayor o igual que', value: 'gte' as const },
+    { label: 'Está entre', value: 'isBetween' as const },
+    { label: 'Está vacío', value: 'isEmpty' as const },
+    { label: 'No está vacío', value: 'isNotEmpty' as const }
+  ],
+  dateOperators: [
+    { label: 'Es', value: 'eq' as const },
+    { label: 'No es', value: 'ne' as const },
+    { label: 'Es anterior a', value: 'lt' as const },
+    { label: 'Es posterior a', value: 'gt' as const },
+    { label: 'Es en o antes de', value: 'lte' as const },
+    { label: 'Es en o después de', value: 'gte' as const },
+    { label: 'Está entre', value: 'isBetween' as const },
+    { label: 'Es relativa a hoy', value: 'isRelativeToToday' as const },
+    { label: 'Está vacío', value: 'isEmpty' as const },
+    { label: 'No está vacío', value: 'isNotEmpty' as const }
+  ],
+  selectOperators: [
+    { label: 'Es', value: 'eq' as const },
+    { label: 'No es', value: 'ne' as const },
+    { label: 'Está vacío', value: 'isEmpty' as const },
+    { label: 'No está vacío', value: 'isNotEmpty' as const }
+  ],
+  multiSelectOperators: [
+    { label: 'Tiene alguno de', value: 'inArray' as const },
+    { label: 'No tiene ninguno de', value: 'notInArray' as const },
+    { label: 'Está vacío', value: 'isEmpty' as const },
+    { label: 'No está vacío', value: 'isNotEmpty' as const }
+  ],
+  booleanOperators: [
+    { label: 'Es', value: 'eq' as const },
+    { label: 'No es', value: 'ne' as const }
+  ],
+  sortOrders: [
+    { label: 'Ascendente', value: 'asc' as const },
+    { label: 'Descendente', value: 'desc' as const }
+  ],
+  filterVariants: [
+    'text',
+    'number',
+    'range',
+    'date',
+    'dateRange',
+    'boolean',
+    'select',
+    'multiSelect'
+  ] as const,
+  operators: [
+    'iLike',
+    'notILike',
+    'eq',
+    'ne',
+    'inArray',
+    'notInArray',
+    'isEmpty',
+    'isNotEmpty',
+    'lt',
+    'lte',
+    'gt',
+    'gte',
+    'isBetween',
+    'isRelativeToToday'
+  ] as const,
+  joinOperators: ['and', 'or'] as const
+};
