@@ -62,6 +62,34 @@ Validacion de este bloque:
 - la cookie `httpOnly` se mantiene via `Next.js`
 - no fue necesario exponer llamadas del navegador directo a `http://127.0.0.1:4000`
 
+## Runtime `allgym-web` standalone para Windows
+
+Para el siguiente corte de Fase 5, `allgym-web` se empaqueta como `Next.js standalone` y se publica como servicio Windows separado.
+
+Variables runtime minimas:
+
+- `PORT=3000`
+- `HOSTNAME=127.0.0.1`
+- `API_INTERNAL_URL=http://127.0.0.1:4000`
+- `WEB_LOCAL_ORIGIN=http://127.0.0.1:3000`
+- `WEB_PUBLIC_ORIGIN=http://localhost:3000`
+
+Reglas:
+
+- `allgym-web` expone la UI y las rutas relativas `/api/...`
+- el backend `api-local` sigue siendo interno en `127.0.0.1:4000`
+- `Electron` debe abrir `http://127.0.0.1:3000` cuando el servicio este disponible
+- no se migra todavia ningun modulo de negocio fuera de auth
+- `Supabase` permanece solo como dependencia gradual en rutas aun no migradas
+
+Validacion tecnica del bundle standalone:
+
+- `2026-05-20`: `npm run build:windows:web` genero `.next/standalone`
+- `2026-05-20`: el staging incluyo `ProgramFiles/AllGym/allgym-web/server.js`
+- `2026-05-20`: `GET http://127.0.0.1:3000/api/health` respondio `200 OK` desde el bundle staged
+- `2026-05-20`: `GET http://127.0.0.1:3000/` respondio con redirect a `/iniciar-sesion`
+- `2026-05-20`: `POST /api/auth/login`, `GET /api/auth/me` y `POST /api/auth/logout` funcionaron desde el bundle staged
+
 ### `POST /api/auth/login`
 
 Uso inicial de Fase 3. Sustituye:

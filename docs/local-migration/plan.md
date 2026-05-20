@@ -406,6 +406,40 @@ Notas:
 - `POST /api/auth/logout` respondio `204 No Content` y limpio la cookie
 - `GET /api/auth/me` posterior al logout respondio `401 Unauthorized`
 
+### Bloque 2 de Fase 5. `allgym-web` como servicio Windows
+
+- [x] Mantener `Next.js` con salida `standalone`.
+- [x] Crear script `npm run build:windows:web` para build + staging del frontend.
+- [x] Preparar `allgym-web` en `installer/windows/staging/ProgramFiles/AllGym/allgym-web/`.
+- [x] Crear plantilla `allgym-web.env` sin secretos reales.
+- [x] Crear scripts PowerShell:
+  - `start-allgym-web.ps1`
+  - `install-allgym-web.ps1`
+  - `test-allgym-web.ps1`
+  - `uninstall-allgym-web.ps1`
+- [x] Reemplazar placeholder `WinSW` de `allgym-web` por wrapper real.
+- [x] Actualizar staging Windows para incluir:
+  - bundle standalone del frontend
+  - scripts web
+  - `allgym-web.xml`
+- [x] Actualizar `NSIS` minimo para instalar y desinstalar `allgym-web`.
+- [x] Hacer que `Electron` intente abrir `http://127.0.0.1:3000`.
+- [x] Validar el bundle standalone localmente contra `api-local`.
+- [ ] Validar `allgym-web` como servicio real `WinSW` en Windows VM.
+- [ ] Validar `AllGym-Setup.exe` instalando tambien `allgym-web` en Windows VM.
+
+Notas:
+
+- validacion tecnica del bloque 2 realizada el `2026-05-20`
+- `npm run build:windows:web` genero el bundle `standalone`
+- el staging incluyo `allgym-web/server.js`, `.next/static`, `public`, scripts PowerShell y `allgym-web.xml`
+- `GET http://127.0.0.1:3000/api/health` respondio `200 OK` desde el bundle staged
+- `GET http://127.0.0.1:3000/` respondio con redirect `307` a `/iniciar-sesion`
+- `POST /api/auth/login`, `GET /api/auth/me` y `POST /api/auth/logout` funcionaron desde el bundle staged
+- riesgo abierto: el build de `Next.js` sigue dependiendo de descargas de `next/font` desde Google Fonts
+- antes del instalador final conviene migrar esas fuentes a assets locales o eliminar la dependencia de red en build
+- no se tocaron todavia `clientes`, `caja`, `pagos`, `inventario`, `storage` ni `allgym-sync`
+
 ### Fase 6. Storage local
 
 - Implementar filesystem storage.

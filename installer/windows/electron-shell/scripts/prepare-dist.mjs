@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 const shellRoot = path.resolve(import.meta.dirname, "..");
 const repoRoot = path.resolve(shellRoot, "..", "..", "..");
 const apiRoot = path.join(repoRoot, "api-local");
+const webRoot = path.join(repoRoot, "all-gym-vf");
 const stagingRoot = path.join(repoRoot, "installer", "windows", "staging");
 
 function run(command, args, cwd) {
@@ -36,6 +37,7 @@ async function assertFileExists(target, message) {
 
 async function main() {
   await run("npm", ["run", "build:windows:api"], apiRoot);
+  await run("npm", ["run", "build:windows:web"], webRoot);
 
   await assertFileExists(
     path.join(stagingRoot, "ProgramFiles", "AllGym", "api-local", "dist", "server.js"),
@@ -43,8 +45,18 @@ async function main() {
   );
 
   await assertFileExists(
+    path.join(stagingRoot, "ProgramFiles", "AllGym", "allgym-web", "server.js"),
+    "The staged allgym-web standalone bundle was not generated."
+  );
+
+  await assertFileExists(
     path.join(stagingRoot, "ProgramFiles", "AllGym", "winsw", "allgym-api-local.exe"),
     "The WinSW binary is required to build the installer. Copy WinSW-x64.exe to installer/windows/winsw/allgym-api-local.exe first."
+  );
+
+  await assertFileExists(
+    path.join(stagingRoot, "ProgramFiles", "AllGym", "winsw", "allgym-web.exe"),
+    "The WinSW binary is required to build the installer. Copy WinSW-x64.exe to installer/windows/winsw/allgym-web.exe first."
   );
 
   await assertFileExists(
@@ -55,6 +67,11 @@ async function main() {
   await assertFileExists(
     path.join(stagingRoot, "ProgramFiles", "AllGym", "templates", "api-local.env.example"),
     "The api-local env template is missing from the staged installer payload."
+  );
+
+  await assertFileExists(
+    path.join(stagingRoot, "ProgramFiles", "AllGym", "templates", "allgym-web.env.example"),
+    "The allgym-web env template is missing from the staged installer payload."
   );
 }
 
