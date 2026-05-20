@@ -1,3 +1,4 @@
+import { getLocalAuthMeFromCookies, isLocalAuthEnabled } from "@/lib/auth/local-auth-server";
 import { createClient } from "@/lib/supabase/server";
 import { UserRole } from "@/types";
 import { parseUserRole } from "@/lib/auth/role-utils";
@@ -25,6 +26,35 @@ export function requirePermission(access: UserAccessContext, permission: string)
 }
 
 export async function getUserAccessContext(): Promise<UserAccessContext> {
+  if (isLocalAuthEnabled()) {
+    const session = await getLocalAuthMeFromCookies();
+
+    if (!session?.user) {
+      return {
+        isAuthenticated: false,
+        isAdmin: false,
+        role: null,
+        userId: null,
+        roleSlug: null,
+        roleScope: null,
+        permissions: [],
+        isOwner: false,
+      };
+    }
+
+    const role = parseUserRole(session.user.role);
+    return {
+      isAuthenticated: true,
+      isAdmin: session.user.isOwner || role === "admin",
+      role,
+      userId: session.user.id,
+      roleSlug: session.user.role || null,
+      roleScope: (session.user.roleScope as "panel" | "client" | null) ?? null,
+      permissions: session.user.permissions ?? [],
+      isOwner: session.user.isOwner,
+    };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

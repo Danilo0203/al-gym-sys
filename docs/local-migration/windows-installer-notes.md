@@ -296,19 +296,22 @@ Validacion real confirmada en Windows VM:
 - estado: `Running`
 - `.\allgym-api-local.exe restart` funciona
 - `.\allgym-api-local.exe status` responde `Active (running)`
+- se generó `AllGym-Setup.exe`
+- se ejecutó el instalador `NSIS`
+- se instaló en `C:\Program Files\AllGym`
 - `GET http://127.0.0.1:4000/health` responde `200 OK`
 - body validado:
 
 ```json
 {"ok":true,"service":"api-local","database":"ok"}
 ```
+- la app Electron placeholder abrió como `All Gym Local`
 
 Pendiente de validacion en Windows:
 
-- build real de `AllGym-Setup.exe`
-- instalador `NSIS` final de punta a punta
 - servicio `allgym-web`
 - servicio `allgym-sync`
+- instalador final completo
 
 ## Riesgos abiertos
 
@@ -322,20 +325,21 @@ Pendiente de validacion en Windows:
 
 Estado actual:
 
-- avance parcial validado
+- checkpoint de Fase 4 validado
 
 Lo que ya esta listo:
 
 - layout de instalacion definido
 - backend `api-local` preparado para staging Windows
 - servicio `allgym-api-local` validado en Windows real/VM con `WinSW`
+- instalador `NSIS` minimo validado en Windows VM
 - shell minimo de `electron-builder + NSIS` creado
 
 Lo que falta para cerrar totalmente la fase:
 
-- empaquetar y ejecutar `AllGym-Setup.exe`
 - validar `allgym-web`
 - validar `allgym-sync`
+- instalador final completo
 - mantener frontend y features fuera de esta fase
 
 ## Guía manual para VM Windows

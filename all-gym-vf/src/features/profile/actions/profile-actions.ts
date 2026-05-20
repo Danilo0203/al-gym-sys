@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { getLocalAuthMeFromCookies, isLocalAuthEnabled } from '@/lib/auth/local-auth-server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -32,6 +33,43 @@ export interface UpdateProfileData {
  */
 export async function getCurrentUser(): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
+    if (isLocalAuthEnabled()) {
+      const session = await getLocalAuthMeFromCookies();
+
+      if (!session?.user) {
+        return { success: false, error: 'Usuario no autenticado' };
+      }
+
+      const roleSlug = session.user.role || null;
+      const roleNameMap: Record<string, string> = {
+        owner: 'Owner',
+        admin: 'Administrador',
+        trainer: 'Entrenador',
+        employee: 'Empleado',
+        client: 'Cliente',
+        user: 'Usuario',
+      };
+
+      return {
+        success: true,
+        data: {
+          id: session.user.id,
+          email: session.user.email,
+          full_name: session.user.full_name,
+          phone: null,
+          birth_date: null,
+          gender: null,
+          avatar_url: null,
+          role: roleSlug,
+          roleName: roleSlug ? (roleNameMap[roleSlug] ?? roleSlug) : null,
+          permissions: session.user.permissions ?? [],
+          isOwner: session.user.isOwner,
+          created_at: new Date().toISOString(),
+          updated_at: null,
+        },
+      };
+    }
+
     const supabase = await createClient();
     
     // Get the authenticated user

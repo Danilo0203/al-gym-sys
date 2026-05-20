@@ -296,7 +296,7 @@ Flujos validados:
 
 - [x] Montar base temprana con `electron-builder + NSIS`.
 - [x] Preparar configuracion de servicios con `WinSW`.
-- [ ] Validar instalación base en Windows limpio.
+- [x] Validar instalación base en Windows limpio/VM para `api-local`.
 
 ### Checklist de avance Fase 4
 
@@ -310,9 +310,9 @@ Flujos validados:
 - [x] Base minima de `electron-builder + NSIS` creada con shell placeholder.
 - [x] Hooks `NSIS` creados para instalar y desinstalar `allgym-api-local`.
 - [x] Servicio `allgym-api-local` validado en Windows real/VM con `WinSW`.
-- [ ] Instalador NSIS ejecutado en Windows real.
+- [x] Instalador `NSIS` minimo ejecutado en Windows VM.
 
-Validacion parcial completada el `2026-05-20`:
+Validacion tecnica completada el `2026-05-20`:
 
 - `api-local` compila
 - `npm run build:windows:api` genera staging temprano
@@ -344,13 +344,24 @@ Validacion real confirmada en Windows VM:
 - estado: `Running`
 - `.\allgym-api-local.exe restart` funciona
 - `.\allgym-api-local.exe status` responde `Active (running)`
+- se genero `AllGym-Setup.exe`
+- se ejecuto el instalador `NSIS`
+- se instalo en `C:\Program Files\AllGym`
+- Electron placeholder abrio como `All Gym Local`
 - `GET http://127.0.0.1:4000/health` responde `200 OK`
 
-Checkpoint siguiente para cerrar la fase:
+Fase 4 queda validada para este checkpoint:
 
-- empaquetar y validar instalador `NSIS`
+- `api-local`
+- `WinSW`
+- instalador `NSIS` minimo
+- `health check` en Windows VM
+
+Pendientes que siguen fuera del cierre total:
+
 - validar `allgym-web`
 - validar `allgym-sync`
+- instalador final completo
 - seguir sin avanzar a Fase 5 hasta confirmacion explicita
 
 ### Fase 5. Migración feature por feature
@@ -363,6 +374,37 @@ Checkpoint siguiente para cerrar la fase:
   - clientes
   - pagos/caja
   - inventario
+
+### Bloque 1 de Fase 5. Auth local en frontend
+
+- [x] Crear capa local inicial para reemplazo progresivo de `src/lib/supabase/*` solo en auth.
+- [x] Crear gateway `Next.js` para:
+  - `POST /api/auth/login`
+  - `POST /api/auth/logout`
+  - `GET /api/auth/me`
+- [x] Conectar el flujo actual de login del frontend al backend local `api-local`.
+- [x] Conectar el flujo actual de logout del frontend al backend local `api-local`.
+- [x] Migrar resolucion server-side de sesion en `proxy.ts` y `lib/auth/authorization.ts` a la ruta local.
+- [x] Mantener cookies `httpOnly` del backend usando solo rutas relativas `/api/...`.
+- [x] Evitar llamadas del navegador directo a `127.0.0.1:4000`.
+- [x] Documentar variables de entorno:
+  - `API_INTERNAL_URL`
+  - `WEB_LOCAL_ORIGIN`
+  - `WEB_PUBLIC_ORIGIN`
+- [x] Validar login local extremo a extremo via `Next.js /api/auth/login`.
+- [x] Validar logout local extremo a extremo via `Next.js /api/auth/logout`.
+- [x] Validar `GET /api/auth/me` via `Next.js /api/auth/me`.
+
+Notas:
+
+- esta migracion sigue siendo gradual
+- no se tocaron todavia `clientes`, `caja`, `pagos`, `inventario` ni `storage`
+- no avanzar al siguiente bloque de Fase 5 sin validar `login/logout/me`
+- validacion real del bloque 1 realizada el `2026-05-20`
+- `POST /api/auth/login` respondio `200 OK` y emitio cookie `httpOnly`
+- `GET /api/auth/me` respondio `200 OK` con usuario autenticado
+- `POST /api/auth/logout` respondio `204 No Content` y limpio la cookie
+- `GET /api/auth/me` posterior al logout respondio `401 Unauthorized`
 
 ### Fase 6. Storage local
 

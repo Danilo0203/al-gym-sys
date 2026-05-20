@@ -25,7 +25,8 @@ La UI seguira usando rutas relativas `/api/...` y `Next.js` seguira actuando com
 
 ## Sesion local propuesta
 
-- Cookie: `allgym.sid`
+- Cookie: `SESSION_COOKIE_NAME`
+- Valor actual en desarrollo local: `allgym_session`
 - Valor: token opaco aleatorio de 32 bytes minimo
 - Persistencia: tabla `user_sessions`
 - TTL inicial sugerido: `7 dias`
@@ -33,6 +34,33 @@ La UI seguira usando rutas relativas `/api/...` y `Next.js` seguira actuando com
 - Logout: invalidacion server-side + expiracion de cookie
 
 ## Contratos minimos de auth
+
+## Gateway Next.js para Fase 5
+
+La UI no debe llamar directo a `127.0.0.1:4000`.
+
+Para el primer bloque de Fase 5, `Next.js` expone y proxyea:
+
+- `POST /api/auth/login` -> `API_INTERNAL_URL/auth/login`
+- `POST /api/auth/logout` -> `API_INTERNAL_URL/auth/logout`
+- `GET /api/auth/me` -> `API_INTERNAL_URL/auth/me`
+
+Reglas:
+
+- el navegador solo consume rutas relativas `/api/...`
+- `Next.js` reenvia cookies `httpOnly` del backend
+- `Set-Cookie` vuelve al navegador desde el gateway de `Next.js`
+- `API_INTERNAL_URL` debe ser `http://127.0.0.1:4000`
+- `WEB_LOCAL_ORIGIN` y `WEB_PUBLIC_ORIGIN` deben seguir apuntando a la UI
+- no se elimina todavia todo `Supabase` del frontend; la migracion sigue siendo gradual
+
+Validacion de este bloque:
+
+- `2026-05-20`: validado contra `http://127.0.0.1:3000/api/auth/login`
+- `2026-05-20`: validado contra `http://127.0.0.1:3000/api/auth/logout`
+- `2026-05-20`: validado contra `http://127.0.0.1:3000/api/auth/me`
+- la cookie `httpOnly` se mantiene via `Next.js`
+- no fue necesario exponer llamadas del navegador directo a `http://127.0.0.1:4000`
 
 ### `POST /api/auth/login`
 
@@ -83,7 +111,7 @@ Response `204`: sin contenido.
 
 Efectos:
 
-- invalida `allgym.sid`
+- invalida `SESSION_COOKIE_NAME`
 - limpia cookie
 - mantiene limpieza de caches PWA del lado cliente
 
@@ -94,6 +122,8 @@ Sustituye la resolucion de sesion hoy repartida entre:
 - `proxy.ts`
 - `lib/auth/authorization.ts`
 - `features/profile/actions/profile-actions.ts`
+
+En Fase 5 bloque 1, este contrato ya queda conectado al backend local via gateway `Next.js`.
 
 Response `200`:
 
@@ -118,7 +148,9 @@ Response `401`:
 ```json
 {
   "requestId": "req_123",
-  "authenticated": false
+  "error": "unauthorized",
+  "message": "Authentication required",
+  "details": null
 }
 ```
 

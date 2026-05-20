@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +9,7 @@ import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/f
 import { Input } from "@/components/ui/input";
 import { PASSWORD_RECOVERY_ENABLED, OAUTH_LOGIN_ENABLED } from "@/lib/auth/feature-flags";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
-import { createBrowserClient } from "@supabase/ssr";
+import { loginWithLocalAuth } from "@/lib/auth/local-auth-client";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 
@@ -22,80 +23,23 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setIsLoading(true);
 
     try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
-      );
-
-      const { error, data } = await supabase.auth.signInWithPassword({
+      const result = await loginWithLocalAuth({
         email,
         password,
       });
 
-      if (error) {
-        toast.error(error.message === "Invalid login credentials" ? "Credenciales incorrectas" : error.message);
-      } else if (data.user) {
-        const displayName =
-          typeof data.user.user_metadata?.full_name === "string" && data.user.user_metadata.full_name.trim().length > 0
-            ? data.user.user_metadata.full_name.trim()
-            : "usuario";
+      const displayName = result.user.full_name?.trim() || "usuario";
+      const role = parseUserRole(result.user.role);
+      const roleScope = result.user.roleScope ?? null;
 
-        let roleSlug = typeof data.user.user_metadata?.role === "string" ? data.user.user_metadata.role : null;
-        let role = parseUserRole(roleSlug);
-        let roleScope: string | null = null;
-
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (!sessionData.session) {
-          throw new Error("No fue posible guardar la sesión del usuario.");
-        }
-
-        try {
-          const { data: profile, error: profileError } = await supabase
-            .from("profiles")
-            .select("role, full_name")
-            .eq("id", data.user.id)
-            .maybeSingle();
-
-          if (profileError) {
-            console.error("[login] profile lookup failed", profileError);
-          } else {
-            if (typeof profile?.role === "string" && profile.role.trim().length > 0) {
-              roleSlug = profile.role;
-            }
-            role = parseUserRole(roleSlug) ?? role;
-
-            if (roleSlug) {
-              const { data: roleData, error: roleError } = await supabase
-                .from("roles")
-                .select("scope")
-                .eq("slug", roleSlug)
-                .maybeSingle();
-
-              if (roleError) {
-                console.error("[login] role scope lookup failed", roleError);
-              } else {
-                roleScope = roleData?.scope ?? null;
-              }
-            }
-          }
-
-          toast.success(`¡Bienvenido de nuevo ${profile?.full_name || displayName}!`);
-        } catch (profileLookupError) {
-          console.error("[login] unexpected profile lookup error", profileLookupError);
-          toast.success(`¡Bienvenido de nuevo ${displayName}!`);
-        }
-
-        window.location.assign(
-          resolvePostLoginRoute({
-            role,
-            roleScope,
-          }),
-        );
-      }
+      toast.success(`¡Bienvenido de nuevo ${displayName}!`);
+      window.location.assign(
+        resolvePostLoginRoute({
+          role,
+          roleScope,
+          requestedPath: result.redirectTo,
+        }),
+      );
     } catch (error) {
       console.error("[login] sign-in failure", error);
       toast.error(error instanceof Error ? error.message : "Error al iniciar sesión");

@@ -1,14 +1,62 @@
+import { getLocalAuthMeFromRequest, isLocalAuthEnabled } from "@/lib/auth/local-auth-server";
 import { createServerClient } from "@supabase/ssr";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
+
+  if (isLocalAuthEnabled()) {
+    const session = await getLocalAuthMeFromRequest(request);
+    const user = session?.user ?? null;
+
+    if (!user && isProtectedArea) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/iniciar-sesion";
+      return NextResponse.redirect(url);
+    }
+
+    if (!user) {
+      return response;
+    }
+
+    const role = parseUserRole(user.role);
+    const roleScope = user.roleScope ?? null;
+    const defaultRoute = resolvePostLoginRoute({
+      role,
+      roleScope,
+    });
+    const requestedPath = `${pathname}${request.nextUrl.search}`;
+    const resolvedRequestedPath = resolvePostLoginRoute({
+      role,
+      roleScope,
+      requestedPath,
+    });
+
+    if (pathname.startsWith("/iniciar-sesion")) {
+      const url = request.nextUrl.clone();
+      url.pathname = defaultRoute;
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = defaultRoute;
+      return NextResponse.redirect(url);
+    }
+
+    if (resolvedRequestedPath !== requestedPath) {
+      return NextResponse.redirect(new URL(resolvedRequestedPath, request.url));
+    }
+
+    return response;
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
@@ -38,8 +86,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
 
   if (!user && isProtectedArea) {
     const url = request.nextUrl.clone();
@@ -105,6 +151,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * Feel free to modify this pattern to include more paths.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
