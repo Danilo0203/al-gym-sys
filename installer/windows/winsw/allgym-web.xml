@@ -1,0 +1,18 @@
+<service>
+  <id>allgym-web</id>
+  <name>All Gym Web</name>
+  <description>Placeholder WinSW wrapper for the future Next.js LAN service.</description>
+
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -Command "Write-Error 'Pending Fase 5: web service not implemented yet.'; exit 1"</arguments>
+  <workingdirectory>C:\Program Files\AllGym</workingdirectory>
+
+  <startmode>Manual</startmode>
+  <stoptimeout>15sec</stoptimeout>
+
+  <logpath>C:\ProgramData\AllGym\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>4</keepFiles>
+  </log>
+</service>

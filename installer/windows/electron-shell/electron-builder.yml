@@ -1,0 +1,28 @@
+appId: com.allgym.local
+productName: AllGym
+artifactName: AllGym-Setup.exe
+
+directories:
+  output: ../dist/electron-shell
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+
+extraFiles:
+  - from: ../staging/ProgramFiles/AllGym
+    to: .
+    filter:
+      - "**/*"
+
+nsis:
+  include: build/installer.nsh
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  perMachine: true
+
+win:
+  target:
+    - nsis

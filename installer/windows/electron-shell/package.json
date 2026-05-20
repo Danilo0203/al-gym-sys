@@ -1,0 +1,16 @@
+{
+  "name": "allgym-electron-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Electron shell for early Windows packaging of All Gym Local.",
+  "main": "src/main.js",
+  "scripts": {
+    "prepare:dist": "node scripts/prepare-dist.mjs",
+    "pack:dir": "npm run prepare:dist && electron-builder --config electron-builder.yml --dir",
+    "dist:win": "npm run prepare:dist && electron-builder --config electron-builder.yml --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  }
+}

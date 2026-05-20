@@ -1,0 +1,394 @@
+# Contratos iniciales del backend local
+
+Fecha de corte: `2026-05-20`
+
+## Objetivo de esta fase
+
+Definir los contratos minimos que permiten sacar a Supabase del runtime y arrancar la migracion con la primera meta tecnica:
+
+- `login local sin Supabase`
+- `logout local sin Supabase`
+- `me local sin Supabase`
+
+La UI seguira usando rutas relativas `/api/...` y `Next.js` seguira actuando como proxy interno hacia `Express`.
+
+## Reglas globales
+
+- Base publica: `http://IP_SERVIDOR:3000`
+- Backend interno: `http://127.0.0.1:4000`
+- Todas las respuestas JSON deben incluir `requestId`.
+- Todas las mutaciones `POST`, `PUT`, `PATCH`, `DELETE` deben exigir CSRF token.
+- La cookie de sesion debe ser `httpOnly`, `sameSite=lax`, `path=/`.
+- `secure=false` en despliegue LAN HTTP.
+- `secure=true` solo si luego se habilita HTTPS.
+- La UI no debe conocer credenciales de DB ni secretos internos.
+
+## Sesion local propuesta
+
+- Cookie: `allgym.sid`
+- Valor: token opaco aleatorio de 32 bytes minimo
+- Persistencia: tabla `user_sessions`
+- TTL inicial sugerido: `7 dias`
+- Renovacion: sliding session en requests autenticados
+- Logout: invalidacion server-side + expiracion de cookie
+
+## Contratos minimos de auth
+
+### `POST /api/auth/login`
+
+Uso inicial de Fase 3. Sustituye:
+
+- `supabase.auth.signInWithPassword`
+- lecturas posteriores a `profiles`
+- lecturas posteriores a `roles`
+
+Request:
+
+```json
+{
+  "email": "admin@allgym.local",
+  "password": "plain-text-password"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "requestId": "req_123",
+  "user": {
+    "id": "uuid",
+    "email": "admin@allgym.local",
+    "full_name": "Administrador",
+    "role": "admin",
+    "roleScope": "panel",
+    "permissions": ["users.view", "payments.view"]
+  },
+  "redirectTo": "/panel/resumen",
+  "mustChangePassword": false
+}
+```
+
+Errores:
+
+- `401 invalid_credentials`
+- `403 user_inactive`
+- `423 password_change_required`
+
+### `POST /api/auth/logout`
+
+Request: sin body.
+
+Response `204`: sin contenido.
+
+Efectos:
+
+- invalida `allgym.sid`
+- limpia cookie
+- mantiene limpieza de caches PWA del lado cliente
+
+### `GET /api/auth/me`
+
+Sustituye la resolucion de sesion hoy repartida entre:
+
+- `proxy.ts`
+- `lib/auth/authorization.ts`
+- `features/profile/actions/profile-actions.ts`
+
+Response `200`:
+
+```json
+{
+  "requestId": "req_123",
+  "authenticated": true,
+  "user": {
+    "id": "uuid",
+    "email": "admin@allgym.local",
+    "full_name": "Administrador",
+    "role": "admin",
+    "roleScope": "panel",
+    "permissions": ["users.view", "roles.view"],
+    "isOwner": false
+  }
+}
+```
+
+Response `401`:
+
+```json
+{
+  "requestId": "req_123",
+  "authenticated": false
+}
+```
+
+### `POST /api/auth/change-password`
+
+Sustituye `profile-actions.updatePassword`.
+
+Request:
+
+```json
+{
+  "currentPassword": "old-password",
+  "newPassword": "new-password"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "requestId": "req_123",
+  "success": true
+}
+```
+
+### `POST /api/auth/forgot-password`
+
+No es bloqueante para la primera meta, pero debe quedar definido.
+
+Request:
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Response `202`:
+
+```json
+{
+  "requestId": "req_123",
+  "accepted": true
+}
+```
+
+Notas:
+
+- En instalacion local puede resolverse primero con tokens locales y reset asistido por admin.
+- Si luego se habilita correo SMTP, este contrato no cambia.
+
+### `POST /api/auth/verify-reset-code`
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "code": "12345678"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "requestId": "req_123",
+  "resetToken": "opaque-temporary-token"
+}
+```
+
+### `POST /api/auth/reset-password`
+
+Request:
+
+```json
+{
+  "resetToken": "opaque-temporary-token",
+  "newPassword": "new-password"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "requestId": "req_123",
+  "success": true
+}
+```
+
+## Contratos derivados inmediatos
+
+Estos ya existen conceptualmente en Next.js y deben conservarse para no romper la UI.
+
+### `GET /api/me/profile`
+
+Sustituye `src/app/api/me/profile/route.ts`.
+
+Response:
+
+```json
+{
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "full_name": "Cliente",
+    "phone": "55555555",
+    "birth_date": "1990-01-01",
+    "gender": "male",
+    "avatar_url": "/files/avatars/uuid.webp",
+    "role": "client",
+    "created_at": "2026-05-20T00:00:00.000Z",
+    "updated_at": "2026-05-20T00:00:00.000Z",
+    "overview": {}
+  },
+  "meta": {
+    "fetched_at": "2026-05-20T00:00:00.000Z"
+  }
+}
+```
+
+### `GET /api/me/membership`
+
+Sustituye `src/app/api/me/membership/route.ts`.
+
+### `GET /api/me/routine`
+
+Sustituye `src/app/api/me/routine/route.ts`.
+
+### `GET /api/panel/clientes`
+
+Sustituye `src/app/api/panel/clientes/route.ts`.
+
+Query params:
+
+- `query`
+- `offset`
+- `limit`
+
+## Contratos de storage local
+
+### `POST /api/storage/products`
+
+Multipart upload para imagen de producto.
+
+Request:
+
+- `file`
+- `productId`
+
+Response `201`:
+
+```json
+{
+  "requestId": "req_123",
+  "path": "products/catalog/<productId>/<file>.webp",
+  "publicUrl": "/files/products/catalog/<productId>/<file>.webp"
+}
+```
+
+### `POST /api/storage/exercises`
+
+Multipart upload para media de ejercicios.
+
+### `GET /files/*`
+
+Servidor local de archivos para imagenes y assets publicos.
+
+Notas:
+
+- El backend debe guardar archivos en `C:\ProgramData\AllGym\uploads\`.
+- El path publico no debe exponer rutas fisicas Windows.
+
+## Contratos criticos de caja, pagos e inventario
+
+Estos reemplazan los RPCs actuales y pueden implementarse como endpoints REST aunque por debajo usen SQL transaccional.
+
+### Caja
+
+- `POST /api/cash/sessions`
+  - abre caja
+- `POST /api/cash/sessions/:id/close`
+  - cierra caja
+- `GET /api/cash/dashboard`
+  - resume caja actual
+
+### Pagos
+
+- `POST /api/payments/subscription-existing-customer`
+  - reemplaza `create_subscription_payment_for_existing_customer`
+- `POST /api/payments/subscription-renewal`
+  - reemplaza `renew_subscription_with_payment`
+- `POST /api/payments/:id/reverse-and-recreate`
+  - reemplaza `reverse_and_recreate_payment`
+- `GET /api/payments`
+  - reemplaza `payments_overview`
+
+### Inventario
+
+- `GET /api/inventory/products`
+  - reemplaza `product_inventory_overview`
+- `POST /api/inventory/products`
+  - crea/actualiza producto
+- `POST /api/inventory/movements`
+  - reemplaza `record_product_inventory_movement`
+- `POST /api/inventory/stock-adjustments`
+  - reemplaza `adjust_product_stock`
+- `GET /api/inventory/movements`
+  - listado historico
+
+### Ventas de producto
+
+- `POST /api/cash/product-sales`
+  - reemplaza `sell_products_from_cash_session`
+- `POST /api/cash/product-sales/:id/void`
+  - reemplaza `void_product_sale_from_cash_session`
+
+## Contexto de autorizacion
+
+El backend debe construir un `AccessContext` unico por request:
+
+```ts
+type AccessContext = {
+  userId: string
+  email: string
+  role: "owner" | "admin" | "trainer" | "employee" | "client"
+  roleScope: "panel" | "client"
+  permissions: string[]
+  isOwner: boolean
+}
+```
+
+Reglas:
+
+- la UI no decide permisos
+- el backend siempre valida permisos
+- los endpoints mutantes registran auditoria
+
+## CSRF
+
+Contratos sugeridos:
+
+- Cookie no `httpOnly`: `allgym.csrf`
+- Header requerido: `X-CSRF-Token`
+- Comparacion strict-equal en mutaciones autenticadas
+
+Endpoints que deben exigirlo desde el inicio:
+
+- `/api/auth/logout`
+- `/api/auth/change-password`
+- todos los endpoints de caja
+- todos los endpoints de inventario
+- todos los endpoints de usuarios/clientes/roles
+
+## Decisiones de compatibilidad para la UI actual
+
+- Mantener rutas relativas `/api/...`
+- Mantener forma de payloads de `/api/me/*`
+- Mantener redirects por `role` y `roleScope`
+- Mantener `401 unauthorized` como senal de sesion expirada
+- Mantener nombres de dominio funcional: `customers`, `payments`, `inventory`, `cash`, `routines`
+
+## Primera meta tecnica cerrada
+
+La implementacion minima que desbloquea la migracion es:
+
+1. `POST /api/auth/login`
+2. `POST /api/auth/logout`
+3. `GET /api/auth/me`
+4. cookie `allgym.sid`
+5. middleware `Express` para sesion
+6. adaptacion de `proxy.ts` y `getUserAccessContext()` para dejar de leer Supabase

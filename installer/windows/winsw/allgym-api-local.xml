@@ -1,0 +1,23 @@
+<service>
+  <id>allgym-api-local</id>
+  <name>All Gym API Local</name>
+  <description>Local backend service for All Gym.</description>
+
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\AllGym\scripts\start-api-local.ps1"</arguments>
+  <workingdirectory>C:\Program Files\AllGym\api-local</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <stoptimeout>15sec</stoptimeout>
+  <priority>Normal</priority>
+
+  <logpath>C:\ProgramData\AllGym\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="20 sec" />
+  <onfailure action="none" />
+</service>

@@ -1,0 +1,18 @@
+<service>
+  <id>allgym-sync</id>
+  <name>All Gym Sync</name>
+  <description>Placeholder WinSW wrapper for the future gym-sync-server service.</description>
+
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -Command "Write-Error 'Pending Fase 8: sync service not implemented in installer yet.'; exit 1"</arguments>
+  <workingdirectory>C:\Program Files\AllGym</workingdirectory>
+
+  <startmode>Manual</startmode>
+  <stoptimeout>15sec</stoptimeout>
+
+  <logpath>C:\ProgramData\AllGym\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>4</keepFiles>
+  </log>
+</service>

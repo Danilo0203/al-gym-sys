@@ -1,0 +1,4 @@
+staging/
+dist/
+runtime/node/node.exe
+winsw/*.exe
