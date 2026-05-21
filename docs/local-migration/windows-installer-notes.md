@@ -104,7 +104,7 @@ Configuracion Windows versionada:
 - `installer/windows/electron-shell/scripts/prepare-dist.mjs`
 - `installer/windows/electron-shell/src/main.js`
 - `installer/windows/electron-shell/src/preload.js`
-- `installer/windows/electron-shell/src/placeholder.html`
+- pantalla de diagnostico embebida en `src/main.js`
 
 Preparacion del backend:
 

@@ -1,6 +1,6 @@
-window.addEventListener("DOMContentLoaded", () => {
-  const versionEl = document.getElementById("electron-version");
-  if (versionEl) {
-    versionEl.textContent = process.versions.electron;
-  }
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("allgymShell", {
+  electronVersion: process.versions.electron,
+  retryLoadUI: () => ipcRenderer.send("allgym-shell:retry-load-ui")
 });
