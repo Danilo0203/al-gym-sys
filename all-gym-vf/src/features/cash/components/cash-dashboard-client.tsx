@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
-import { closeCashSession, type CashDashboardData, openCashSession } from "@/features/cash/actions/cash-actions";
+import { closeCashSession, ensureDefaultCashRegister, type CashDashboardData, openCashSession } from "@/features/cash/actions/cash-actions";
 import { CashCustomerPaymentDialog } from "@/features/cash/components/cash-customer-payment-dialog";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { QuickProductSalePanel } from "@/features/cash/components/quick-product-sale-panel";
@@ -349,6 +349,7 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
   const router = useRouter();
   const { data: currentUser } = useCurrentUser();
   const canOperateCash = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("cash.operate"));
+  const canConfigureRegister = Boolean(currentUser?.isOwner || currentUser?.role === "admin");
   const canReverseCash = canOperateCash;
   const canManageMembership = Boolean(
     currentUser?.isOwner || currentUser?.permissions?.includes("customers.manage_membership"),
@@ -390,6 +391,15 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
       await openCashSession(data.register!.id, Number(openingAmount || 0), openingNotes);
       setOpeningNotes("");
     }, "Caja abierta correctamente");
+  };
+
+  const onEnsureRegister = () => {
+    handleAction(async () => {
+      const result = await ensureDefaultCashRegister();
+      if (!result.success) {
+        throw new Error(result.error || "No se pudo configurar la caja principal");
+      }
+    }, "Caja principal configurada");
   };
 
   const expectedAmount = data.summary?.expectedAmount || 0;
@@ -457,9 +467,24 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
         {!data.register ? (
           <Card>
             <CardHeader>
-              <CardTitle>Caja no disponible</CardTitle>
-              <CardDescription>No existe una caja activa configurada en el sistema.</CardDescription>
+              <CardTitle>No hay cajas configuradas</CardTitle>
+              <CardDescription>
+                No existe una caja activa en <code>cash_registers</code>. Esto bloquea la apertura incluso para owner y admin.
+              </CardDescription>
             </CardHeader>
+            {canConfigureRegister ? (
+              <CardContent>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Puedes crear o reactivar la caja principal desde aquí para habilitar la apertura del turno.
+                  </p>
+                  <Button onClick={onEnsureRegister} disabled={isPending}>
+                    <IconRefresh className="h-4 w-4" />
+                    Crear caja principal
+                  </Button>
+                </div>
+              </CardContent>
+            ) : null}
           </Card>
         ) : null}
 

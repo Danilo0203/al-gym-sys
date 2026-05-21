@@ -312,6 +312,12 @@ export interface CashDashboardData {
   canOperateSession: boolean;
 }
 
+export interface EnsureCashRegisterResult {
+  success: boolean;
+  register?: { id: string; name: string };
+  error?: string;
+}
+
 export interface CashHistoryFilters {
   page?: number;
   perPage?: number;
@@ -1184,6 +1190,74 @@ export async function getCashDashboardData(): Promise<CashDashboardData> {
     canOpenSession,
     canOperateSession,
   };
+}
+
+export async function ensureDefaultCashRegister(): Promise<EnsureCashRegisterResult> {
+  try {
+    const access = await getUserAccessContext();
+    if (!access.isAuthenticated || !access.userId || !(access.isOwner || access.role === "admin") || !hasPermission(access, "cash.operate")) {
+      return { success: false, error: "No autorizado para configurar la caja principal" };
+    }
+
+    const adminClient = createAdminClient();
+
+    const { data: activeRegister } = await adminClient
+      .from("cash_registers")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeRegister) {
+      revalidatePath("/panel/caja");
+      return { success: true, register: { id: activeRegister.id, name: activeRegister.name } };
+    }
+
+    const { data: namedRegister } = await adminClient
+      .from("cash_registers")
+      .select("id, name")
+      .eq("name", "Caja principal")
+      .limit(1)
+      .maybeSingle();
+
+    if (namedRegister) {
+      const { data: updatedRegister, error: updateError } = await adminClient
+        .from("cash_registers")
+        .update({ is_active: true })
+        .eq("id", namedRegister.id)
+        .select("id, name")
+        .single();
+
+      if (updateError || !updatedRegister) {
+        return { success: false, error: updateError?.message || "No se pudo reactivar la caja principal" };
+      }
+
+      revalidatePath("/panel/caja");
+      return { success: true, register: { id: updatedRegister.id, name: updatedRegister.name } };
+    }
+
+    const { data: createdRegister, error: insertError } = await adminClient
+      .from("cash_registers")
+      .insert({
+        name: "Caja principal",
+        is_active: true,
+      })
+      .select("id, name")
+      .single();
+
+    if (insertError || !createdRegister) {
+      return { success: false, error: insertError?.message || "No se pudo crear la caja principal" };
+    }
+
+    revalidatePath("/panel/caja");
+    return { success: true, register: { id: createdRegister.id, name: createdRegister.name } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "No se pudo garantizar la caja principal",
+    };
+  }
 }
 
 export async function searchCashCustomers(search: string): Promise<CashCustomerSearchResult[]> {
