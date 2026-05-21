@@ -4,7 +4,7 @@
   <description>Next.js standalone LAN frontend service for All Gym.</description>
 
   <executable>powershell.exe</executable>
-  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\AllGym\scripts\start-allgym-web.ps1"</arguments>
+  <arguments>-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Program Files\AllGym\scripts\start-allgym-web.ps1" -InstallRoot "C:\Program Files\AllGym" -ProgramDataRoot "C:\ProgramData\AllGym"</arguments>
   <workingdirectory>C:\Program Files\AllGym\allgym-web</workingdirectory>
 
   <startmode>Automatic</startmode>
