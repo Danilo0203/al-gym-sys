@@ -17,9 +17,11 @@ import {
 import { syncTrainingProfileWithAdmin } from "@/features/customers/actions/customer-routine-actions";
 import { DEFAULT_EQUIPMENT_AVAILABLE, DEFAULT_TRAINING_LOCATION } from "@/lib/training/profile-defaults";
 import type { NutritionContext, TrainingProfileInput } from "@/lib/training/types";
+import { normalizeAuthEmail, normalizeGuatemalaPhoneForAuth } from "@/lib/auth/identifiers";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 type AdminSupabaseClient = any;
+type PaymentMethod = "cash" | "card" | "transfer";
 type DeviceSyncMethod = "direct" | "queue" | "none";
 type DeviceSyncAction = "enable" | "disable" | "delete";
 type DeviceSyncResult = {
@@ -110,6 +112,10 @@ function normalizeOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function normalizeOptionalEmail(value: unknown) {
+  return typeof value === "string" ? normalizeAuthEmail(value) ?? undefined : undefined;
+}
+
 function normalizeNullableText(value: string | null | undefined) {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
@@ -131,9 +137,452 @@ function todayDateString() {
   return new Date().toISOString().split("T")[0];
 }
 
+function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return value === "cash" || value === "card" || value === "transfer";
+}
+
+function addDaysToIsoDate(dateString: string, days: number) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return formatToLocalISO(date) || dateString;
+}
+
+function resolveSubscriptionStatus(endDate: string) {
+  return endDate < todayDateString() ? "expired" : "active";
+}
+
+function hasMembershipPayload(data: Partial<CreateCustomerData>) {
+  return (
+    data.plan_id !== undefined ||
+    data.start_date !== undefined ||
+    data.end_date !== undefined ||
+    data.discount_amount !== undefined ||
+    data.payment_method !== undefined ||
+    data.final_price !== undefined
+  );
+}
+
+interface MembershipSnapshot {
+  subscription: {
+    id: string;
+    plan_id: number | null;
+    start_date: string | null;
+    end_date: string | null;
+    discount_amount: number | null;
+    status: string | null;
+  } | null;
+  payment: {
+    id: string;
+    amount_original: number | null;
+    discount_amount: number | null;
+    amount_paid: number | null;
+    method: string | null;
+    status: string | null;
+  } | null;
+}
+
+interface MembershipPaymentRow {
+  id: string;
+  amount_original: number | string | null;
+  discount_amount: number | string | null;
+  amount_paid: number | string | null;
+  method: string | null;
+  status: string | null;
+}
+
+async function getLatestMembershipSnapshot(client: AdminSupabaseClient, customerId: string): Promise<MembershipSnapshot> {
+  let subscription =
+    (await client
+      .from("subscriptions")
+      .select("id, plan_id, start_date, end_date, discount_amount, status")
+      .eq("user_id", customerId)
+      .eq("status", "active")
+      .order("end_date", { ascending: false, nullsFirst: false })
+      .order("start_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle()).data || null;
+
+  if (!subscription) {
+    subscription =
+      (await client
+        .from("subscriptions")
+        .select("id, plan_id, start_date, end_date, discount_amount, status")
+        .eq("user_id", customerId)
+        .order("end_date", { ascending: false, nullsFirst: false })
+        .order("start_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()).data || null;
+  }
+
+  if (!subscription) {
+    return { subscription: null, payment: null };
+  }
+
+  const { data: payment } = await runPaymentsPostedQueryCompat((usePostedFilter) => {
+    let query = client
+      .from("payments")
+      .select("id, amount_original, discount_amount, amount_paid, method, status")
+      .eq("subscription_id", subscription.id)
+      .order("payment_date", { ascending: false })
+      .limit(1);
+
+    if (usePostedFilter) {
+      query = query.eq("status", "posted");
+    }
+
+    return query.maybeSingle();
+  });
+
+  const typedPayment = payment as MembershipPaymentRow | null;
+
+  return {
+    subscription,
+    payment: typedPayment
+      ? {
+          id: String(typedPayment.id),
+          amount_original: typeof typedPayment.amount_original === "number" ? typedPayment.amount_original : Number(typedPayment.amount_original ?? 0),
+          discount_amount:
+            typeof typedPayment.discount_amount === "number" ? typedPayment.discount_amount : Number(typedPayment.discount_amount ?? 0),
+          amount_paid: typeof typedPayment.amount_paid === "number" ? typedPayment.amount_paid : Number(typedPayment.amount_paid ?? 0),
+          method: typeof typedPayment.method === "string" ? typedPayment.method : null,
+          status: typeof typedPayment.status === "string" ? typedPayment.status : null,
+        }
+      : null,
+  };
+}
+
+async function findOpenCashSessionForUser(adminClient: AdminSupabaseClient, userId: string) {
+  const { data } = await adminClient
+    .from("cash_sessions")
+    .select("id")
+    .eq("opened_by_user_id", userId)
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data || null;
+}
+
+async function attachPaymentToCashWithAdmin(params: {
+  adminClient: AdminSupabaseClient;
+  paymentId: string;
+  actorUserId: string;
+  note?: string | null;
+}) {
+  const { data: existingMovement } = await params.adminClient
+    .from("cash_movements")
+    .select("id")
+    .eq("source_payment_id", params.paymentId)
+    .maybeSingle();
+
+  if (existingMovement) {
+    return existingMovement;
+  }
+
+  const { data: paymentRow } = await params.adminClient
+    .from("payments")
+    .select("id, subscription_id, user_id, amount_paid, method, status")
+    .eq("id", params.paymentId)
+    .single();
+
+  if (!paymentRow || paymentRow.status !== "posted" || !isPaymentMethod(paymentRow.method)) {
+    return null;
+  }
+
+  const session = await findOpenCashSessionForUser(params.adminClient, params.actorUserId);
+  const amountPaid = Number(paymentRow.amount_paid || 0);
+  const cashEffectAmount = paymentRow.method === "cash" ? amountPaid : 0;
+
+  const { data: movement } = await params.adminClient
+    .from("cash_movements")
+    .insert({
+      cash_session_id: session?.id ?? null,
+      movement_type: "sale",
+      category: "membership",
+      payment_method: paymentRow.method,
+      amount: amountPaid,
+      cash_effect_amount: cashEffectAmount,
+      session_link_status: session?.id ? "assigned" : "out_of_session",
+      origin: "system",
+      source_payment_id: paymentRow.id,
+      source_subscription_id: paymentRow.subscription_id,
+      customer_id: paymentRow.user_id,
+      created_by_user_id: params.actorUserId,
+      note: params.note?.trim() || null,
+    })
+    .select("id")
+    .single();
+
+  return movement || null;
+}
+
+async function reverseAndRecreatePaymentWithAdmin(params: {
+  adminClient: AdminSupabaseClient;
+  actorUserId: string;
+  paymentId: string;
+  amountOriginal: number;
+  discountAmount: number;
+  amountPaid: number;
+  paymentMethod: PaymentMethod;
+  note?: string | null;
+}) {
+  const { data: originalPayment, error: originalPaymentError } = await params.adminClient
+    .from("payments")
+    .select("id, subscription_id, user_id, amount_paid, method, status")
+    .eq("id", params.paymentId)
+    .single();
+
+  if (originalPaymentError || !originalPayment) {
+    throw originalPaymentError || new Error("Pago no encontrado");
+  }
+
+  if (originalPayment.status !== "posted" || !isPaymentMethod(originalPayment.method)) {
+    throw new Error("Solo se pueden corregir pagos publicados");
+  }
+
+  const session = await findOpenCashSessionForUser(params.adminClient, params.actorUserId);
+  const reversalAmount = Number(originalPayment.amount_paid || 0);
+  const reversalCashEffect = originalPayment.method === "cash" ? reversalAmount * -1 : 0;
+  const reversalReason = "Corrección administrativa desde edición de cliente";
+
+  const { error: reversalMovementError } = await params.adminClient.from("cash_movements").insert({
+    cash_session_id: session?.id ?? null,
+    movement_type: "void",
+    category: "membership",
+    payment_method: originalPayment.method,
+    amount: reversalAmount,
+    cash_effect_amount: reversalCashEffect,
+    session_link_status: session?.id ? "assigned" : "out_of_session",
+    origin: "system",
+    source_subscription_id: originalPayment.subscription_id,
+    customer_id: originalPayment.user_id,
+    created_by_user_id: params.actorUserId,
+    note: params.note?.trim() || `Reverso administrativo del pago ${params.paymentId}`,
+  });
+
+  if (reversalMovementError) {
+    throw reversalMovementError;
+  }
+
+  const { data: replacementPayment, error: replacementPaymentError } = await params.adminClient
+    .from("payments")
+    .insert({
+      subscription_id: originalPayment.subscription_id,
+      user_id: originalPayment.user_id,
+      amount_original: params.amountOriginal,
+      discount_amount: params.discountAmount,
+      amount_paid: params.amountPaid,
+      method: params.paymentMethod,
+      payment_date: new Date().toISOString(),
+      created_by_user_id: params.actorUserId,
+      status: "posted",
+    })
+    .select("id")
+    .single();
+
+  if (replacementPaymentError || !replacementPayment) {
+    throw replacementPaymentError || new Error("No se pudo crear el pago corregido");
+  }
+
+  const { error: updateOriginalPaymentError } = await params.adminClient
+    .from("payments")
+    .update({
+      status: "reversed",
+      reversed_at: new Date().toISOString(),
+      reversed_by_user_id: params.actorUserId,
+      replacement_payment_id: replacementPayment.id,
+      reversal_reason: reversalReason,
+    })
+    .eq("id", params.paymentId);
+
+  if (updateOriginalPaymentError) {
+    throw updateOriginalPaymentError;
+  }
+
+  await attachPaymentToCashWithAdmin({
+    adminClient: params.adminClient,
+    paymentId: replacementPayment.id,
+    actorUserId: params.actorUserId,
+    note: params.note,
+  });
+
+  return replacementPayment.id as string;
+}
+
+async function upsertMembershipForCustomer(params: {
+  adminClient: AdminSupabaseClient;
+  actorUserId: string;
+  customerId: string;
+  data: Partial<CreateCustomerData>;
+}) {
+  if (!hasMembershipPayload(params.data)) {
+    return;
+  }
+
+  const snapshot = await getLatestMembershipSnapshot(params.adminClient, params.customerId);
+  const targetPlanId = params.data.plan_id ?? snapshot.subscription?.plan_id ?? null;
+
+  if (!targetPlanId) {
+    return;
+  }
+
+  const { data: planRow, error: planError } = await params.adminClient
+    .from("plans")
+    .select("id, price, duration_days")
+    .eq("id", targetPlanId)
+    .single();
+
+  if (planError || !planRow) {
+    throw planError || new Error("Plan no encontrado");
+  }
+
+  const startDate =
+    formatToLocalISO(params.data.start_date) ?? snapshot.subscription?.start_date ?? todayDateString();
+  const endDate =
+    formatToLocalISO(params.data.end_date) ??
+    snapshot.subscription?.end_date ??
+    addDaysToIsoDate(startDate, Number(planRow.duration_days || 30));
+  const discountAmount = Number(params.data.discount_amount ?? snapshot.subscription?.discount_amount ?? 0);
+  const amountOriginal = Number(planRow.price || 0);
+  const amountPaid = Number(params.data.final_price ?? Math.max(0, amountOriginal - discountAmount));
+  const paymentMethod = isPaymentMethod(params.data.payment_method)
+    ? params.data.payment_method
+    : isPaymentMethod(snapshot.payment?.method)
+      ? snapshot.payment.method
+      : "cash";
+  const status = resolveSubscriptionStatus(endDate);
+
+  if (!snapshot.subscription) {
+    const { data: subscriptionRow, error: subscriptionError } = await params.adminClient
+      .from("subscriptions")
+      .insert({
+        user_id: params.customerId,
+        plan_id: targetPlanId,
+        start_date: startDate,
+        end_date: endDate,
+        status,
+        discount_amount: discountAmount,
+      })
+      .select("id")
+      .single();
+
+    if (subscriptionError || !subscriptionRow) {
+      throw subscriptionError || new Error("No se pudo crear la suscripción");
+    }
+
+    const { data: paymentRow, error: paymentError } = await params.adminClient
+      .from("payments")
+      .insert({
+        subscription_id: subscriptionRow.id,
+        user_id: params.customerId,
+        amount_original: amountOriginal,
+        discount_amount: discountAmount,
+        amount_paid: amountPaid,
+        method: paymentMethod,
+        payment_date: new Date().toISOString(),
+        created_by_user_id: params.actorUserId,
+        status: "posted",
+      })
+      .select("id")
+      .single();
+
+    if (paymentError || !paymentRow) {
+      throw paymentError || new Error("No se pudo crear el pago");
+    }
+
+    await attachPaymentToCashWithAdmin({
+      adminClient: params.adminClient,
+      paymentId: paymentRow.id,
+      actorUserId: params.actorUserId,
+      note: "Alta de membresía desde edición de cliente",
+    });
+
+    return;
+  }
+
+  const subscriptionChanged =
+    snapshot.subscription.plan_id !== targetPlanId ||
+    snapshot.subscription.start_date !== startDate ||
+    snapshot.subscription.end_date !== endDate ||
+    Number(snapshot.subscription.discount_amount ?? 0) !== discountAmount ||
+    snapshot.subscription.status !== status;
+
+  if (subscriptionChanged) {
+    const { error: subscriptionUpdateError } = await params.adminClient
+      .from("subscriptions")
+      .update({
+        plan_id: targetPlanId,
+        start_date: startDate,
+        end_date: endDate,
+        status,
+        discount_amount: discountAmount,
+      })
+      .eq("id", snapshot.subscription.id);
+
+    if (subscriptionUpdateError) {
+      throw subscriptionUpdateError;
+    }
+  }
+
+  if (!snapshot.payment) {
+    const { data: paymentRow, error: paymentError } = await params.adminClient
+      .from("payments")
+      .insert({
+        subscription_id: snapshot.subscription.id,
+        user_id: params.customerId,
+        amount_original: amountOriginal,
+        discount_amount: discountAmount,
+        amount_paid: amountPaid,
+        method: paymentMethod,
+        payment_date: new Date().toISOString(),
+        created_by_user_id: params.actorUserId,
+        status: "posted",
+      })
+      .select("id")
+      .single();
+
+    if (paymentError || !paymentRow) {
+      throw paymentError || new Error("No se pudo crear el pago");
+    }
+
+    await attachPaymentToCashWithAdmin({
+      adminClient: params.adminClient,
+      paymentId: paymentRow.id,
+      actorUserId: params.actorUserId,
+      note: "Pago agregado desde edición de cliente",
+    });
+
+    return;
+  }
+
+  const paymentChanged =
+    Number(snapshot.payment.amount_original ?? 0) !== amountOriginal ||
+    Number(snapshot.payment.discount_amount ?? 0) !== discountAmount ||
+    Number(snapshot.payment.amount_paid ?? 0) !== amountPaid ||
+    snapshot.payment.method !== paymentMethod;
+
+  if (paymentChanged) {
+    await reverseAndRecreatePaymentWithAdmin({
+      adminClient: params.adminClient,
+      actorUserId: params.actorUserId,
+      paymentId: snapshot.payment.id,
+      amountOriginal,
+      discountAmount,
+      amountPaid,
+      paymentMethod,
+      note: "Corrección de pago desde edición de cliente",
+    });
+  }
+}
+
 function normalizeCustomerPayload<T extends Partial<CreateCustomerData>>(data: T): T {
   return {
     ...data,
+    email: normalizeOptionalEmail(data.email),
     plan_id: normalizeOptionalInteger(data.plan_id),
     final_price: normalizeOptionalNumber(data.final_price),
     discount_amount: normalizeOptionalNumber(data.discount_amount),
@@ -455,7 +904,7 @@ async function syncCustomerDeviceAccess(params: {
 export interface CreateCustomerData {
   origin?: "customers" | "cash";
   // Auth
-  email: string;
+  email?: string;
   password?: string;
   // Profile
   full_name: string;
@@ -831,15 +1280,34 @@ export async function createCustomer(data: CreateCustomerData) {
     let createdUserId: string | null = null;
 
     try {
-      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-        email: data.email,
-        password: data.password || "Gym2026!",
-        email_confirm: true,
-        user_metadata: {
-          full_name: data.full_name,
-          role: "client",
-        },
-      });
+      const authPhone = normalizeGuatemalaPhoneForAuth(data.phone);
+      if (!data.email && !authPhone) {
+        return { success: false, error: "El teléfono del cliente no es válido para crear acceso." };
+      }
+
+      const authPayload = data.email
+        ? {
+            email: data.email,
+            password: data.password || "Gym2026!",
+            email_confirm: true,
+            user_metadata: {
+              full_name: data.full_name,
+              role: "client",
+              phone: data.phone,
+            },
+          }
+        : {
+            phone: authPhone!,
+            password: data.password || "Gym2026!",
+            phone_confirm: true,
+            user_metadata: {
+              full_name: data.full_name,
+              role: "client",
+              phone: data.phone,
+            },
+          };
+
+      const { data: authData, error: authError } = await adminClient.auth.admin.createUser(authPayload);
 
       if (authError || !authData.user) {
         return { success: false, error: `Error creando usuario: ${authError?.message || "unknown"}` };
@@ -1090,12 +1558,13 @@ export async function getCustomerById(id: string) {
 
   // Fetch Payment Method from latest subscription
   let paymentMethod = null;
+  let finalPrice: number | null = null;
 
   if (latestSubscription) {
     const { data: lastPayment } = await runPaymentsPostedQueryCompat((usePostedFilter) => {
       let query = supabase
         .from("payments")
-        .select("method")
+        .select("method, amount_paid")
         .eq("subscription_id", latestSubscription.id)
         .order("payment_date", { ascending: false })
         .limit(1);
@@ -1109,6 +1578,7 @@ export async function getCustomerById(id: string) {
 
     if (lastPayment) {
       paymentMethod = lastPayment.method;
+      finalPrice = typeof lastPayment.amount_paid === "number" ? lastPayment.amount_paid : Number(lastPayment.amount_paid ?? 0);
     }
   }
 
@@ -1130,6 +1600,7 @@ export async function getCustomerById(id: string) {
     // Datos de suscripción REFRESCADOS desde la tabla real
     plan_id: finalPlanId || null,
     payment_method: paymentMethod || "cash",
+    final_price: finalPrice,
 
     // Usar fechas de la suscripción más reciente si existe, sino fallback a vista
     subscription_start_date: latestSubscription?.start_date || customerView.subscription_start_date || null,
@@ -1301,7 +1772,7 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
     }
 
     const [{ data: currentProfile }, { data: existingTrainingProfile }, { data: latestAssessmentRow }] = await Promise.all([
-      supabase.from("profiles").select("birth_date, gender, injuries, medical_notes").eq("id", id).maybeSingle(),
+      supabase.from("profiles").select("birth_date, gender, injuries, medical_notes, phone").eq("id", id).maybeSingle(),
       supabase.from("training_profiles").select("*").eq("user_id", id).maybeSingle(),
       supabase
         .from("body_assessments")
@@ -1312,18 +1783,52 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
         .maybeSingle(),
     ]);
 
-    // 0. Actualizar contraseña si se proporciona
-    if (data.password && data.password.length >= 6) {
-      console.log(`Updating password for user ${id}`);
+    const phoneChanged = data.phone !== undefined && data.phone !== (currentProfile?.phone ?? undefined);
+    const needsAuthUpdate = Boolean(data.password && data.password.length >= 6) || data.email !== undefined || phoneChanged;
 
+    let adminClient: AdminSupabaseClient | null = null;
+    let authUser: { email?: string | null; phone?: string | null } | null = null;
+
+    if (needsAuthUpdate) {
       if (!SUPABASE_SERVICE_ROLE_KEY) {
-        console.error("Missing service role key for password update");
-        return { success: false, error: "Falta SUPABASE_SERVICE_ROLE_KEY para actualizar contraseñas." };
+        console.error("Missing service role key for auth update");
+        return { success: false, error: "Falta SUPABASE_SERVICE_ROLE_KEY para actualizar credenciales." };
       }
 
-      const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
         auth: { autoRefreshToken: false, persistSession: false },
       });
+
+      const {
+        data: { user: authUserRecord },
+        error: authUserError,
+      } = await adminClient.auth.admin.getUserById(id);
+
+      if (authUserError || !authUserRecord) {
+        console.error("Error loading auth user:", authUserError);
+        return { success: false, error: "No se pudo cargar el acceso del cliente." };
+      }
+
+      authUser = authUserRecord;
+    }
+
+    const ensureAdminClient = () => {
+      if (!SUPABASE_SERVICE_ROLE_KEY) {
+        throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY para actualizar la membresía del cliente.");
+      }
+
+      if (!adminClient) {
+        adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+      }
+
+      return adminClient;
+    };
+
+    // 0. Actualizar contraseña si se proporciona
+    if (data.password && data.password.length >= 6 && adminClient) {
+      console.log(`Updating password for user ${id}`);
 
       try {
         const { error: passwordError } = await adminClient.auth.admin.updateUserById(id, {
@@ -1342,6 +1847,42 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
       } catch (passwordUpdateError) {
         console.error("Unexpected error updating password:", passwordUpdateError);
         return { success: false, error: "Error inesperado al actualizar contraseña" };
+      }
+    }
+
+    if (adminClient && authUser) {
+      const authUpdatePayload: Record<string, unknown> = {};
+      const normalizedEmail = normalizeOptionalEmail(data.email);
+      const currentEmail = normalizeAuthEmail(authUser.email);
+
+      if (normalizedEmail && normalizedEmail !== currentEmail) {
+        authUpdatePayload.email = normalizedEmail;
+        authUpdatePayload.email_confirm = true;
+      }
+
+      if (data.phone !== undefined) {
+        const normalizedPhone = normalizeGuatemalaPhoneForAuth(data.phone);
+        const currentPhone = normalizeGuatemalaPhoneForAuth(authUser.phone);
+        const phoneOnlyAccount = !currentEmail && Boolean(currentPhone);
+
+        if (normalizedPhone && (phoneOnlyAccount || currentPhone)) {
+          if (normalizedPhone !== currentPhone) {
+            authUpdatePayload.phone = normalizedPhone;
+            authUpdatePayload.phone_confirm = true;
+          }
+        }
+      }
+
+      if (Object.keys(authUpdatePayload).length > 0) {
+        const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(id, authUpdatePayload);
+
+        if (authUpdateError) {
+          console.error("Error updating auth identifiers:", authUpdateError);
+          return {
+            success: false,
+            error: `Error al actualizar acceso: ${authUpdateError.message || "Error desconocido"}`,
+          };
+        }
       }
     }
 
@@ -1366,6 +1907,15 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
     if (profileError) {
       console.error("Error updating profile:", profileError);
       return { success: false, error: `Error perfil: ${profileError.message}` };
+    }
+
+    if (hasMembershipPayload(data)) {
+      await upsertMembershipForCustomer({
+        adminClient: ensureAdminClient(),
+        actorUserId: currentAccess.userId,
+        customerId: id,
+        data,
+      });
     }
 
     // 2. Body Assessment
@@ -1458,9 +2008,7 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
       } as TrainingProfileInput;
 
       await syncTrainingProfileWithAdmin({
-        adminClient: createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        }),
+        adminClient: ensureAdminClient(),
         userId: id,
         createdBy: currentAccess.userId,
         trainingProfile: mergedTrainingProfile,
@@ -1483,12 +2031,8 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
     let deviceSync: DeviceSyncResult | undefined;
 
     if (shouldSyncDeviceState) {
-      const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-
       deviceSync = await syncCustomerDeviceAccess({
-        adminClient,
+        adminClient: ensureAdminClient(),
         customerId: id,
         deviceSn: DEFAULT_ZK_DEVICE_SN,
       });
@@ -1499,6 +2043,9 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
     revalidatePath(`/panel/clientes/${id}`);
     revalidatePath(`/panel/clientes/${id}/history`);
     revalidatePath("/panel/resumen");
+    revalidatePath("/panel/pagos");
+    revalidatePath("/panel/caja");
+    revalidatePath("/panel/caja/historial");
 
     return { success: true, deviceSync };
   } catch (error) {

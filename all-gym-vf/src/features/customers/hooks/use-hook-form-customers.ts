@@ -16,6 +16,7 @@ import { usePlans } from "@/features/plans/hooks/use-plans";
 import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
 import { renewSubscription, type CreateCustomerData } from "../actions/customer-actions";
 import { useCreateCustomer, useReactivateCustomer, useUpdateCustomer } from "./use-customers";
+import { isValidAuthEmail } from "@/lib/auth/identifiers";
 
 const profileCustomerSchema = z.object({
   full_name: z.string().min(2, {
@@ -82,9 +83,16 @@ const restrictedMovementValues = [
 const parqChoiceValues = ["yes", "no"] as const;
 const daysPerWeekValues = ["1", "2", "3", "4", "5", "6", "7"] as const;
 
+const optionalEmailSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .refine((value) => value === "" || isValidAuthEmail(value), {
+    message: "Correo electrónico inválido",
+  });
+
 const customerSheetSchema = z
   .object({
-    email: z.string().email({ message: "Correo electrónico inválido" }),
+    email: optionalEmailSchema,
     password: z.string().min(6, { message: "Mínimo 6 caracteres" }).optional().or(z.literal("")),
     full_name: z.string().min(2, { message: "El nombre es obligatorio" }),
     birth_date: z.date({ message: "La fecha de nacimiento es obligatoria" }),
@@ -590,7 +598,7 @@ export function useHookFormCustomerSheet({
   const onSubmit = async (values: CustomerSheetFormValues) => {
     try {
       const payload: CreateCustomerData = {
-        email: values.email,
+        email: values.email || undefined,
         origin: entrypoint,
         password: values.password || undefined,
         full_name: values.full_name,

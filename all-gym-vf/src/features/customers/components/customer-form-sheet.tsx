@@ -57,7 +57,15 @@ interface CustomerFormSheetProps {
   entrypoint?: "customers" | "cash";
 }
 
-function DatePickerInput({ value, onChange }: { value?: Date; onChange: (date?: Date) => void }) {
+function DatePickerInput({
+  value,
+  onChange,
+  endMonth,
+}: {
+  value?: Date;
+  onChange: (date?: Date) => void;
+  endMonth?: Date;
+}) {
   const [inputValue, setInputValue] = useState<string | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState<Date>(value && isValid(value) ? value : new Date());
@@ -120,7 +128,7 @@ function DatePickerInput({ value, onChange }: { value?: Date; onChange: (date?: 
               locale={es}
               captionLayout="dropdown"
               startMonth={new Date(1920, 0)}
-              endMonth={new Date()}
+              endMonth={endMonth}
             />
           </PopoverContent>
         </Popover>
@@ -182,7 +190,7 @@ export function CustomerFormSheet({
           </SheetTitle>
           <SheetDescription>
             {isEditing
-              ? "Modifica perfil, métricas y entrenamiento. Los cambios financieros se gestionan desde renovación y pagos."
+              ? "Modifica perfil, membresía, métricas y entrenamiento desde una sola ficha."
               : entrypoint === "cash"
                 ? "Registra la ficha del cliente, asigna el plan y cobra dentro del turno actual."
                 : "Completa la ficha de inscripción. El precio y fechas se calculan según el plan."}
@@ -218,10 +226,9 @@ export function CustomerFormSheet({
                     control={form.control}
                     name="email"
                     label="Correo electrónico"
-                    placeholder="user@gym.com"
+                    placeholder="user@gym.com (opcional)"
                     type="email"
                     icon={<IconMail className="h-4 w-4" />}
-                    disabled={isEditing}
                   />
                   <FormInputGroup
                     control={form.control}
@@ -258,7 +265,7 @@ export function CustomerFormSheet({
                     render={({ field, fieldState }) => (
                       <Field className="flex w-full flex-col" data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={String(field.name)}>Nacimiento</FieldLabel>
-                        <DatePickerInput value={field.value} onChange={field.onChange} />
+                        <DatePickerInput value={field.value} onChange={field.onChange} endMonth={new Date()} />
                         <FieldError errors={[fieldState.error]} />
                       </Field>
                     )}
@@ -288,239 +295,190 @@ export function CustomerFormSheet({
                 </div>
               </div>
 
-              {!isEditing ? (
-                <>
-                  <Separator />
+              <Separator />
 
-                  {/* 3. MEMBRESÍA Y PAGOS */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
-                        3
-                      </span>
-                      Membresía
-                    </h4>
-                    <div className="space-y-4 pl-4">
-                      {/* Selección de Plan */}
-                      <FormSelect
-                        control={form.control}
-                        name="plan_id"
-                        label="Seleccionar Plan"
-                        placeholder="Elige un plan..."
-                        options={plans.map((p) => ({
-                          label: `${p.name} - Q${p.price} (${p.duration_days} días)`,
-                          value: p.id.toString(),
-                        }))}
-                      />
+              {/* 3. MEMBRESÍA Y PAGOS */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
+                    3
+                  </span>
+                  Membresía
+                </h4>
+                <div className="space-y-4 pl-4">
+                  <FormSelect
+                    control={form.control}
+                    name="plan_id"
+                    label="Seleccionar Plan"
+                    placeholder="Elige un plan..."
+                    options={plans.map((p) => ({
+                      label: `${p.name} - Q${p.price} (${p.duration_days} días)`,
+                      value: p.id.toString(),
+                    }))}
+                  />
 
-                      {/* CALENDARIO DE RANGO */}
-                      <Controller
-                        control={form.control}
-                        name="subscription_period"
-                        render={({ field, fieldState }) => {
-                          const from = field.value?.from;
-                          const to = field.value?.to;
-                          const daysDiff = from && to ? differenceInDays(to, from) : 0;
+                  <Controller
+                    control={form.control}
+                    name="subscription_period"
+                    render={({ field, fieldState }) => {
+                      const from = field.value?.from;
+                      const to = field.value?.to;
+                      const daysDiff = from && to ? differenceInDays(to, from) : 0;
+                      const membershipEndMonth = new Date(new Date().getFullYear() + 10, 11);
 
-                          // Handlers for individual date inputs
-                          const handleStartChange = (date?: Date) => {
-                            markDatesAsModified();
-                            form.setValue("subscription_period", {
-                              from: date || new Date(),
-                              to: field.value?.to || date || new Date(),
-                            });
-                          };
+                      const handleStartChange = (date?: Date) => {
+                        markDatesAsModified();
+                        form.setValue("subscription_period", {
+                          from: date || new Date(),
+                          to: field.value?.to || date || new Date(),
+                        });
+                      };
 
-                          const handleEndChange = (date?: Date) => {
-                            markDatesAsModified();
-                            form.setValue("subscription_period", {
-                              from: field.value?.from || new Date(),
-                              to: date || new Date(),
-                            });
-                          };
+                      const handleEndChange = (date?: Date) => {
+                        markDatesAsModified();
+                        form.setValue("subscription_period", {
+                          from: field.value?.from || new Date(),
+                          to: date || new Date(),
+                        });
+                      };
 
-                          // Presets for subscription periods
-                          const applyPreset = (days: number) => {
-                            markDatesAsModified();
-                            const start = new Date();
-                            const end = addDays(start, days);
-                            form.setValue("subscription_period", {
-                              from: start,
-                              to: end,
-                            });
-                          };
+                      const applyPreset = (days: number) => {
+                        markDatesAsModified();
+                        const start = field.value?.from || new Date();
+                        const end = addDays(start, days);
+                        form.setValue("subscription_period", {
+                          from: start,
+                          to: end,
+                        });
+                      };
 
-                          return (
-                            <Field className="flex flex-col" data-invalid={fieldState.invalid}>
-                              <FieldLabel>Vigencia de Suscripción</FieldLabel>
-                              <div className="grid grid-cols-[1fr_1fr_auto_80px] gap-2 items-center">
-                                {/* Fecha Inicio */}
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-xs text-muted-foreground">Inicio</span>
-                                  <DatePickerInput value={from} onChange={handleStartChange} />
-                                </div>
+                      return (
+                        <Field className="flex flex-col" data-invalid={fieldState.invalid}>
+                          <FieldLabel>Vigencia de Suscripción</FieldLabel>
+                          <div className="grid grid-cols-[1fr_1fr_auto_80px] gap-2 items-center">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-muted-foreground">Inicio</span>
+                              <DatePickerInput value={from} onChange={handleStartChange} endMonth={membershipEndMonth} />
+                            </div>
 
-                                {/* Fecha Fin */}
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-xs text-muted-foreground">Fin</span>
-                                  <DatePickerInput value={to} onChange={handleEndChange} />
-                                </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs text-muted-foreground">Fin</span>
+                              <DatePickerInput value={to} onChange={handleEndChange} endMonth={membershipEndMonth} />
+                            </div>
 
-                                {/* Botón Calendario Range con Presets */}
-                                <Popover modal={false}>
-                                  <PopoverTrigger asChild>
-                                    <Button type="button" variant="outline" size="icon" className="mt-5">
-                                      <IconCalendar className="h-4 w-4" />
+                            <Popover modal={false}>
+                              <PopoverTrigger asChild>
+                                <Button type="button" variant="outline" size="icon" className="mt-5">
+                                  <IconCalendar className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="end">
+                                <div className="flex">
+                                  <div className="flex flex-col border-r p-2 min-w-[130px]">
+                                    <p className="text-xs font-medium text-muted-foreground mb-2 px-2">Períodos</p>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(7)}>
+                                      1 semana
                                     </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-0" align="end">
-                                    <div className="flex">
-                                      {/* Presets sidebar */}
-                                      <div className="flex flex-col border-r p-2 min-w-[130px]">
-                                        <p className="text-xs font-medium text-muted-foreground mb-2 px-2">Períodos</p>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(7)}
-                                        >
-                                          1 semana
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(15)}
-                                        >
-                                          15 días
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(30)}
-                                        >
-                                          1 mes
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(60)}
-                                        >
-                                          2 meses
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(90)}
-                                        >
-                                          3 meses
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(180)}
-                                        >
-                                          6 meses
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="justify-start font-normal text-xs h-8"
-                                          onClick={() => applyPreset(365)}
-                                        >
-                                          1 año
-                                        </Button>
-                                      </div>
-
-                                      {/* Calendar */}
-                                      <Calendar
-                                        autoFocus
-                                        mode="range"
-                                        defaultMonth={from}
-                                        selected={
-                                          subscriptionPeriod?.from
-                                            ? { from: subscriptionPeriod.from, to: subscriptionPeriod.to }
-                                            : undefined
-                                        }
-                                        onSelect={handleDateRangeChange}
-                                        numberOfMonths={2}
-                                        locale={es}
-                                      />
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-
-                                {/* Días */}
-                                <div className="flex flex-col gap-1 mt-5">
-                                  <div className="h-9 flex items-center justify-center px-2 border rounded-md bg-muted text-muted-foreground font-medium text-sm">
-                                    {daysDiff} días
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(15)}>
+                                      15 días
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(30)}>
+                                      1 mes
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(60)}>
+                                      2 meses
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(90)}>
+                                      3 meses
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(180)}>
+                                      6 meses
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="justify-start font-normal text-xs h-8" onClick={() => applyPreset(365)}>
+                                      1 año
+                                    </Button>
                                   </div>
+
+                                  <Calendar
+                                    autoFocus
+                                    mode="range"
+                                    defaultMonth={from}
+                                    selected={
+                                      subscriptionPeriod?.from
+                                        ? { from: subscriptionPeriod.from, to: subscriptionPeriod.to }
+                                        : undefined
+                                    }
+                                    onSelect={handleDateRangeChange}
+                                    numberOfMonths={2}
+                                    locale={es}
+                                  />
                                 </div>
+                              </PopoverContent>
+                            </Popover>
+
+                            <div className="flex flex-col gap-1 mt-5">
+                              <div className="h-9 flex items-center justify-center px-2 border rounded-md bg-muted text-muted-foreground font-medium text-sm">
+                                {daysDiff} días
                               </div>
-                              <FieldError errors={[fieldState.error]} />
-                            </Field>
-                          );
-                        }}
-                      />
-
-                      {/* Cálculos de Precio */}
-                      <div className="grid grid-cols-3 gap-4 items-end bg-muted/30 p-3 rounded-md">
-                        <div className="flex flex-col gap-2">
-                          <label className="text-xs font-medium text-muted-foreground">Precio Plan</label>
-                          <div className="h-10 flex items-center px-3 border rounded-md bg-muted text-muted-foreground font-semibold">
-                            Q{selectedPlanPrice.toFixed(2)}
+                            </div>
                           </div>
-                        </div>
+                          <FieldError errors={[fieldState.error]} />
+                        </Field>
+                      );
+                    }}
+                  />
 
-                        <FormInputGroup
-                          control={form.control}
-                          name="discount_amount"
-                          label="Descuento"
-                          type="number"
-                          min={0}
-                          placeholder="0.00"
-                          icon={<IconDiscount className="h-4 w-4" />}
-                        />
-
-                        <div className="flex flex-col gap-2">
-                          <label className="text-xs font-medium text-primary">Precio Final</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-2.5 text-sm font-bold">Q</span>
-                            <input
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 pl-7 py-2 text-sm font-bold text-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled
-                              value={form.watch("final_price")?.toFixed(2) || "0.00"}
-                            />
-                          </div>
-                        </div>
+                  <div className="grid grid-cols-3 gap-4 items-end bg-muted/30 p-3 rounded-md">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-medium text-muted-foreground">Precio Plan</label>
+                      <div className="h-10 flex items-center px-3 border rounded-md bg-muted text-muted-foreground font-semibold">
+                        Q{selectedPlanPrice.toFixed(2)}
                       </div>
+                    </div>
 
-                      <FormSelect
-                        control={form.control}
-                        name="payment_method"
-                        label="Método de Pago"
-                        options={[
-                          { label: "Efectivo", value: "cash" },
-                          { label: "Tarjeta", value: "card" },
-                          { label: "Transferencia", value: "transfer" },
-                        ]}
-                      />
+                    <FormInputGroup
+                      control={form.control}
+                      name="discount_amount"
+                      label="Descuento"
+                      type="number"
+                      min={0}
+                      placeholder="0.00"
+                      icon={<IconDiscount className="h-4 w-4" />}
+                    />
+
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-medium text-primary">Precio Final</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-sm font-bold">Q</span>
+                        <input
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 pl-7 py-2 text-sm font-bold text-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled
+                          value={form.watch("final_price")?.toFixed(2) || "0.00"}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <Separator />
-                </>
-              ) : null}
+                  <FormSelect
+                    control={form.control}
+                    name="payment_method"
+                    label="Método de Pago"
+                    options={[
+                      { label: "Efectivo", value: "cash" },
+                      { label: "Tarjeta", value: "card" },
+                      { label: "Transferencia", value: "transfer" },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <Separator />
 
               {/* 4. PERFIL DE ENTRENAMIENTO */}
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
                   <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
-                    {isEditing ? 3 : 4}
+                    4
                   </span>
                   Perfil de Entrenamiento
                 </h4>
