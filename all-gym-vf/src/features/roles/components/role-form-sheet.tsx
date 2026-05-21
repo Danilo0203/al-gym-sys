@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormInput } from "@/components/forms/form-input";
 import { FieldLabel } from "@/components/ui/field";
+import { emitAdminRefresh } from "@/lib/admin-refresh";
 import {
   createRole,
   updateRole,
@@ -205,6 +206,7 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
       const result = await actionPromise;
       if (result.success) {
         onSuccess();
+        emitAdminRefresh("roles");
       }
     } catch {
       toast.error("Error inesperado");

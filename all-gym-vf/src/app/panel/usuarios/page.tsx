@@ -4,19 +4,13 @@ import { Suspense } from "react";
 import { DataTableSkeleton } from "@/components/ui/table/data-table-skeleton";
 import { CreateUserButton } from "@/features/users/components/create-user-button";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
-import { searchParamsCache } from "@/lib/searchparams";
 import { redirect } from "next/navigation";
-import { SearchParams } from "nuqs/server";
 
 export const metadata = {
   title: "Panel: Usuarios",
 };
 
-type PageProps = {
-  searchParams: Promise<SearchParams>;
-};
-
-export default async function UsersPage(props: PageProps) {
+export default async function UsersPage() {
   const access = await getUserAccessContext();
   if (!access.isAuthenticated) {
     redirect("/iniciar-sesion");
@@ -24,9 +18,6 @@ export default async function UsersPage(props: PageProps) {
   if (!hasPermission(access, "users.view")) {
     redirect("/panel");
   }
-
-  const searchParams = await props.searchParams;
-  searchParamsCache.parse(searchParams);
 
   return (
     <PageContainer

@@ -287,3 +287,32 @@ Registro de migraciones validado:
 
 - las tres migraciones quedaron registradas en `public.schema_migrations`
 - el campo `result` quedo en `applied`
+
+## Bloque Fase 5: usuarios, roles y permisos locales
+
+Este bloque no requiere una migracion SQL adicional en esta vuelta.
+
+El backend local ya trabaja sobre el baseline que incluye:
+
+- `users`
+- `profiles`
+- `roles`
+- `permissions`
+- `role_permissions`
+- `audit_log`
+
+Cambios cubiertos por `api-local`:
+
+- alta de usuarios en `users` + `profiles`
+- edicion de perfil basico de usuario
+- activacion/desactivacion de usuario con revocacion de sesiones
+- cambio de rol por `profiles.role`
+- cambio de permisos por `role_permissions`
+- auditoria de `user_created`, `user_updated`, `user_role_changed`, `user_deactivated`, `user_reactivated`, `role_created`, `role_permissions_changed`, `role_deleted`
+
+Reglas:
+
+- `users` sigue siendo la fuente de verdad para credenciales y estado de acceso
+- `profiles` sigue siendo la fuente de verdad para rol y datos visibles en UI
+- `roles`/`permissions` siguen existiendo en la base local y ya no dependen de Supabase Auth
+- el frontend solo consume el gateway de `Next.js` y no accede directo al puerto `4000`

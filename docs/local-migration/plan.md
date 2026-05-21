@@ -449,6 +449,25 @@ Notas:
 - no se tocaron todavia `clientes`, `caja`, `pagos`, `inventario`, `storage` ni `allgym-sync`
 - sigue pendiente una prueba completamente desde cero con `PostgreSQL` y configuracion inicial en Windows limpio
 
+### Bloque 3 de Fase 5. Usuarios, roles y permisos locales
+
+- [x] Inventariar usos en frontend de `auth.admin.createUser`, `updateUserById`, `deleteUser`, `listUsers`, perfiles, roles y permisos.
+- [x] Crear endpoints locales para listar, obtener, crear, actualizar, activar/desactivar y cambiar rol de usuarios.
+- [x] Crear endpoints locales para listar roles/permisos, obtener permisos de rol, crear/editar/eliminar roles.
+- [x] Validar inputs con Zod en `api-local`.
+- [x] Proteger endpoints con middleware de sesion y permisos.
+- [x] Registrar auditoria en alta de usuarios, cambio de rol, activacion/desactivacion y cambio de permisos.
+- [x] Conectar frontend de administracion a `/api/...` via proxy de `Next.js`.
+- [x] Mantener migracion gradual sin apagar Supabase globalmente.
+- [x] Documentar contratos y notas de migracion.
+- [x] Validar `npm run build` en `api-local` y `all-gym-vf`.
+
+Notas:
+
+- el frontend de administracion ya no habla directo con `127.0.0.1:4000`
+- `users`, `roles` y `permissions` ahora se resuelven desde el backend local sobre PostgreSQL
+- no se tocaron `clientes`, `caja`, `pagos`, `inventario`, `storage` ni `allgym-sync`
+
 ### Fase 6. Storage local
 
 - Implementar filesystem storage.

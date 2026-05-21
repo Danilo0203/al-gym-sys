@@ -65,6 +65,20 @@ El backend trata este usuario bootstrap como `owner` mientras no exista un siste
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`
+- `GET /admin/users`
+- `GET /admin/users/roles`
+- `GET /admin/users/:id`
+- `POST /admin/users`
+- `PATCH /admin/users/:id`
+- `PATCH /admin/users/:id/status`
+- `PATCH /admin/users/:id/role`
+- `DELETE /admin/users/:id`
+- `GET /admin/roles`
+- `GET /admin/roles/permissions`
+- `GET /admin/roles/:id/permissions`
+- `POST /admin/roles`
+- `PATCH /admin/roles/:id`
+- `DELETE /admin/roles/:id`
 
 ## Notas
 

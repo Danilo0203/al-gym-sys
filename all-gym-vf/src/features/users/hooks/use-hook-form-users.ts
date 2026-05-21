@@ -6,14 +6,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
 import { createUser, updateUser, type UserData } from "../actions/user-actions";
-import { UserRole } from "@/types";
+import { emitAdminRefresh } from "@/lib/admin-refresh";
 
 const userFormSchema = z.object({
   email: z.string().email({ message: "Correo electrónico inválido" }),
   full_name: z.string().min(2, { message: "El nombre es obligatorio" }),
-  role: z.enum(["owner", "admin", "trainer", "employee", "client"], {
-    message: "Selecciona un rol válido",
-  }),
+  role: z.string().min(1, { message: "Selecciona un rol válido" }),
   password: z.string().optional(),
 });
 
@@ -63,13 +61,14 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
           const result = await updateUser({
             id: user.id,
             full_name: values.full_name,
-            role: values.role as UserRole,
+            role: values.role,
             password: values.password || undefined,
           });
 
           if (result.success) {
             toast.success("Usuario actualizado correctamente");
             onOpenChange(false);
+            emitAdminRefresh("users");
           } else {
             toast.error(result.error || "Error al actualizar usuario");
           }
@@ -84,13 +83,14 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
         const result = await createUser({
           email: values.email,
           full_name: values.full_name,
-          role: values.role as UserRole,
+          role: values.role,
           password: values.password,
         });
 
         if (result.success) {
           toast.success("Usuario creado correctamente");
           onOpenChange(false);
+          emitAdminRefresh("users");
         } else {
           toast.error(result.error || "Error al crear usuario");
         }

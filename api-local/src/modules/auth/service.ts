@@ -290,6 +290,7 @@ export async function getSessionContext(sessionToken: string): Promise<SessionCo
       where s.session_token_hash = $1
         and s.revoked_at is null
         and s.expires_at > now()
+        and u.status = 'active'
       limit 1
     `,
     [sessionTokenHash]

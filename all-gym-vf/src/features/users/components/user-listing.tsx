@@ -1,20 +1,41 @@
-import { getUsers } from "@/features/users/actions/user-actions";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { DataTableSkeleton } from "@/components/ui/table/data-table-skeleton";
+import { getUsers, type UserData } from "@/features/users/actions/user-actions";
 import { UsersTable } from "./users-table";
-import { searchParamsCache } from "@/lib/searchparams";
+import { toast } from "sonner";
+import { subscribeAdminRefresh } from "@/lib/admin-refresh";
 
-export default async function UserListing() {
-  const sort = searchParamsCache.get("sort");
-  const role = searchParamsCache.get("role");
-  const full_name = searchParamsCache.get("full_name");
-  const { data: users, success, error, roleNameMap } = await getUsers({ sort, role, full_name });
+export default function UserListing() {
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [roleNameMap, setRoleNameMap] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
 
-  if (!success || !users) {
-    return (
-      <div className="p-4 border border-destructive/50 bg-destructive/10 rounded-lg text-destructive">
-        Error al cargar usuarios: {error || "Error desconocido"}
-      </div>
-    );
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    const result = await getUsers();
+
+    if (!result.success || !result.data) {
+      toast.error(result.error || "Error al cargar usuarios");
+      setLoading(false);
+      return;
+    }
+
+    setUsers(result.data);
+    setRoleNameMap(result.roleNameMap ?? {});
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => subscribeAdminRefresh("users", () => void fetchUsers()), [fetchUsers]);
+
+  if (loading) {
+    return <DataTableSkeleton columnCount={5} rowCount={8} />;
   }
 
-  return <UsersTable data={users} roleNameMap={roleNameMap ?? {}} />;
+  return <UsersTable data={users} roleNameMap={roleNameMap} />;
 }

@@ -7,6 +7,7 @@ import { authSessionMiddleware } from "./middleware/auth";
 import { errorHandler, notFoundMiddleware } from "./middleware/error-handler";
 import { requestContextMiddleware } from "./middleware/request-context";
 import { authRouter } from "./modules/auth/router";
+import { adminRouter } from "./modules/admin/router";
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.get("/health", async (_req, res, next) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/admin", adminRouter);
 app.use(notFoundMiddleware);
 app.use(errorHandler);
 

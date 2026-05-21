@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { deleteRole, type RoleData } from "../actions/role-actions";
+import { emitAdminRefresh } from "@/lib/admin-refresh";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,7 @@ export function DeleteRoleDialog({ open, onOpenChange, role, roles, onSuccess }:
       if (result.success) {
         toast.success("Rol eliminado correctamente");
         onSuccess();
+        emitAdminRefresh("roles");
         onOpenChange(false);
       } else if (result.error === "REASSIGN_REQUIRED") {
         setNeedsReassign(true);

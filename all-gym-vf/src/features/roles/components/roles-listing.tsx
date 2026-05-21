@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getRoles, type RoleData } from "../actions/role-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Pencil, Trash2, Shield, Users, Lock } from "lucide-react";
 import { RoleFormSheet } from "./role-form-sheet";
 import { DeleteRoleDialog } from "./delete-role-dialog";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
+import { subscribeAdminRefresh } from "@/lib/admin-refresh";
 
 export function RolesListing() {
   const { data: currentUser } = useCurrentUser();
@@ -23,7 +24,7 @@ export function RolesListing() {
   const [deletingRole, setDeletingRole] = useState<RoleData | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const fetchRoles = async (silent = false) => {
+  const fetchRoles = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     const result = await getRoles();
     if (result.success && result.data) {
@@ -32,12 +33,13 @@ export function RolesListing() {
       toast.error(result.error || "Error al cargar roles");
     }
     if (!silent) setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchRoles();
-  }, []);
+    void fetchRoles();
+  }, [fetchRoles]);
+
+  useEffect(() => subscribeAdminRefresh("roles", () => void fetchRoles(true)), [fetchRoles]);
 
   if (loading) {
     return (
@@ -125,7 +127,10 @@ export function RolesListing() {
           if (!open) setEditingRole(null);
         }}
         role={editingRole}
-        onSuccess={() => void fetchRoles(true)}
+        onSuccess={() => {
+          setFormOpen(false);
+          setEditingRole(null);
+        }}
       />
       <DeleteRoleDialog
         open={deleteOpen}
@@ -135,7 +140,7 @@ export function RolesListing() {
         }}
         role={deletingRole}
         roles={roles.filter((r) => r.id !== deletingRole?.id)}
-        onSuccess={() => void fetchRoles(true)}
+        onSuccess={() => undefined}
       />
     </>
   );

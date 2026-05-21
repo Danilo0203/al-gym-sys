@@ -62,6 +62,43 @@ Validacion de este bloque:
 - la cookie `httpOnly` se mantiene via `Next.js`
 - no fue necesario exponer llamadas del navegador directo a `http://127.0.0.1:4000`
 
+## Usuarios, roles y permisos locales
+
+Este bloque sigue la misma regla de gateway: el navegador solo habla con rutas relativas `/api/...` y `Next.js` proxyea hacia `api-local`.
+
+### Usuarios
+
+- `GET /api/panel/users` -> `GET /admin/users`
+- `GET /api/panel/users/roles` -> `GET /admin/users/roles`
+- `GET /api/panel/users/:id` -> `GET /admin/users/:id`
+- `POST /api/panel/users` -> `POST /admin/users`
+- `PATCH /api/panel/users/:id` -> `PATCH /admin/users/:id`
+- `PATCH /api/panel/users/:id/status` -> `PATCH /admin/users/:id/status`
+- `PATCH /api/panel/users/:id/role` -> `PATCH /admin/users/:id/role`
+- `DELETE /api/panel/users/:id` -> `DELETE /admin/users/:id`
+
+### Roles y permisos
+
+- `GET /api/panel/roles` -> `GET /admin/roles`
+- `GET /api/panel/roles/permissions` -> `GET /admin/roles/permissions`
+- `GET /api/panel/roles/:id/permissions` -> `GET /admin/roles/:id/permissions`
+- `POST /api/panel/roles` -> `POST /admin/roles`
+- `PATCH /api/panel/roles/:id` -> `PATCH /admin/roles/:id`
+- `DELETE /api/panel/roles/:id` -> `DELETE /admin/roles/:id`
+
+Contratos de datos:
+
+- usuarios: `id`, `email`, `full_name`, `role`, `status`, `is_active`, `created_at`, `last_sign_in_at`
+- roles: `id`, `slug`, `name`, `scope`, `is_system`, `is_protected`, `user_count`
+- permisos: `id`, `key`, `description`, `module`, `action`
+
+Reglas:
+
+- el backend valida sesion y permisos por middleware antes de mutar
+- los cambios sensibles escriben auditoria en `audit_log`
+- la UI no llama directo a `127.0.0.1:4000`
+- Supabase permanece solo en los modulos aun no migrados
+
 ## Runtime `allgym-web` standalone para Windows
 
 Para el siguiente corte de Fase 5, `allgym-web` se empaqueta como `Next.js standalone` y se publica como servicio Windows separado.
