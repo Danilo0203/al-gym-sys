@@ -425,8 +425,8 @@ Notas:
 - [x] Actualizar `NSIS` minimo para instalar y desinstalar `allgym-web`.
 - [x] Hacer que `Electron` intente abrir `http://127.0.0.1:3000`.
 - [x] Validar el bundle standalone localmente contra `api-local`.
-- [ ] Validar `allgym-web` como servicio real `WinSW` en Windows VM.
-- [ ] Validar `AllGym-Setup.exe` instalando tambien `allgym-web` en Windows VM.
+- [x] Validar `allgym-web` como servicio real `WinSW` en Windows VM.
+- [x] Validar `AllGym-Setup.exe` instalando tambien `allgym-web` en Windows VM.
 
 Notas:
 
@@ -436,9 +436,18 @@ Notas:
 - `GET http://127.0.0.1:3000/api/health` respondio `200 OK` desde el bundle staged
 - `GET http://127.0.0.1:3000/` respondio con redirect `307` a `/iniciar-sesion`
 - `POST /api/auth/login`, `GET /api/auth/me` y `POST /api/auth/logout` funcionaron desde el bundle staged
+- validacion real en Windows VM confirmada el `2026-05-20`
+- `allgym-web.exe status` respondio `Active (running)`
+- `GET http://127.0.0.1:3000/api/health` respondio `200 OK`
+- `GET http://127.0.0.1:3000` cargo la UI real de login
+- `Electron` abrio la UI real de All Gym en ventana de escritorio
+- `api-local` y `allgym-web` quedaron corriendo juntos como servicios locales
+- `AllGym-Setup.exe` quedo validado como instalacion minima del bloque actual
+- `login/logout` siguieron funcionando por `/api/auth/*` tras instalar desde el setup
 - riesgo abierto: el build de `Next.js` sigue dependiendo de descargas de `next/font` desde Google Fonts
 - antes del instalador final conviene migrar esas fuentes a assets locales o eliminar la dependencia de red en build
 - no se tocaron todavia `clientes`, `caja`, `pagos`, `inventario`, `storage` ni `allgym-sync`
+- sigue pendiente una prueba completamente desde cero con `PostgreSQL` y configuracion inicial en Windows limpio
 
 ### Fase 6. Storage local
 

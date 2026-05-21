@@ -402,13 +402,22 @@ Validacion real confirmada en Windows VM:
 ```json
 {"ok":true,"service":"api-local","database":"ok"}
 ```
-- la app Electron placeholder abrió como `All Gym Local`
+- `allgym-web` instalado con `WinSW`
+- visible en `services.msc` como `All Gym Web`
+- tipo de inicio: `Automatic`
+- estado: `Running`
+- `.\allgym-web.exe status` responde `Active (running)`
+- `GET http://127.0.0.1:3000/api/health` responde `200 OK`
+- `GET http://127.0.0.1:3000` carga la UI real de login
+- `Electron` abre la UI real de All Gym en una ventana de escritorio
+- `api-local` y `allgym-web` corren juntos como servicios locales
+- `AllGym-Setup.exe` quedo validado instalando `api-local + allgym-web + Electron` en la VM actual
+- `login/logout` siguen funcionando por `/api/auth/*` despues de la instalacion
 
 Pendiente de validacion en Windows:
 
-- servicio `allgym-web` con `WinSW`
 - servicio `allgym-sync`
-- `AllGym-Setup.exe` instalando tambien `allgym-web`
+- prueba completamente desde cero con `PostgreSQL` y configuracion inicial en Windows limpio
 - instalador final completo
 
 ## Riesgos abiertos
@@ -416,7 +425,6 @@ Pendiente de validacion en Windows:
 - falta integrar el runtime Node embebido real dentro del instalador final
 - falta validar permisos de `Program Files` y `ProgramData` en Windows limpio
 - falta verificar comportamiento de `argon2` en el runtime Windows distribuido
-- falta validar `allgym-web` como servicio real `WinSW` en Windows VM
 - `allgym-sync` sigue como placeholder de servicio
 - todavia no existe instalador final firmado ni flujo de upgrade
 - el build de `Next.js` depende de `next/font` y descargas de Google Fonts
@@ -434,14 +442,17 @@ Lo que ya esta listo:
 - backend `api-local` preparado para staging Windows
 - frontend `allgym-web` preparado como `Next.js standalone`
 - servicio `allgym-api-local` validado en Windows real/VM con `WinSW`
+- servicio `allgym-web` validado en Windows real/VM con `WinSW`
 - instalador `NSIS` minimo validado en Windows VM
+- `AllGym-Setup.exe` validado para este bloque sobre la VM preparada
 - shell minimo de `electron-builder + NSIS` creado
 - `NSIS` actualizado para instalar `api-local` y `allgym-web`
+- `Electron` validado abriendo `http://127.0.0.1:3000`
 
 Lo que falta para cerrar totalmente la fase:
 
-- validar `allgym-web`
 - validar `allgym-sync`
+- validar una prueba completamente desde cero con `PostgreSQL` y configuracion inicial
 - instalador final completo
 - mantener frontend y features fuera de esta fase
 

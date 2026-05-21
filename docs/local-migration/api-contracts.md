@@ -90,6 +90,20 @@ Validacion tecnica del bundle standalone:
 - `2026-05-20`: `GET http://127.0.0.1:3000/` respondio con redirect a `/iniciar-sesion`
 - `2026-05-20`: `POST /api/auth/login`, `GET /api/auth/me` y `POST /api/auth/logout` funcionaron desde el bundle staged
 
+Validacion real en Windows VM:
+
+- `2026-05-20`: `allgym-web.exe status` respondio `Active (running)`
+- `2026-05-20`: `GET http://127.0.0.1:3000/api/health` respondio `200 OK` con `{"ok":true,"service":"web"}`
+- `2026-05-20`: `GET http://127.0.0.1:3000` cargo la UI real de login
+- `2026-05-20`: `Electron` abrio `http://127.0.0.1:3000` como app de escritorio minima
+- `2026-05-20`: `api-local` y `allgym-web` quedaron operando juntos como servicios locales
+- `2026-05-20`: `AllGym-Setup.exe` quedo validado para este bloque en la VM
+- `2026-05-20`: `login/logout/me` siguieron funcionando por `/api/auth/*` despues de la instalacion
+
+Pendiente:
+
+- prueba completamente desde cero con `PostgreSQL` y configuracion inicial en Windows limpio
+
 ### `POST /api/auth/login`
 
 Uso inicial de Fase 3. Sustituye:
