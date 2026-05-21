@@ -70,7 +70,7 @@ export function UserNav() {
               {user?.full_name || 'Usuario'}
             </p>
             <p className='text-muted-foreground text-xs leading-none'>
-              {user?.email || ''}
+              {user?.email || 'Sin correo'}
             </p>
           </div>
         </DropdownMenuLabel>

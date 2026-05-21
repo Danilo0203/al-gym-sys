@@ -98,7 +98,7 @@ export default function ForgotPasswordPage() {
           <CardHeader className="text-center">
             <CardTitle className="text-xl">Recuperar Contraseña</CardTitle>
             <CardDescription>
-              Ingresa tu correo electrónico para recibir un código de verificación
+              Ingresa tu correo electrónico para recibir un código de verificación. Si tu cuenta fue creada solo con teléfono, solicita el cambio a un administrador.
             </CardDescription>
           </CardHeader>
           <CardContent>

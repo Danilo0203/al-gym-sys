@@ -28,6 +28,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
   };
 
   const roleLabel = user.roleName || user.role || "Usuario";
+  const userEmail = user.email || "Sin correo";
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-2 md:p-4">
@@ -56,7 +57,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <IconMail className="h-3.5 w-3.5" />
-                  {user.email}
+                  {userEmail}
                 </span>
                 <span className="flex items-center gap-1">
                   <IconCalendar className="h-3.5 w-3.5" />
@@ -89,7 +90,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Correo electrónico</p>
-              <p className="font-medium text-sm">{user.email}</p>
+              <p className="font-medium text-sm">{userEmail}</p>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">ID de Usuario</p>

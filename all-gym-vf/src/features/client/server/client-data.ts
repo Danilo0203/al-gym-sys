@@ -80,7 +80,7 @@ export async function getCurrentClientProfileData(): Promise<ClientApiEnvelope<C
 
   return withMeta({
     id: user.id,
-    email: user.email || "",
+    email: user.email || null,
     full_name:
       typeof profile?.full_name === "string"
         ? profile.full_name

@@ -35,6 +35,17 @@ export default function VerifyCodePage() {
   const [token, setToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (!PASSWORD_RECOVERY_ENABLED) {
+      return;
+    }
+
+    if (!email) {
+      toast.error('Correo electrónico no encontrado');
+      router.push('/auth/forgot-password');
+    }
+  }, [email, router]);
+
   if (!PASSWORD_RECOVERY_ENABLED) {
     return (
       <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
@@ -62,13 +73,6 @@ export default function VerifyCodePage() {
       </div>
     );
   }
-
-  useEffect(() => {
-    if (!email) {
-      toast.error('Correo electrónico no encontrado');
-      router.push('/auth/forgot-password');
-    }
-  }, [email, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

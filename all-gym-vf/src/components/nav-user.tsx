@@ -77,7 +77,7 @@ export function NavUser() {
   }
 
   const userName = user.full_name || "Usuario";
-  const userEmail = user.email || "";
+  const userEmail = user.email || "Sin correo";
   const userAvatar = user.avatar_url || "";
 
   return (

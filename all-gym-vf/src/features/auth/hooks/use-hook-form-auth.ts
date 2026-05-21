@@ -7,9 +7,12 @@ import * as z from "zod";
 import { toast } from "sonner";
 import { createBrowserClient } from "@supabase/ssr";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
+import { isValidPasswordLoginIdentifier, resolvePasswordSignInCredentials } from "@/lib/auth/identifiers";
 
 const formSchema = z.object({
-  email: z.string().email({ message: "Introduce un correo electrónico válido" }),
+  identifier: z.string().refine((value) => isValidPasswordLoginIdentifier(value), {
+    message: "Introduce un correo o teléfono válido",
+  }),
   password: z.string().min(1, { message: "La contraseña es obligatoria" }),
 });
 
@@ -25,7 +28,7 @@ export function useHookFormAuth({ callbackUrl, onSuccessRedirect }: UseHookFormA
   const form = useForm<UserAuthFormValue>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: "demo@gmail.com",
+      identifier: "",
       password: "",
     },
   });
@@ -37,10 +40,13 @@ export function useHookFormAuth({ callbackUrl, onSuccessRedirect }: UseHookFormA
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
       );
 
-      const { error, data: authData } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
+      const credentials = resolvePasswordSignInCredentials(data.identifier, data.password);
+      if (!credentials) {
+        form.setError("identifier", { message: "Introduce un correo o teléfono válido" });
+        return;
+      }
+
+      const { error, data: authData } = await supabase.auth.signInWithPassword(credentials);
 
       if (error) {
         toast.error(error.message);

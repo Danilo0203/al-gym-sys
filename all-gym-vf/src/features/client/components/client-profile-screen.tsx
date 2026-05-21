@@ -96,7 +96,7 @@ export function ClientProfileScreen() {
               <ProfileMetricCard
                 icon={<IconMail className="h-4 w-4" />}
                 label="Correo"
-                value={data.email}
+                value={data.email || "Sin correo"}
                 helper="Credencial principal de tu cuenta"
               />
               <ProfileMetricCard

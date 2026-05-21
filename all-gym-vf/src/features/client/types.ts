@@ -25,7 +25,7 @@ export interface ClientOverviewSummary {
 
 export interface ClientProfilePayload {
   id: string;
-  email: string;
+  email: string | null;
   full_name: string | null;
   phone: string | null;
   birth_date: string | null;

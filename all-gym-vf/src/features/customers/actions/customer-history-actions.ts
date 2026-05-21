@@ -181,7 +181,7 @@ export interface SubscriptionEntry {
 export interface CustomerProfile {
   id: string;
   full_name: string;
-  email: string;
+  email: string | null;
   phone: string;
   avatar_url: string | null;
   gender: string | null;
@@ -221,7 +221,7 @@ export async function getCustomerProfile(customerId: string): Promise<CustomerPr
 
   return {
     ...data,
-    email: email || "",
+    email: email || null,
     created_at: profile?.created_at || null,
     is_active: data.is_active,
     subscription_status: data.subscription_status,

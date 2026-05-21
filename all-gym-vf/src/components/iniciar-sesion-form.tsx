@@ -8,12 +8,13 @@ import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/f
 import { Input } from "@/components/ui/input";
 import { PASSWORD_RECOVERY_ENABLED, OAUTH_LOGIN_ENABLED } from "@/lib/auth/feature-flags";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
+import { resolvePasswordSignInCredentials } from "@/lib/auth/identifiers";
 import { createBrowserClient } from "@supabase/ssr";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -27,10 +28,13 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
       );
 
-      const { error, data } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const credentials = resolvePasswordSignInCredentials(identifier, password);
+      if (!credentials) {
+        toast.error("Ingresa un correo o teléfono válido");
+        return;
+      }
+
+      const { error, data } = await supabase.auth.signInWithPassword(credentials);
 
       if (error) {
         toast.error(error.message === "Invalid login credentials" ? "Credenciales incorrectas" : error.message);
@@ -164,19 +168,19 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     </Button>
                   </Field>
                   <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
-                    O continúa con correo electrónico
+                    O continúa con tus credenciales
                   </FieldSeparator>
                 </>
               ) : null}
               <Field>
-                <FieldLabel htmlFor="email">Correo electrónico</FieldLabel>
+                <FieldLabel htmlFor="identifier">Correo o teléfono</FieldLabel>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@email.com"
+                  id="identifier"
+                  type="text"
+                  placeholder="tu@email.com o 12345678"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   disabled={isLoading}
                 />
               </Field>

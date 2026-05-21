@@ -3,10 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { normalizeGuatemalaPhoneForAuth } from '@/lib/auth/identifiers';
 
 export interface ProfileData {
   id: string;
-  email: string;
+  email: string | null;
   full_name: string | null;
   phone: string | null;
   birth_date: string | null;
@@ -43,7 +44,7 @@ export async function getCurrentUser(): Promise<{ success: boolean; data?: Profi
 
     const fallbackProfile: ProfileData = {
       id: user.id,
-      email: user.email || '',
+      email: user.email || null,
       full_name: user.user_metadata?.full_name || null,
       phone: null,
       birth_date: null,
@@ -103,7 +104,7 @@ export async function getCurrentUser(): Promise<{ success: boolean; data?: Profi
       success: true,
       data: {
         id: user.id,
-        email: user.email || '',
+        email: user.email || null,
         full_name: profile.full_name,
         phone: profile.phone,
         birth_date: profile.birth_date,
@@ -186,15 +187,22 @@ export async function updatePassword(
     // Get the authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError || !user || !user.email) {
+    if (authError || !user) {
       return { success: false, error: 'Usuario no autenticado' };
     }
 
+    const authCredentials = user.email
+      ? { email: user.email, password: currentPassword }
+      : user.phone
+        ? { phone: normalizeGuatemalaPhoneForAuth(user.phone) || user.phone, password: currentPassword }
+        : null;
+
+    if (!authCredentials) {
+      return { success: false, error: 'Tu cuenta no tiene un correo o teléfono configurado para validar la contraseña actual' };
+    }
+
     // First verify current password by attempting to sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: currentPassword,
-    });
+    const { error: signInError } = await supabase.auth.signInWithPassword(authCredentials);
 
     if (signInError) {
       return { success: false, error: 'La contraseña actual es incorrecta' };
