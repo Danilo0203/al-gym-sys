@@ -4,6 +4,10 @@ dist/
 build/
 .DS_Store
 
+installer/windows/electron-shell/build/
+installer/windows/electron-shell/build/installer.nsh
+installer
+
 .env
 .env.*
 **/.env
