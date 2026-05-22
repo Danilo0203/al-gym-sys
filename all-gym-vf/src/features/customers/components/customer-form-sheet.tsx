@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import {
   Sheet,
   SheetClose,
@@ -15,6 +14,7 @@ import { Controller } from "react-hook-form";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { FormInputGroup } from "@/components/forms/form-input-group";
 import { FormCheckboxGroup } from "@/components/forms/form-checkbox-group";
+import { FlexibleDatePickerInput } from "@/components/forms/flexible-date-picker-input";
 import { FormRadioGroup } from "@/components/forms/form-radio-group";
 import { FormSelect } from "@/components/forms/form-select";
 import { FormTextarea } from "@/components/forms/form-textarea";
@@ -30,11 +30,10 @@ import {
   IconRuler,
   IconDiscount,
 } from "@tabler/icons-react";
-import { useState } from "react";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { addDays, differenceInDays, format, isValid, parse } from "date-fns";
+import { addDays, differenceInDays } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   CARDIO_PREFERENCE_OPTIONS,
@@ -55,86 +54,6 @@ interface CustomerFormSheetProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
-}
-
-function DatePickerInput({
-  value,
-  onChange,
-  endMonth,
-}: {
-  value?: Date;
-  onChange: (date?: Date) => void;
-  endMonth?: Date;
-}) {
-  const [inputValue, setInputValue] = useState<string | undefined>(undefined);
-  const [open, setOpen] = useState(false);
-  const [visibleMonth, setVisibleMonth] = useState<Date>(value && isValid(value) ? value : new Date());
-  const displayedValue = inputValue ?? (value && isValid(value) ? format(value, "dd/MM/yyyy") : "");
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setInputValue(val);
-
-    if (val.length === 10) {
-      const parsed = parse(val, "dd/MM/yyyy", new Date());
-      if (isValid(parsed)) {
-        setVisibleMonth(parsed);
-        onChange(parsed);
-      }
-    } else if (val === "") {
-      onChange(undefined);
-    }
-  };
-
-  return (
-    <InputGroup>
-      <InputGroupInput
-        value={displayedValue}
-        onChange={handleInputChange}
-        onBlur={() => setInputValue(undefined)}
-        placeholder="DD/MM/YYYY"
-        maxLength={10}
-      />
-      <InputGroupAddon align="inline-end">
-        <Popover
-          modal={false}
-          open={open}
-          onOpenChange={(nextOpen) => {
-            setOpen(nextOpen);
-            if (nextOpen) {
-              setVisibleMonth(value && isValid(value) ? value : new Date());
-            }
-          }}
-        >
-          <PopoverTrigger asChild>
-            <InputGroupButton variant="ghost" size="icon-sm" className="shrink-0" tabIndex={-1}>
-              <IconCalendar className="h-4 w-4 opacity-50" />
-            </InputGroupButton>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="single"
-              selected={value}
-              month={visibleMonth}
-              onMonthChange={setVisibleMonth}
-              onSelect={(date) => {
-                onChange(date);
-                if (date && isValid(date)) {
-                  setVisibleMonth(date);
-                }
-                setInputValue(undefined);
-              }}
-              autoFocus
-              locale={es}
-              captionLayout="dropdown"
-              startMonth={new Date(1920, 0)}
-              endMonth={endMonth}
-            />
-          </PopoverContent>
-        </Popover>
-      </InputGroupAddon>
-    </InputGroup>
-  );
 }
 
 export function CustomerFormSheet({
@@ -265,7 +184,7 @@ export function CustomerFormSheet({
                     render={({ field, fieldState }) => (
                       <Field className="flex w-full flex-col" data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={String(field.name)}>Nacimiento</FieldLabel>
-                        <DatePickerInput value={field.value} onChange={field.onChange} endMonth={new Date()} />
+                        <FlexibleDatePickerInput value={field.value} onChange={field.onChange} endMonth={new Date()} />
                         <FieldError errors={[fieldState.error]} />
                       </Field>
                     )}
@@ -358,12 +277,20 @@ export function CustomerFormSheet({
                           <div className="grid grid-cols-[1fr_1fr_auto_80px] gap-2 items-center">
                             <div className="flex flex-col gap-1">
                               <span className="text-xs text-muted-foreground">Inicio</span>
-                              <DatePickerInput value={from} onChange={handleStartChange} endMonth={membershipEndMonth} />
+                              <FlexibleDatePickerInput
+                                value={from}
+                                onChange={handleStartChange}
+                                endMonth={membershipEndMonth}
+                              />
                             </div>
 
                             <div className="flex flex-col gap-1">
                               <span className="text-xs text-muted-foreground">Fin</span>
-                              <DatePickerInput value={to} onChange={handleEndChange} endMonth={membershipEndMonth} />
+                              <FlexibleDatePickerInput
+                                value={to}
+                                onChange={handleEndChange}
+                                endMonth={membershipEndMonth}
+                              />
                             </div>
 
                             <Popover modal={false}>

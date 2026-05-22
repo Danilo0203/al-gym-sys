@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Sheet,
   SheetContent,
@@ -13,12 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Controller } from "react-hook-form";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { FormCheckboxGroup } from "@/components/forms/form-checkbox-group";
+import { FlexibleDatePickerInput } from "@/components/forms/flexible-date-picker-input";
 import { FormSelect } from "@/components/forms/form-select";
 import { FormInputGroup } from "@/components/forms/form-input-group";
 import { FormRadioGroup } from "@/components/forms/form-radio-group";
 import { FormTextarea } from "@/components/forms/form-textarea";
 import {
-  IconCalendar,
   IconDiscount,
   IconScale,
   IconRuler,
@@ -26,12 +25,8 @@ import {
   IconLoader2,
   IconRefresh,
 } from "@tabler/icons-react";
-import { es } from "date-fns/locale";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { differenceInDays, format, isValid, parse } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { useHookFormRenewSubscription } from "../hooks/use-hook-form-customers";
 import {
   CARDIO_PREFERENCE_OPTIONS,
@@ -43,77 +38,6 @@ import {
   RESTRICTED_MOVEMENT_OPTIONS,
 } from "@/lib/training/options";
 import type { TrainingProfileInput } from "@/lib/training/types";
-
-function DatePickerInput({ value, onChange }: { value?: Date; onChange: (date?: Date) => void }) {
-  const [inputValue, setInputValue] = useState<string | undefined>(undefined);
-  const [open, setOpen] = useState(false);
-  const [visibleMonth, setVisibleMonth] = useState<Date>(value && isValid(value) ? value : new Date());
-  const displayedValue = inputValue ?? (value && isValid(value) ? format(value, "dd/MM/yyyy") : "");
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setInputValue(val);
-
-    if (val.length === 10) {
-      const parsed = parse(val, "dd/MM/yyyy", new Date());
-      if (isValid(parsed)) {
-        setVisibleMonth(parsed);
-        onChange(parsed);
-      }
-    } else if (val === "") {
-      onChange(undefined);
-    }
-  };
-
-  return (
-    <InputGroup>
-      <InputGroupInput
-        value={displayedValue}
-        onChange={handleInputChange}
-        onBlur={() => setInputValue(undefined)}
-        placeholder="DD/MM/YYYY"
-        maxLength={10}
-      />
-      <InputGroupAddon align="inline-end">
-        <Popover
-          open={open}
-          onOpenChange={(nextOpen) => {
-            setOpen(nextOpen);
-            if (nextOpen) {
-              setVisibleMonth(value && isValid(value) ? value : new Date());
-            }
-          }}
-        >
-          <PopoverTrigger asChild>
-            <InputGroupButton variant="ghost" size="icon-sm" className="shrink-0" tabIndex={-1}>
-              <IconCalendar className="h-4 w-4 opacity-50" />
-            </InputGroupButton>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="single"
-              selected={value}
-              month={visibleMonth}
-              onMonthChange={setVisibleMonth}
-              onSelect={(date) => {
-                onChange(date);
-                if (date && isValid(date)) {
-                  setVisibleMonth(date);
-                }
-                setInputValue(undefined);
-              }}
-              initialFocus
-              locale={es}
-              captionLayout="dropdown"
-              startMonth={new Date(1920, 0)}
-              endMonth={new Date(new Date().getFullYear() + 10, 11)}
-            />
-          </PopoverContent>
-        </Popover>
-      </InputGroupAddon>
-    </InputGroup>
-  );
-}
 // TIPO DE DATOS DEL SHEET
 interface RenewSubscriptionSheetProps {
   customerId: string;
@@ -248,13 +172,21 @@ export function RenewSubscriptionSheet({
                             {/* Fecha Inicio */}
                             <div className="flex flex-col gap-1">
                               <span className="text-xs text-muted-foreground">Inicio</span>
-                              <DatePickerInput value={from} onChange={handleStartChange} />
+                              <FlexibleDatePickerInput
+                                value={from}
+                                onChange={handleStartChange}
+                                endMonth={new Date(new Date().getFullYear() + 10, 11)}
+                              />
                             </div>
 
                             {/* Fecha Fin */}
                             <div className="flex flex-col gap-1">
                               <span className="text-xs text-muted-foreground">Fin</span>
-                              <DatePickerInput value={to} onChange={handleEndChange} />
+                              <FlexibleDatePickerInput
+                                value={to}
+                                onChange={handleEndChange}
+                                endMonth={new Date(new Date().getFullYear() + 10, 11)}
+                              />
                             </div>
 
                             {/* Días */}
