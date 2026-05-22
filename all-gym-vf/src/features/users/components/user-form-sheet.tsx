@@ -18,18 +18,33 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
   const [roleOptions, setRoleOptions] = useState<{ label: string; value: string }[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
+
     if (open) {
-      getAvailableRoles().then((result) => {
-        if (result.success && result.data) {
-          setRoleOptions(
-            result.data.map((r: RoleOption) => ({
-              label: r.name,
-              value: r.slug,
-            }))
-          );
-        }
-      });
+      void getAvailableRoles()
+        .then((result) => {
+          if (!isMounted) return;
+
+          if (result.success && result.data) {
+            setRoleOptions(
+              result.data.map((r: RoleOption) => ({
+                label: r.name,
+                value: r.slug,
+              })),
+            );
+          } else {
+            setRoleOptions([]);
+          }
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          setRoleOptions([]);
+        });
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [open]);
 
   return (

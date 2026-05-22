@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Heading } from '../ui/heading';
+import { RouteScopedContent } from './route-scoped-content';
 
 function PageSkeleton() {
   return (
@@ -60,9 +61,13 @@ export default function PageContainer({
               description={pageDescription ?? ''}
             />
           </div>
-          {pageHeaderAction ? <div>{pageHeaderAction}</div> : null}
+          {pageHeaderAction ? (
+            <div>
+              <RouteScopedContent scope='page-header-action'>{pageHeaderAction}</RouteScopedContent>
+            </div>
+          ) : null}
         </div>
-        {content}
+        <RouteScopedContent scope='page-content'>{content}</RouteScopedContent>
       </div>
     </ScrollArea>
   ) : (
@@ -74,9 +79,13 @@ export default function PageContainer({
             description={pageDescription ?? ''}
           />
         </div>
-        {pageHeaderAction ? <div>{pageHeaderAction}</div> : null}
+        {pageHeaderAction ? (
+          <div>
+            <RouteScopedContent scope='page-header-action'>{pageHeaderAction}</RouteScopedContent>
+          </div>
+        ) : null}
       </div>
-      {content}
+      <RouteScopedContent scope='page-content'>{content}</RouteScopedContent>
     </div>
   );
 }

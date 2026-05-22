@@ -19,20 +19,34 @@ interface RolesListingProps {
 export function RolesListing({ canUpdateRoles, canDeleteRoles }: RolesListingProps) {
   const [roles, setRoles] = useState<RoleData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingRole, setEditingRole] = useState<RoleData | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [deletingRole, setDeletingRole] = useState<RoleData | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const fetchRoles = async (silent = false) => {
-    if (!silent) setLoading(true);
-    const result = await getRoles();
-    if (result.success && result.data) {
-      setRoles(result.data);
-    } else {
-      toast.error(result.error || "Error al cargar roles");
+    if (!silent) {
+      setLoading(true);
     }
-    if (!silent) setLoading(false);
+
+    try {
+      const result = await getRoles();
+      if (result.success && result.data) {
+        setRoles(result.data);
+        setLoadError(null);
+      } else {
+        const errorMessage = result.error || "Error al cargar roles";
+        setLoadError(errorMessage);
+        toast.error(errorMessage);
+      }
+    } catch {
+      const errorMessage = "Error al cargar roles";
+      setLoadError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -46,6 +60,14 @@ export function RolesListing({ canUpdateRoles, canDeleteRoles }: RolesListingPro
         {[1, 2, 3, 4, 5].map((i) => (
           <Skeleton key={i} className="h-16 w-full" />
         ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
+        Error al cargar roles: {loadError}
       </div>
     );
   }

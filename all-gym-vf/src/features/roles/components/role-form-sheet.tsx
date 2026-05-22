@@ -58,6 +58,28 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
   });
 
   useEffect(() => {
+    let isMounted = true;
+
+    const hydrateRoleForm = async () => {
+      const permissionsResult = await getPermissions();
+      if (isMounted) {
+        if (permissionsResult.success && permissionsResult.data) {
+          setPermissions(permissionsResult.data);
+        } else {
+          setPermissions([]);
+        }
+      }
+
+      if (!role) return;
+
+      const rolePermissionsResult = await getRolePermissions(role.id);
+      if (!isMounted) return;
+
+      if (rolePermissionsResult.success && rolePermissionsResult.data) {
+        setSelectedPermIds(new Set(rolePermissionsResult.data));
+      }
+    };
+
     if (open) {
       form.reset({
         name: role?.name || "",
@@ -65,26 +87,15 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
       });
       setSelectedPermIds(new Set());
       setPermissionQuery("");
-      loadPermissions();
-      if (role) {
-        loadRolePermissions(role.id);
-      }
+      void hydrateRoleForm().catch(() => {
+        if (!isMounted) return;
+        setPermissions([]);
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [open, role, form]);
-
-  const loadPermissions = async () => {
-    const result = await getPermissions();
-    if (result.success && result.data) {
-      setPermissions(result.data);
-    }
-  };
-
-  const loadRolePermissions = async (roleId: string) => {
-    const result = await getRolePermissions(roleId);
-    if (result.success && result.data) {
-      setSelectedPermIds(new Set(result.data));
-    }
-  };
 
   const togglePermission = (permId: string) => {
     setSelectedPermIds((prev) => {
