@@ -4,12 +4,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { UserFormSheet } from "./user-form-sheet";
-import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 
-export function CreateUserButton() {
+interface CreateUserButtonProps {
+  canCreate: boolean;
+}
+
+export function CreateUserButton({ canCreate }: CreateUserButtonProps) {
   const [open, setOpen] = useState(false);
-  const { data: user } = useCurrentUser();
-  const canCreate = Boolean(user?.isOwner || user?.permissions?.includes("users.create"));
 
   if (!canCreate) return null;
 

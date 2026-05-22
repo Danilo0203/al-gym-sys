@@ -15,15 +15,19 @@ export default async function RolesPage() {
   if (!access.isAuthenticated) redirect("/iniciar-sesion");
   if (!hasPermission(access, "roles.view")) redirect("/panel");
 
+  const canCreateRoles = hasPermission(access, "roles.create");
+  const canUpdateRoles = hasPermission(access, "roles.update");
+  const canDeleteRoles = hasPermission(access, "roles.delete");
+
   return (
     <PageContainer
       scrollable={false}
       pageTitle="Roles"
       pageDescription="Administración de roles internos y sus permisos"
-      pageHeaderAction={hasPermission(access, "roles.create") ? <CreateRoleButton /> : null}
+      pageHeaderAction={canCreateRoles ? <CreateRoleButton canCreate={canCreateRoles} /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={4} rowCount={5} />}>
-        <RolesListing />
+        <RolesListing canUpdateRoles={canUpdateRoles} canDeleteRoles={canDeleteRoles} />
       </Suspense>
     </PageContainer>
   );

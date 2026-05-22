@@ -19,15 +19,18 @@ export default async function UsersPage() {
     redirect("/panel");
   }
 
+  const canCreateUsers = hasPermission(access, "users.create");
+  const canUpdateUsers = hasPermission(access, "users.update");
+
   return (
     <PageContainer
       scrollable={false}
       pageTitle="Usuarios"
       pageDescription="Administración de usuarios del sistema"
-      pageHeaderAction={hasPermission(access, "users.create") ? <CreateUserButton /> : null}
+      pageHeaderAction={canCreateUsers ? <CreateUserButton canCreate={canCreateUsers} /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={4} rowCount={8} />}>
-        <UserListing />
+        <UserListing canUpdateUsers={canUpdateUsers} />
       </Suspense>
     </PageContainer>
   );

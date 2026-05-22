@@ -7,7 +7,11 @@ import { UsersTable } from "./users-table";
 import { toast } from "sonner";
 import { subscribeAdminRefresh } from "@/lib/admin-refresh";
 
-export default function UserListing() {
+interface UserListingProps {
+  canUpdateUsers: boolean;
+}
+
+export default function UserListing({ canUpdateUsers }: UserListingProps) {
   const [users, setUsers] = useState<UserData[]>([]);
   const [roleNameMap, setRoleNameMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -37,5 +41,5 @@ export default function UserListing() {
     return <DataTableSkeleton columnCount={5} rowCount={8} />;
   }
 
-  return <UsersTable data={users} roleNameMap={roleNameMap} />;
+  return <UsersTable data={users} roleNameMap={roleNameMap} canUpdateUsers={canUpdateUsers} />;
 }

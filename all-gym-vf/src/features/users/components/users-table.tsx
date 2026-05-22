@@ -26,17 +26,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DataTableColumnHeader } from "@/components/ui/table/data-table-column-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconEdit, IconUserCheck, IconUserOff } from "@tabler/icons-react";
-import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { emitAdminRefresh } from "@/lib/admin-refresh";
 
 interface UsersTableProps {
   data: UserData[];
   roleNameMap?: Record<string, string>;
+  canUpdateUsers: boolean;
 }
 
-export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
-  const { data: currentUser } = useCurrentUser();
-  const canUpdateUsers = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("users.update"));
+export function UsersTable({ data, roleNameMap = {}, canUpdateUsers }: UsersTableProps) {
   const canManageStatus = canUpdateUsers;
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
