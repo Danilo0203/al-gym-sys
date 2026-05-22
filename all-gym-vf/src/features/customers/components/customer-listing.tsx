@@ -133,7 +133,7 @@ export default async function CustomerListingPage() {
   if (customerIds.length > 0) {
     const { data: profiles, error: profilesError } = await adminClient
       .from("profiles")
-      .select("id, biometric_id")
+      .select("id, biometric_id, created_at")
       .in("id", customerIds);
 
     if (profilesError) {
@@ -142,6 +142,14 @@ export default async function CustomerListingPage() {
       const biometricIdByCustomerId = new Map(
         (profiles || []).map((profile) => [profile.id, profile.biometric_id as number | null]),
       );
+      const createdAtByCustomerId = new Map(
+        (profiles || []).map((profile) => [profile.id, typeof profile.created_at === "string" ? profile.created_at : null]),
+      );
+      const baseEnrichedCustomers = customerRows.map((customer) => ({
+        ...customer,
+        biometric_id: biometricIdByCustomerId.get(customer.id) ?? null,
+        created_at: createdAtByCustomerId.get(customer.id) || null,
+      }));
 
       const biometricIds = Array.from(
         new Set(
@@ -172,8 +180,8 @@ export default async function CustomerListingPage() {
             }
           }
 
-          enrichedCustomers = customerRows.map((customer) => {
-            const biometricId = biometricIdByCustomerId.get(customer.id);
+          enrichedCustomers = baseEnrichedCustomers.map((customer) => {
+            const biometricId = customer.biometric_id;
             const latestAttendance =
               biometricId != null
                 ? latestAttendanceByBiometricId.get(biometricId) || null
@@ -181,12 +189,15 @@ export default async function CustomerListingPage() {
 
             return {
               ...customer,
-              biometric_id: biometricId ?? null,
               last_check_in: latestAttendance || customer.last_check_in || null,
             };
           });
+        } else {
+          enrichedCustomers = baseEnrichedCustomers;
         }
-      }
+      } else {
+        enrichedCustomers = baseEnrichedCustomers;
+      } 
     }
   }
 

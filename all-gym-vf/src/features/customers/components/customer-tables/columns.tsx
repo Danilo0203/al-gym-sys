@@ -46,6 +46,7 @@ function WhatsAppCell({ customer }: { customer: Customer }) {
 export type Customer = {
   id: string;
   full_name: string | null;
+  created_at?: string | null;
   phone: string | null;
   avatar_url: string | null;
   role: string | null;
@@ -115,6 +116,33 @@ export function getColumns(
                 </span>
               )}
             </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "created_at",
+      size: 180,
+      minSize: 170,
+      header: "CREACIÓN",
+      meta: {
+        label: "Fecha de creación",
+      },
+      cell: ({ row }) => {
+        const date = row.original.created_at;
+        if (!date) return <span className="text-muted-foreground">-</span>;
+
+        const parsedDate = new Date(date);
+        if (Number.isNaN(parsedDate.getTime())) {
+          return <span className="text-sm text-muted-foreground">{date}</span>;
+        }
+
+        return (
+          <div className="flex flex-col">
+            <span className="text-sm text-muted-foreground">{format(parsedDate, "dd/MM/yyyy", { locale: es })}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {format(parsedDate, "HH:mm 'hs'", { locale: es })}
+            </span>
           </div>
         );
       },
