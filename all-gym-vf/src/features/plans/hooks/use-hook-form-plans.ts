@@ -7,11 +7,22 @@ import * as z from "zod";
 import { Plan } from "../actions/plan-actions";
 import { useCreatePlan, useUpdatePlan } from "./use-plans";
 
+const requiredPositiveInteger = (fieldName: string) =>
+  z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (typeof value === "number") return value;
+    const normalized = Number(value);
+    return Number.isNaN(normalized) ? value : normalized;
+  }, z
+    .number({ message: `${fieldName} es obligatorio` })
+    .int({ message: `${fieldName} debe ser un número entero` })
+    .min(1, { message: `${fieldName} debe ser al menos 1` }));
+
 const planFormSchema = z.object({
   name: z.string().min(2, { message: "El nombre es obligatorio" }),
   description: z.string().optional(),
   price: z.coerce.number().min(0, { message: "El precio debe ser mayor o igual a 0" }),
-  duration_days: z.coerce.number().min(1, { message: "La duración debe ser al menos 1 día" }),
+  duration_days: requiredPositiveInteger("La duración en días"),
   is_active: z.boolean().default(true),
 });
 
@@ -49,7 +60,7 @@ export function useHookFormPlans({
       name: "",
       description: "",
       price: 0,
-      duration_days: 30,
+      duration_days: undefined,
       is_active: true,
     },
   });
@@ -70,7 +81,7 @@ export function useHookFormPlans({
       name: "",
       description: "",
       price: 0,
-      duration_days: 30,
+      duration_days: undefined,
       is_active: true,
     });
   }, [open, isEditing, plan, form]);

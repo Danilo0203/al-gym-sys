@@ -99,6 +99,8 @@ export function PlanFormSheet({
                     name="duration_days"
                     label="Duración (Días)"
                     type="number"
+                    min={0}
+                    step={1}
                     placeholder="30"
                   />
                 </div>
