@@ -1,9 +1,11 @@
 "use server";
 
+import { INTERNAL_USER_ROLES, isInternalRole, parseUserRole } from "@/lib/auth/role-utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { revalidatePath } from "next/cache";
 import { UserRole } from "@/types";
+import { ExtendedColumnSort } from "@/types/data-table";
 
 export interface UserData {
   id: string;
@@ -28,8 +30,6 @@ export interface UpdateUserData {
   password?: string;
 }
 
-import { ExtendedColumnSort } from "@/types/data-table";
-
 type AuthUserRecord = {
   id: string;
   email: string | null;
@@ -38,14 +38,16 @@ type AuthUserRecord = {
   raw_user_meta_data?: Record<string, unknown> | null;
 };
 
-const VALID_USER_ROLES: UserRole[] = ["owner", "admin", "trainer", "employee", "client"];
-
-function isUserRole(value: unknown): value is UserRole {
-  return typeof value === "string" && VALID_USER_ROLES.includes(value as UserRole);
+function normalizeRole(value: unknown): UserRole {
+  return parseUserRole(value) ?? "client";
 }
 
-function normalizeRole(value: unknown): UserRole {
-  return isUserRole(value) ? value : "client";
+function ensureInternalUserRole(role: UserRole): { ok: true } | { ok: false; error: string } {
+  if (isInternalRole(role)) {
+    return { ok: true };
+  }
+
+  return { ok: false, error: "Los clientes se administran desde el módulo de Clientes." };
 }
 
 async function listAllAuthUsers(adminClient: ReturnType<typeof createAdminClient>): Promise<AuthUserRecord[]> {
@@ -88,12 +90,18 @@ export async function getAvailableRoles(): Promise<{ success: boolean; data?: Ro
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
       .from("roles")
-      .select("slug, name")
+      .select("slug, name, scope")
+      .eq("scope", "panel")
       .order("name", { ascending: true });
 
     if (error) return { success: false, error: error.message };
 
-    return { success: true, data: data as RoleOption[] };
+    return {
+      success: true,
+      data: (data as Array<RoleOption & { scope?: string | null }>).filter((role) =>
+        INTERNAL_USER_ROLES.includes(role.slug as (typeof INTERNAL_USER_ROLES)[number]),
+      ),
+    };
   } catch {
     return { success: false, error: "Error al obtener roles" };
   }
@@ -153,6 +161,10 @@ export async function getUsers(params?: {
     });
 
     const filteredData = combinedData.filter((user) => {
+      if (!isInternalRole(user.role)) {
+        return false;
+      }
+
       if (role) {
         const roles = typeof role === "string" ? role.split(",") : Array.isArray(role) ? role : [role];
         if (roles.length > 0 && !roles.includes(user.role)) {
@@ -196,7 +208,9 @@ export async function getUsers(params?: {
     const roleNameMap: Record<string, string> = {};
     if (rolesResult.data) {
       for (const r of rolesResult.data as { slug: string; name: string }[]) {
-        roleNameMap[r.slug] = r.name;
+        if (INTERNAL_USER_ROLES.includes(r.slug as (typeof INTERNAL_USER_ROLES)[number])) {
+          roleNameMap[r.slug] = r.name;
+        }
       }
     }
 
@@ -216,6 +230,10 @@ export async function createUser(data: CreateUserData): Promise<{ success: boole
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
     if (!hasPermission(access, "users.create")) {
       return { success: false, error: "No autorizado: Se requiere permiso users.create" };
+    }
+    const roleValidation = ensureInternalUserRole(data.role);
+    if (!roleValidation.ok) {
+      return { success: false, error: roleValidation.error };
     }
     const adminClient = createAdminClient();
     const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
@@ -271,6 +289,12 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
     if (!hasPermission(access, "users.update")) {
       return { success: false, error: "No autorizado: Se requiere permiso users.update" };
+    }
+    if (data.role) {
+      const roleValidation = ensureInternalUserRole(data.role);
+      if (!roleValidation.ok) {
+        return { success: false, error: roleValidation.error };
+      }
     }
     const adminClient = createAdminClient();
     const updateData: Pick<UpdateUserData, "full_name" | "role"> = {};

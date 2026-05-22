@@ -40,7 +40,7 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
           <SheetDescription>
             {isEditing
               ? "Modifica los datos del usuario. Deja la contraseña en blanco para mantener la actual."
-              : "Crea un nuevo usuario para el sistema."}
+              : "Crea un nuevo usuario interno para el sistema. Los clientes se registran desde Clientes."}
           </SheetDescription>
         </SheetHeader>
 
@@ -83,7 +83,6 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
                     { label: "Administrador", value: "admin" },
                     { label: "Entrenador", value: "trainer" },
                     { label: "Empleado", value: "employee" },
-                    { label: "Cliente", value: "client" },
                   ]}
                 />
                 <FormInput

@@ -1,6 +1,10 @@
 import type { UserRole } from "@/types";
 
-export const VALID_USER_ROLES: UserRole[] = ["owner", "admin", "trainer", "employee", "client"];
+export const VALID_USER_ROLES = ["owner", "admin", "trainer", "employee", "client"] as const satisfies readonly UserRole[];
+export const INTERNAL_USER_ROLES = ["owner", "admin", "trainer", "employee"] as const satisfies readonly Exclude<
+  UserRole,
+  "client"
+>[];
 export const DEFAULT_PANEL_ROUTE = "/panel/resumen";
 export const DEFAULT_CLIENT_ROUTE = "/mi/rutina";
 
@@ -14,7 +18,7 @@ export function isClientRole(role: UserRole | null | undefined): role is "client
 }
 
 export function isInternalRole(role: UserRole | null | undefined): role is Exclude<UserRole, "client"> {
-  return role === "owner" || role === "admin" || role === "trainer" || role === "employee";
+  return INTERNAL_USER_ROLES.includes(role as Exclude<UserRole, "client">);
 }
 
 export function isPanelScope(scope: string | null | undefined): scope is "panel" {

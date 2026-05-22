@@ -1,5 +1,6 @@
 "use client";
 
+import { INTERNAL_USER_ROLES, isInternalRole } from "@/lib/auth/role-utils";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +12,7 @@ import { UserRole } from "@/types";
 const userFormSchema = z.object({
   email: z.string().email({ message: "Correo electrónico inválido" }),
   full_name: z.string().min(2, { message: "El nombre es obligatorio" }),
-  role: z.enum(["owner", "admin", "trainer", "employee", "client"], {
+  role: z.enum(INTERNAL_USER_ROLES, {
     message: "Selecciona un rol válido",
   }),
   password: z.string().optional(),
@@ -50,7 +51,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
       form.reset({
         email: user?.email || "",
         full_name: user?.full_name || "",
-        role: user?.role || "employee",
+        role: user?.role && isInternalRole(user.role) ? user.role : "employee",
         password: "",
       });
     }
