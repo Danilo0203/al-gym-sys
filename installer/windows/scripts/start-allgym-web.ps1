@@ -68,9 +68,6 @@ if (-not $env:NEXT_TELEMETRY_DISABLED) {
   $env:NEXT_TELEMETRY_DISABLED = "1"
 }
 
-$logWriter = New-Object System.IO.StreamWriter($LogFile, $true, [System.Text.UTF8Encoding]::new($false))
-$logWriter.AutoFlush = $true
-
 function Write-WebLogLine {
   param([string]$Message)
 
@@ -79,59 +76,37 @@ function Write-WebLogLine {
   }
 
   $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-  $logWriter.WriteLine("[$timestamp] $Message")
+  [System.IO.File]::AppendAllText(
+    $LogFile,
+    "[$timestamp] $Message$([Environment]::NewLine)",
+    [System.Text.UTF8Encoding]::new($false)
+  )
 }
 
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
-$process.StartInfo.FileName = $NodeExecutable
-$process.StartInfo.Arguments = "`"$ServerJs`""
-$process.StartInfo.WorkingDirectory = $WebRoot
-$process.StartInfo.UseShellExecute = $false
-$process.StartInfo.CreateNoWindow = $true
-$process.StartInfo.RedirectStandardOutput = $true
-$process.StartInfo.RedirectStandardError = $true
+function Write-WebLogObject {
+  param([object]$Value)
 
-$stdoutHandler = [System.Diagnostics.DataReceivedEventHandler]{
-  param($sender, $eventArgs)
-
-  if ($null -ne $eventArgs.Data) {
-    Write-WebLogLine $eventArgs.Data
+  if ($null -eq $Value) {
+    return
   }
-}
 
-$stderrHandler = [System.Diagnostics.DataReceivedEventHandler]{
-  param($sender, $eventArgs)
-
-  if ($null -ne $eventArgs.Data) {
-    Write-WebLogLine $eventArgs.Data
+  if ($Value -is [System.Management.Automation.ErrorRecord]) {
+    Write-WebLogLine $Value.ToString()
+    return
   }
+
+  Write-WebLogLine ([string]$Value)
 }
 
-$process.add_OutputDataReceived($stdoutHandler)
-$process.add_ErrorDataReceived($stderrHandler)
-
+Push-Location $WebRoot
 try {
   Write-WebLogLine "Launching allgym-web with $NodeExecutable $ServerJs"
-
-  $started = $process.Start()
-  if (-not $started) {
-    throw "Failed to start allgym-web node process."
+  & $NodeExecutable $ServerJs 2>&1 | ForEach-Object {
+    Write-WebLogObject $_
   }
-
-  $process.BeginOutputReadLine()
-  $process.BeginErrorReadLine()
-  $process.WaitForExit()
-  $process.WaitForExit()
-
-  Write-WebLogLine "allgym-web exited with code $($process.ExitCode)"
-  exit $process.ExitCode
+  $exitCode = $LASTEXITCODE
+  Write-WebLogLine "allgym-web exited with code $exitCode"
+  exit $exitCode
 } finally {
-  if ($null -ne $process) {
-    $process.remove_OutputDataReceived($stdoutHandler)
-    $process.remove_ErrorDataReceived($stderrHandler)
-    $process.Dispose()
-  }
-
-  $logWriter.Dispose()
+  Pop-Location
 }
