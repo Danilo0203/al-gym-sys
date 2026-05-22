@@ -6,6 +6,7 @@ const API_HEALTH_URL = process.env.ALLGYM_API_URL || "http://127.0.0.1:4000/heal
 const BOOT_TIMEOUT_MS = clampNumber(process.env.ALLGYM_ELECTRON_BOOT_TIMEOUT_MS, 45000, 30000, 60000);
 const PROBE_TIMEOUT_MS = 2000;
 const PROBE_INTERVAL_MS = 1000;
+const DEBUG_TOOLS_ENABLED = process.env.ALLGYM_DEBUG === "1";
 
 let activeLaunchToken = 0;
 let mainWindow = null;
@@ -240,6 +241,14 @@ async function launchApp(window) {
   }
 }
 
+function openDevTools() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.openDevTools({ mode: "detach" });
+}
+
 function buildMenu() {
   return Menu.buildFromTemplate([
     {
@@ -256,6 +265,18 @@ function buildMenu() {
         },
         { type: "separator" },
         { role: "quit" }
+      ]
+    },
+    {
+      label: "Ver",
+      submenu: [
+        {
+          label: "Abrir DevTools",
+          accelerator: "F12",
+          click: () => {
+            openDevTools();
+          }
+        }
       ]
     }
   ]);
@@ -274,6 +295,25 @@ function createWindow() {
 
   mainWindow = window;
   Menu.setApplicationMenu(buildMenu());
+
+  window.webContents.on("before-input-event", (_event, input) => {
+    const isF12 = input.type === "keyDown" && input.key === "F12";
+    const isCtrlShiftI =
+      input.type === "keyDown" &&
+      input.control &&
+      input.shift &&
+      String(input.key).toUpperCase() === "I";
+
+    if (isF12 || isCtrlShiftI) {
+      openDevTools();
+    }
+  });
+
+  if (DEBUG_TOOLS_ENABLED) {
+    window.webContents.once("did-finish-load", () => {
+      openDevTools();
+    });
+  }
 
   ipcMain.removeAllListeners("allgym-shell:retry-load-ui");
   ipcMain.on("allgym-shell:retry-load-ui", () => {
