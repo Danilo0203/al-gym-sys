@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-05-20T22:53:06.596Z",
+  "stageRoot": "/Users/danilo0203/Desarrollo/all-gym-sys/installer/windows/staging",
+  "programFilesRoot": "/Users/danilo0203/Desarrollo/all-gym-sys/installer/windows/staging/ProgramFiles/AllGym",
+  "programDataRoot": "/Users/danilo0203/Desarrollo/all-gym-sys/installer/windows/staging/ProgramData/AllGym",
+  "apiLocal": {
+    "serviceName": "allgym-api-local",
+    "entrypoint": "ProgramFiles/AllGym/api-local/dist/server.js",
+    "winswConfig": "ProgramFiles/AllGym/winsw/allgym-api-local.xml",
+    "winswBinaryPresent": false,
+    "nodeRuntimePresent": false,
+    "envTemplate": "ProgramData/AllGym/config/api-local.env.example",
+    "envTemplateInProgramFiles": "ProgramFiles/AllGym/templates/api-local.env.example",
+    "startScript": "ProgramFiles/AllGym/scripts/start-api-local.ps1"
+  },
+  "web": {
+    "serviceName": "allgym-web",
+    "entrypoint": "ProgramFiles/AllGym/allgym-web/server.js",
+    "winswConfig": "ProgramFiles/AllGym/winsw/allgym-web.xml",
+    "winswBinaryPresent": false,
+    "staticAssets": "ProgramFiles/AllGym/allgym-web/.next/static",
+    "publicAssets": "ProgramFiles/AllGym/allgym-web/public",
+    "envTemplate": "ProgramData/AllGym/config/allgym-web.env.example",
+    "envTemplateInProgramFiles": "ProgramFiles/AllGym/templates/allgym-web.env.example",
+    "startScript": "ProgramFiles/AllGym/scripts/start-allgym-web.ps1"
+  }
+}

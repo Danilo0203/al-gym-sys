@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { isLocalAuthEnabled } from "@/lib/auth/local-auth-server";
 import { runPaymentsPostedQueryCompat } from "@/lib/payments/schema-compat";
 import { startOfMonth, endOfMonth, subMonths, format, differenceInDays, addDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -127,12 +128,55 @@ function getPlanName(planRelation: PlanRelation, fallback: string) {
   return getRelationItem(planRelation)?.name || fallback;
 }
 
+function getEmptyDashboardKPIs(): DashboardKPIs {
+  return {
+    totalRevenue: 0,
+    revenueChange: 0,
+    activeMembers: 0,
+    inactiveMembers: 0,
+    churnRate: 0,
+    avgTicket: 0,
+    cashAmount: 0,
+    cardAmount: 0,
+    transferAmount: 0,
+  };
+}
+
+function getEmptyRevenueByMonth(): RevenueByMonth[] {
+  return Array.from({ length: 6 }, (_, index) => ({
+    month: format(subMonths(new Date(), 5 - index), "MMM", { locale: es }),
+    revenue: 0,
+  }));
+}
+
+function getEmptySubscriptionsFlow(): SubscriptionsFlow[] {
+  return Array.from({ length: 6 }, (_, index) => ({
+    month: format(subMonths(new Date(), 5 - index), "MMM", { locale: es }),
+    newSubs: 0,
+    cancelled: 0,
+  }));
+}
+
+async function getDashboardSupabaseClient() {
+  if (isLocalAuthEnabled()) {
+    return null;
+  }
+
+  try {
+    return await createClient();
+  } catch (error) {
+    console.error("Dashboard fallback activated:", error);
+    return null;
+  }
+}
+
 // ====================
 // FUNCIONES PRINCIPALES
 // ====================
 
 export async function getDashboardKPIs(dateRange?: DashboardDateRange): Promise<DashboardKPIs> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return getEmptyDashboardKPIs();
   const now = new Date();
 
   // Usar el rango proporcionado o el mes actual por defecto
@@ -241,7 +285,8 @@ export async function getDashboardKPIs(dateRange?: DashboardDateRange): Promise<
 }
 
 export async function getRevenueByMonth(): Promise<RevenueByMonth[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return getEmptyRevenueByMonth();
   const months: RevenueByMonth[] = [];
 
   for (let i = 5; i >= 0; i--) {
@@ -273,7 +318,8 @@ export async function getRevenueByMonth(): Promise<RevenueByMonth[]> {
 }
 
 export async function getPlanDistribution(): Promise<PlanDistribution[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return [];
 
   const { data } = await supabase
     .from("subscriptions")
@@ -310,7 +356,8 @@ export async function getPlanDistribution(): Promise<PlanDistribution[]> {
 }
 
 export async function getRecentPayments(limit: number = 10): Promise<RecentPayment[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return [];
 
   const { data } = await runPaymentsPostedQueryCompat((usePostedFilter) => {
     let query = supabase
@@ -361,7 +408,8 @@ export async function getRecentPayments(limit: number = 10): Promise<RecentPayme
 }
 
 export async function getExpiringSubscriptions(daysAhead: number = 5): Promise<ExpiringSubscription[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return [];
   const today = new Date();
   const futureDate = addDays(today, daysAhead);
 
@@ -404,7 +452,8 @@ export async function getExpiringSubscriptions(daysAhead: number = 5): Promise<E
 }
 
 export async function getInactiveCustomers(limit: number = 10): Promise<InactiveCustomer[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return [];
   const today = new Date();
 
   const { data } = await supabase
@@ -461,7 +510,8 @@ export async function getInactiveCustomers(limit: number = 10): Promise<Inactive
 }
 
 export async function getSubscriptionsFlow(): Promise<SubscriptionsFlow[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return getEmptySubscriptionsFlow();
   const flow: SubscriptionsFlow[] = [];
 
   for (let i = 5; i >= 0; i--) {
@@ -497,7 +547,8 @@ export async function getSubscriptionsFlow(): Promise<SubscriptionsFlow[]> {
 export async function getPaymentMethodDistribution(
   dateRange?: DashboardDateRange,
 ): Promise<PaymentMethodDistribution[]> {
-  const supabase = await createClient();
+  const supabase = await getDashboardSupabaseClient();
+  if (!supabase) return [];
   const now = new Date();
 
   const periodStart = dateRange?.from ? new Date(dateRange.from + "T00:00:00") : startOfMonth(now);

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isLocalAuthEnabled, LocalApiError, requestLocalApi } from '@/lib/auth/local-auth-server';
 
 export interface ProfileData {
   id: string;
@@ -32,6 +33,48 @@ export interface UpdateProfileData {
  */
 export async function getCurrentUser(): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
+    if (isLocalAuthEnabled()) {
+      const response = await requestLocalApi<{
+        authenticated: boolean;
+        user: {
+          id: string;
+          email: string;
+          full_name: string | null;
+          role: string | null;
+          roleScope: "panel" | "client" | null;
+          permissions: string[];
+          isOwner: boolean;
+          mustChangePassword?: boolean;
+        } | null;
+      }>('/auth/me');
+
+      if (!response?.authenticated || !response.user) {
+        return { success: false, error: 'Usuario no autenticado' };
+      }
+
+      const user = response.user;
+      const roleName = typeof user.role === "string" && user.role.trim().length > 0 ? user.role : null;
+
+      return {
+        success: true,
+        data: {
+          id: user.id,
+          email: user.email || '',
+          full_name: user.full_name,
+          phone: null,
+          birth_date: null,
+          gender: null,
+          avatar_url: null,
+          role: user.role,
+          roleName,
+          permissions: Array.isArray(user.permissions) ? user.permissions : [],
+          isOwner: Boolean(user.isOwner),
+          created_at: new Date().toISOString(),
+          updated_at: null,
+        }
+      };
+    }
+
     const supabase = await createClient();
     
     // Get the authenticated user
@@ -118,6 +161,9 @@ export async function getCurrentUser(): Promise<{ success: boolean; data?: Profi
       }
     };
   } catch (error) {
+    if (error instanceof LocalApiError && error.status === 401) {
+      return { success: false, error: 'Usuario no autenticado' };
+    }
     console.error('Error in getCurrentUser:', error);
     return { success: false, error: 'Error al obtener datos del usuario' };
   }
@@ -128,6 +174,10 @@ export async function getCurrentUser(): Promise<{ success: boolean; data?: Profi
  */
 export async function updateProfile(data: UpdateProfileData): Promise<{ success: boolean; error?: string }> {
   try {
+    if (isLocalAuthEnabled()) {
+      return { success: false, error: 'La edición de perfil local todavía no está disponible.' };
+    }
+
     const supabase = await createClient();
     
     // Get the authenticated user
@@ -181,6 +231,10 @@ export async function updatePassword(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (isLocalAuthEnabled()) {
+      return { success: false, error: 'El cambio de contraseña local todavía no está disponible.' };
+    }
+
     const supabase = await createClient();
     
     // Get the authenticated user

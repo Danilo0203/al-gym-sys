@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:turbo": "next dev --turbopack",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "stage:windows:web": "node scripts/stage-windows-web.mjs",
+    "build:windows:web": "npm run build && npm run stage:windows:web"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

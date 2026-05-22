@@ -45,6 +45,12 @@
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, Menlo, monospace;
+  --font-inter: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-instrument: "Instrument Sans", Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-mullish: Mulish, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-geist: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-geist-mono: "JetBrains Mono", Menlo, monospace;
+  --font-noto-mono: "Noto Sans Mono", "JetBrains Mono", Menlo, monospace;
   --shadow-color: 0 0 0;
   --shadow-opacity: 0.05;
   --shadow-blur: 4px;
@@ -103,6 +109,12 @@
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, Menlo, monospace;
+  --font-inter: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-instrument: "Instrument Sans", Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-mullish: Mulish, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-geist: Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  --font-geist-mono: "JetBrains Mono", Menlo, monospace;
+  --font-noto-mono: "Noto Sans Mono", "JetBrains Mono", Menlo, monospace;
   --shadow-color: 0 0 0;
   --shadow-opacity: 0.4;
   --shadow-blur: 8px;

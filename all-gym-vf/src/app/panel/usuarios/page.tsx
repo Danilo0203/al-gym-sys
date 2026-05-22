@@ -33,10 +33,13 @@ export default async function UsersPage(props: PageProps) {
       scrollable={false}
       pageTitle="Usuarios"
       pageDescription="Administración de usuarios del sistema"
-      pageHeaderAction={hasPermission(access, "users.create") ? <CreateUserButton /> : null}
+      pageHeaderAction={hasPermission(access, "users.create") ? <CreateUserButton canCreate /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={4} rowCount={8} />}>
-        <UserListing />
+        <UserListing
+          canUpdateUsers={hasPermission(access, "users.update")}
+          canDeleteUsers={hasPermission(access, "users.delete")}
+        />
       </Suspense>
     </PageContainer>
   );

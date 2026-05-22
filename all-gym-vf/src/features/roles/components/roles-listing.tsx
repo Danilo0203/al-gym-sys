@@ -10,12 +10,13 @@ import { toast } from "sonner";
 import { Pencil, Trash2, Shield, Users, Lock } from "lucide-react";
 import { RoleFormSheet } from "./role-form-sheet";
 import { DeleteRoleDialog } from "./delete-role-dialog";
-import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 
-export function RolesListing() {
-  const { data: currentUser } = useCurrentUser();
-  const canUpdateRoles = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("roles.update"));
-  const canDeleteRoles = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("roles.delete"));
+interface RolesListingProps {
+  canUpdateRoles: boolean;
+  canDeleteRoles: boolean;
+}
+
+export function RolesListing({ canUpdateRoles, canDeleteRoles }: RolesListingProps) {
   const [roles, setRoles] = useState<RoleData[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingRole, setEditingRole] = useState<RoleData | null>(null);

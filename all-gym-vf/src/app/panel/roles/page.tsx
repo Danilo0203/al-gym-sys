@@ -20,10 +20,13 @@ export default async function RolesPage() {
       scrollable={false}
       pageTitle="Roles"
       pageDescription="Administración de roles internos y sus permisos"
-      pageHeaderAction={hasPermission(access, "roles.create") ? <CreateRoleButton /> : null}
+      pageHeaderAction={hasPermission(access, "roles.create") ? <CreateRoleButton canCreate /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={4} rowCount={5} />}>
-        <RolesListing />
+        <RolesListing
+          canUpdateRoles={hasPermission(access, "roles.update")}
+          canDeleteRoles={hasPermission(access, "roles.delete")}
+        />
       </Suspense>
     </PageContainer>
   );

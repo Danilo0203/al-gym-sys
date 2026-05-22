@@ -2,7 +2,12 @@ import { getUsers } from "@/features/users/actions/user-actions";
 import { UsersTable } from "./users-table";
 import { searchParamsCache } from "@/lib/searchparams";
 
-export default async function UserListing() {
+interface UserListingProps {
+  canUpdateUsers: boolean;
+  canDeleteUsers: boolean;
+}
+
+export default async function UserListing({ canUpdateUsers, canDeleteUsers }: UserListingProps) {
   const sort = searchParamsCache.get("sort");
   const role = searchParamsCache.get("role");
   const full_name = searchParamsCache.get("full_name");
@@ -16,5 +21,12 @@ export default async function UserListing() {
     );
   }
 
-  return <UsersTable data={users} roleNameMap={roleNameMap ?? {}} />;
+  return (
+    <UsersTable
+      data={users}
+      roleNameMap={roleNameMap ?? {}}
+      canUpdateUsers={canUpdateUsers}
+      canDeleteUsers={canDeleteUsers}
+    />
+  );
 }

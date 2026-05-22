@@ -1,6 +1,8 @@
 import PageContainer from '@/components/layout/page-container';
+import { LocalRuntimeModuleState } from '@/components/layout/local-runtime-module-state';
 import PaymentListingPage from '@/features/payments/components/payment-listing';
 import { DataTableSkeleton } from '@/components/ui/table/data-table-skeleton';
+import { isLocalAuthEnabled } from '@/lib/auth/local-auth-server';
 import { searchParamsCache } from '@/lib/searchparams';
 import { SearchParams } from 'nuqs/server';
 import { Suspense } from 'react';
@@ -22,6 +24,21 @@ export default async function Page(props: pageProps) {
   }
   if (!hasPermission(access, "payments.view")) {
     redirect('/panel');
+  }
+
+  if (isLocalAuthEnabled()) {
+    return (
+      <PageContainer
+        scrollable={false}
+        pageTitle='Pagos'
+        pageDescription='Gestión y auditoría de ingresos (Libro Mayor).'
+      >
+        <LocalRuntimeModuleState
+          moduleName="Pagos"
+          summary="La vista de pagos aún no está migrada al runtime local. La página se mantiene visible con un estado controlado para que la aplicación no falle mientras se reemplaza la dependencia remota."
+        />
+      </PageContainer>
+    );
   }
 
   const searchParams = await props.searchParams;

@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { isLocalAuthEnabled, LocalApiError, requestLocalApi } from "@/lib/auth/local-auth-server";
 import { revalidatePath } from "next/cache";
 
 export interface RoleData {
@@ -29,6 +30,21 @@ type AuthUserRecord = {
   created_at: string;
   raw_user_meta_data?: Record<string, unknown> | null;
 };
+
+function toActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof LocalApiError) {
+    if (error.code === "reassign_required") {
+      return "REASSIGN_REQUIRED";
+    }
+    return error.message || fallback;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
 
 async function listAllAuthUsers(adminClient: ReturnType<typeof createAdminClient>): Promise<AuthUserRecord[]> {
   const perPage = 1000;
@@ -65,6 +81,11 @@ export async function getRoles(): Promise<{ success: boolean; data?: RoleData[];
       return { success: false, error: "No autorizado" };
     }
 
+    if (isLocalAuthEnabled()) {
+      const roles = await requestLocalApi<RoleData[]>("/admin/roles?scope=panel");
+      return { success: true, data: roles };
+    }
+
     const adminClient = createAdminClient();
 
     const { data: roles, error } = await adminClient
@@ -93,14 +114,14 @@ export async function getRoles(): Promise<{ success: boolean; data?: RoleData[];
       countMap.set(role, (countMap.get(role) || 0) + 1);
     }
 
-    const rolesWithCounts = (roles ?? []).map((r) => ({
-      ...r,
-      user_count: countMap.get(r.slug) || 0,
+    const rolesWithCounts = (roles ?? []).map((role) => ({
+      ...role,
+      user_count: countMap.get(role.slug) || 0,
     }));
 
     return { success: true, data: rolesWithCounts as RoleData[] };
-  } catch {
-    return { success: false, error: "Error al obtener roles" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener roles") };
   }
 }
 
@@ -108,6 +129,11 @@ export async function getPermissions(): Promise<{ success: boolean; data?: Permi
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
+
+    if (isLocalAuthEnabled()) {
+      const permissions = await requestLocalApi<PermissionData[]>("/admin/roles/permissions");
+      return { success: true, data: permissions };
+    }
 
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
@@ -118,15 +144,19 @@ export async function getPermissions(): Promise<{ success: boolean; data?: Permi
 
     if (error) return { success: false, error: error.message };
     return { success: true, data: data as PermissionData[] };
-  } catch {
-    return { success: false, error: "Error al obtener permisos" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener permisos") };
   }
 }
 
 export async function getRolePermissions(roleId: string): Promise<{ success: boolean; data?: string[]; error?: string }> {
   try {
+    if (isLocalAuthEnabled()) {
+      const permissionIds = await requestLocalApi<string[]>(`/admin/roles/${roleId}/permissions`);
+      return { success: true, data: permissionIds };
+    }
+
     const adminClient = createAdminClient();
-    // Get permission IDs assigned to the role
     const { data: rolePerms, error: rpError } = await adminClient
       .from("role_permissions")
       .select("permission_id")
@@ -136,8 +166,8 @@ export async function getRolePermissions(roleId: string): Promise<{ success: boo
 
     const permIds = (rolePerms ?? []).map((rp) => rp.permission_id as string);
     return { success: true, data: permIds };
-  } catch {
-    return { success: false, error: "Error al obtener permisos del rol" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener permisos del rol") };
   }
 }
 
@@ -153,9 +183,23 @@ export async function createRole(data: {
       return { success: false, error: "No autorizado" };
     }
 
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi("/admin/roles", {
+        method: "POST",
+        body: JSON.stringify({
+          name: data.name,
+          slug: data.slug,
+          scope: "panel",
+          permissionIds: data.permissionIds,
+        }),
+      });
+
+      revalidatePath("/panel/roles");
+      return { success: true };
+    }
+
     const adminClient = createAdminClient();
 
-    // Create role
     const { data: role, error: roleError } = await adminClient
       .from("roles")
       .insert({
@@ -170,24 +214,21 @@ export async function createRole(data: {
 
     if (roleError) return { success: false, error: roleError.message };
 
-    // Assign permissions
     if (data.permissionIds.length > 0) {
       const rows = data.permissionIds.map((pid) => ({
         role_id: role.id,
         permission_id: pid,
       }));
 
-      const { error: permError } = await adminClient
-        .from("role_permissions")
-        .insert(rows);
+      const { error: permError } = await adminClient.from("role_permissions").insert(rows);
 
       if (permError) return { success: false, error: permError.message };
     }
 
     revalidatePath("/panel/roles");
     return { success: true };
-  } catch {
-    return { success: false, error: "Error al crear rol" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al crear rol") };
   }
 }
 
@@ -203,9 +244,21 @@ export async function updateRole(data: {
       return { success: false, error: "No autorizado" };
     }
 
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi(`/admin/roles/${data.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: data.name,
+          permissionIds: data.permissionIds,
+        }),
+      });
+
+      revalidatePath("/panel/roles");
+      return { success: true };
+    }
+
     const adminClient = createAdminClient();
 
-    // Check if role is protected (owner)
     const { data: existing } = await adminClient
       .from("roles")
       .select("is_protected")
@@ -226,22 +279,15 @@ export async function updateRole(data: {
     }
 
     if (data.permissionIds !== undefined) {
-      // Remove existing permissions
-      await adminClient
-        .from("role_permissions")
-        .delete()
-        .eq("role_id", data.id);
+      await adminClient.from("role_permissions").delete().eq("role_id", data.id);
 
-      // Insert new permissions
       if (data.permissionIds.length > 0) {
         const rows = data.permissionIds.map((pid) => ({
           role_id: data.id,
           permission_id: pid,
         }));
 
-        const { error: permError } = await adminClient
-          .from("role_permissions")
-          .insert(rows);
+        const { error: permError } = await adminClient.from("role_permissions").insert(rows);
 
         if (permError) return { success: false, error: permError.message };
       }
@@ -249,8 +295,8 @@ export async function updateRole(data: {
 
     revalidatePath("/panel/roles");
     return { success: true };
-  } catch {
-    return { success: false, error: "Error al actualizar rol" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al actualizar rol") };
   }
 }
 
@@ -265,9 +311,20 @@ export async function deleteRole(data: {
       return { success: false, error: "No autorizado" };
     }
 
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi(`/admin/roles/${data.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          replacementRoleSlug: data.replacementRoleSlug,
+        }),
+      });
+
+      revalidatePath("/panel/roles");
+      return { success: true };
+    }
+
     const adminClient = createAdminClient();
 
-    // Check if role is protected
     const { data: existing } = await adminClient
       .from("roles")
       .select("is_protected, slug")
@@ -304,7 +361,6 @@ export async function deleteRole(data: {
         };
       }
 
-      // Reassign users using the same source-of-truth logic as the listing.
       for (const user of affectedUsers) {
         const { error: profileError } = await adminClient
           .from("profiles")
@@ -324,17 +380,13 @@ export async function deleteRole(data: {
       }
     }
 
-    // Delete role (cascades to role_permissions)
-    const { error } = await adminClient
-      .from("roles")
-      .delete()
-      .eq("id", data.id);
+    const { error } = await adminClient.from("roles").delete().eq("id", data.id);
 
     if (error) return { success: false, error: error.message };
 
     revalidatePath("/panel/roles");
     return { success: true };
-  } catch {
-    return { success: false, error: "Error al eliminar rol" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al eliminar rol") };
   }
 }

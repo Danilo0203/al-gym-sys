@@ -2,8 +2,10 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { isLocalAuthEnabled, LocalApiError, requestLocalApi } from "@/lib/auth/local-auth-server";
 import { revalidatePath } from "next/cache";
 import { UserRole } from "@/types";
+import { ExtendedColumnSort } from "@/types/data-table";
 
 export interface UserData {
   id: string;
@@ -28,14 +30,28 @@ export interface UpdateUserData {
   password?: string;
 }
 
-import { ExtendedColumnSort } from "@/types/data-table";
-
 type AuthUserRecord = {
   id: string;
   email: string | null;
   created_at: string;
   user_metadata?: Record<string, unknown> | null;
   raw_user_meta_data?: Record<string, unknown> | null;
+};
+
+type LocalAdminUserRecord = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string | null;
+  role_name?: string | null;
+  created_at: string;
+  last_login_at?: string | null;
+};
+
+type LocalRoleRecord = {
+  slug: string;
+  name: string;
+  scope?: "panel" | "client";
 };
 
 const VALID_USER_ROLES: UserRole[] = ["owner", "admin", "trainer", "employee", "client"];
@@ -46,6 +62,18 @@ function isUserRole(value: unknown): value is UserRole {
 
 function normalizeRole(value: unknown): UserRole {
   return isUserRole(value) ? value : "client";
+}
+
+function toActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof LocalApiError) {
+    return error.message || fallback;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 async function listAllAuthUsers(adminClient: ReturnType<typeof createAdminClient>): Promise<AuthUserRecord[]> {
@@ -75,6 +103,103 @@ export interface RoleOption {
   name: string;
 }
 
+function applyUserFiltersAndSort(
+  users: UserData[],
+  params?: {
+    sort?: ExtendedColumnSort<UserData>[] | null;
+    role?: string | string[] | null;
+    full_name?: string | null;
+  },
+) {
+  const { sort, role, full_name } = params || {};
+
+  const filteredData = users.filter((user) => {
+    if (role) {
+      const roles = typeof role === "string" ? role.split(",") : Array.isArray(role) ? role : [role];
+      if (roles.length > 0 && !roles.includes(user.role)) {
+        return false;
+      }
+    }
+
+    if (full_name) {
+      const search = full_name.toLowerCase();
+      const haystack = `${user.full_name ?? ""} ${user.email}`.toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+
+    return true;
+  });
+
+  const sortComparators: Record<string, (a: UserData, b: UserData, desc: boolean) => number> = {
+    full_name: (a, b, desc) =>
+      (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email, undefined, { sensitivity: "base" }) *
+      (desc ? -1 : 1),
+    role: (a, b, desc) => a.role.localeCompare(b.role) * (desc ? -1 : 1),
+    created_at: (a, b, desc) => (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * (desc ? -1 : 1),
+  };
+
+  const sortedData = [...filteredData];
+  if (sort && sort.length > 0) {
+    sortedData.sort((a, b) => {
+      for (const s of sort) {
+        const comparator = sortComparators[s.id];
+        if (!comparator) continue;
+        const result = comparator(a, b, s.desc);
+        if (result !== 0) return result;
+      }
+      return 0;
+    });
+  } else {
+    sortedData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  return sortedData;
+}
+
+async function getLocalRoleOptions() {
+  const roles = await requestLocalApi<LocalRoleRecord[]>("/admin/users/roles");
+  return roles.map((role) => ({
+    slug: role.slug,
+    name: role.name,
+  }));
+}
+
+async function getLocalUsers(params?: {
+  sort?: ExtendedColumnSort<UserData>[] | null;
+  role?: string | string[] | null;
+  full_name?: string | null;
+}): Promise<{ success: boolean; data?: UserData[]; error?: string; roleNameMap?: Record<string, string> }> {
+  try {
+    const [usersResponse, rolesResponse] = await Promise.all([
+      requestLocalApi<LocalAdminUserRecord[]>("/admin/users"),
+      requestLocalApi<LocalRoleRecord[]>("/admin/users/roles"),
+    ]);
+
+    const roleNameMap: Record<string, string> = {};
+    for (const role of rolesResponse) {
+      roleNameMap[role.slug] = role.name;
+    }
+
+    const normalizedUsers = usersResponse.map((user) => ({
+      id: user.id,
+      email: user.email || "Sin email",
+      full_name: user.full_name ?? null,
+      role: normalizeRole(user.role),
+      created_at: user.created_at,
+      last_sign_in_at: user.last_login_at ?? null,
+    }));
+
+    return {
+      success: true,
+      data: applyUserFiltersAndSort(normalizedUsers, params),
+      roleNameMap,
+    };
+  } catch (error) {
+    console.error("Error in getLocalUsers:", error);
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener usuarios") };
+  }
+}
+
 /**
  * Get available roles for the user form dropdown.
  * Only panel-scoped roles + client are returned.
@@ -85,6 +210,10 @@ export async function getAvailableRoles(): Promise<{ success: boolean; data?: Ro
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
 
+    if (isLocalAuthEnabled()) {
+      return { success: true, data: await getLocalRoleOptions() };
+    }
+
     const adminClient = createAdminClient();
     const { data, error } = await adminClient
       .from("roles")
@@ -94,8 +223,8 @@ export async function getAvailableRoles(): Promise<{ success: boolean; data?: Ro
     if (error) return { success: false, error: error.message };
 
     return { success: true, data: data as RoleOption[] };
-  } catch {
-    return { success: false, error: "Error al obtener roles" };
+  } catch (error) {
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener roles") };
   }
 }
 
@@ -115,9 +244,10 @@ export async function getUsers(params?: {
       return { success: false, error: "No autorizado: Se requiere permiso users.view" };
     }
 
-    const { sort, role, full_name } = params || {};
+    if (isLocalAuthEnabled()) {
+      return getLocalUsers(params);
+    }
 
-    // Use Admin Client to bypass RLS and ensure we get all users
     const adminClient = createAdminClient();
     const [profilesResult, authUsers, rolesResult] = await Promise.all([
       adminClient.from("profiles").select("id, full_name, role, created_at"),
@@ -132,10 +262,8 @@ export async function getUsers(params?: {
       return { success: false, error: profilesError.message };
     }
 
-    // 2. Get Auth Users to get emails
     const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
 
-    // 2. Merge Auth + profile data so users without a profile still appear
     const combinedData = authUsers.map((authUser) => {
       const profile = profilesById.get(authUser.id);
       const metadata = authUser.user_metadata ?? authUser.raw_user_meta_data ?? {};
@@ -152,58 +280,21 @@ export async function getUsers(params?: {
       };
     });
 
-    const filteredData = combinedData.filter((user) => {
-      if (role) {
-        const roles = typeof role === "string" ? role.split(",") : Array.isArray(role) ? role : [role];
-        if (roles.length > 0 && !roles.includes(user.role)) {
-          return false;
-        }
-      }
-
-      if (full_name) {
-        const search = full_name.toLowerCase();
-        const haystack = `${user.full_name ?? ""} ${user.email}`.toLowerCase();
-        if (!haystack.includes(search)) return false;
-      }
-
-      return true;
-    });
-
-    const sortComparators: Record<string, (a: UserData, b: UserData, desc: boolean) => number> = {
-      full_name: (a, b, desc) =>
-        (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email, undefined, { sensitivity: "base" }) *
-        (desc ? -1 : 1),
-      role: (a, b, desc) => a.role.localeCompare(b.role) * (desc ? -1 : 1),
-      created_at: (a, b, desc) =>
-        (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * (desc ? -1 : 1),
-    };
-
-    const sortedData = [...filteredData];
-    if (sort && sort.length > 0) {
-      sortedData.sort((a, b) => {
-        for (const s of sort) {
-          const comparator = sortComparators[s.id];
-          if (!comparator) continue;
-          const result = comparator(a, b, s.desc);
-          if (result !== 0) return result;
-        }
-        return 0;
-      });
-    } else {
-      sortedData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
     const roleNameMap: Record<string, string> = {};
     if (rolesResult.data) {
-      for (const r of rolesResult.data as { slug: string; name: string }[]) {
-        roleNameMap[r.slug] = r.name;
+      for (const role of rolesResult.data as { slug: string; name: string }[]) {
+        roleNameMap[role.slug] = role.name;
       }
     }
 
-    return { success: true, data: sortedData as UserData[], roleNameMap };
+    return {
+      success: true,
+      data: applyUserFiltersAndSort(combinedData as UserData[], params),
+      roleNameMap,
+    };
   } catch (error) {
     console.error("Error in getUsers:", error);
-    return { success: false, error: "Error al obtener usuarios" };
+    return { success: false, error: toActionErrorMessage(error, "Error al obtener usuarios") };
   }
 }
 
@@ -217,14 +308,31 @@ export async function createUser(data: CreateUserData): Promise<{ success: boole
     if (!hasPermission(access, "users.create")) {
       return { success: false, error: "No autorizado: Se requiere permiso users.create" };
     }
+
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi("/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: data.email,
+          full_name: data.full_name,
+          role: data.role,
+          password: data.password || "tempPassword123!",
+          status: "active",
+        }),
+      });
+
+      revalidatePath("/panel/usuarios");
+      return { success: true };
+    }
+
     const adminClient = createAdminClient();
     const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
       email: data.email,
-      password: data.password || "tempPassword123!", // Provide a default if not set? Or require it.
+      password: data.password || "tempPassword123!",
       email_confirm: true,
       user_metadata: {
         full_name: data.full_name,
-        role: data.role, // Store role in metadata too for easy access
+        role: data.role,
       },
     });
 
@@ -237,8 +345,6 @@ export async function createUser(data: CreateUserData): Promise<{ success: boole
       return { success: false, error: "No se pudo crear el usuario" };
     }
 
-    // 2. Update profile with role (trigger creates the row, we just update)
-    // IMPORTANT: 'email' column does not exist in profiles table
     const { error: profileError } = await adminClient
       .from("profiles")
       .update({
@@ -248,17 +354,14 @@ export async function createUser(data: CreateUserData): Promise<{ success: boole
       .eq("id", authUser.user.id);
 
     if (profileError) {
-      // If update fails, maybe the row doesn't exist yet (trigger delay).
-      // In that case, we might insert it, but usually triggers are fast.
       console.error("Error updating profile role:", profileError);
-      // Try insert if update failed (though trigger should handle it)
     }
 
     revalidatePath("/panel/usuarios");
     return { success: true };
   } catch (error) {
     console.error("Error in createUser:", error);
-    return { success: false, error: "Error inesperado al crear usuario" };
+    return { success: false, error: toActionErrorMessage(error, "Error inesperado al crear usuario") };
   }
 }
 
@@ -272,6 +375,21 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
     if (!hasPermission(access, "users.update")) {
       return { success: false, error: "No autorizado: Se requiere permiso users.update" };
     }
+
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi(`/admin/users/${data.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          full_name: data.full_name,
+          role: data.role,
+          password: data.password,
+        }),
+      });
+
+      revalidatePath("/panel/usuarios");
+      return { success: true };
+    }
+
     const adminClient = createAdminClient();
     const updateData: Pick<UpdateUserData, "full_name" | "role"> = {};
     if (data.full_name) updateData.full_name = data.full_name;
@@ -285,7 +403,6 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
       }
     }
 
-    // 2. Update Auth password if provided
     if (data.password) {
       const { error: passwordError } = await adminClient.auth.admin.updateUserById(data.id, {
         password: data.password,
@@ -296,7 +413,6 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
       }
     }
 
-    // Required to sync metadata if we rely on it
     if (data.full_name || data.role) {
       await adminClient.auth.admin.updateUserById(data.id, {
         user_metadata: { full_name: data.full_name, role: data.role },
@@ -307,7 +423,7 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
     return { success: true };
   } catch (error) {
     console.error("Error in updateUser:", error);
-    return { success: false, error: "Error inesperado al actualizar usuario" };
+    return { success: false, error: toActionErrorMessage(error, "Error inesperado al actualizar usuario") };
   }
 }
 
@@ -322,9 +438,16 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
       return { success: false, error: "No autorizado: Se requiere permiso users.delete" };
     }
 
-    const adminClient = createAdminClient();
+    if (isLocalAuthEnabled()) {
+      await requestLocalApi(`/admin/users/${userId}`, {
+        method: "DELETE",
+      });
 
-    // Delete from Auth; the profile row will cascade depending on FK setup.
+      revalidatePath("/panel/usuarios");
+      return { success: true };
+    }
+
+    const adminClient = createAdminClient();
     const { error } = await adminClient.auth.admin.deleteUser(userId);
 
     if (error) {
@@ -336,6 +459,6 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
     return { success: true };
   } catch (error) {
     console.error("Error in deleteUser:", error);
-    return { success: false, error: "Error inesperado al eliminar usuario" };
+    return { success: false, error: toActionErrorMessage(error, "Error inesperado al eliminar usuario") };
   }
 }
