@@ -26,7 +26,7 @@ function Write-InstallerLog {
   param([string]$Message)
 
   $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-  Add-Content -Path $InstallerLog -Value "[$timestamp] $Message"
+  [System.IO.File]::AppendAllText($InstallerLog, "[$timestamp] $Message`r`n", (New-Object System.Text.UTF8Encoding($false)))
 }
 
 if (-not (Test-Path $ServiceExe)) {
@@ -53,6 +53,11 @@ Push-Location $WinswRoot
 try {
   Write-InstallerLog "Installing WinSW service allgym-api-local"
   & $ServiceExe install *>> $InstallerLog
+
+  Write-InstallerLog "Configuring SCM recovery for allgym-api-local"
+  & sc.exe config allgym-api-local start= auto *>> $InstallerLog
+  & sc.exe failure allgym-api-local reset= 86400 actions= restart/5000/restart/15000/restart/30000 *>> $InstallerLog
+  & sc.exe failureflag allgym-api-local 1 *>> $InstallerLog
 
   Write-InstallerLog "Starting WinSW service allgym-api-local"
   & $ServiceExe start *>> $InstallerLog

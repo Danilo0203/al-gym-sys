@@ -4,12 +4,13 @@
   <description>Next.js standalone LAN frontend service for All Gym.</description>
 
   <executable>powershell.exe</executable>
-  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\AllGym\scripts\start-allgym-web.ps1"</arguments>
+  <arguments>-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Program Files\AllGym\scripts\start-allgym-web.ps1" -InstallRoot "C:\Program Files\AllGym" -ProgramDataRoot "C:\ProgramData\AllGym"</arguments>
   <workingdirectory>C:\Program Files\AllGym\allgym-web</workingdirectory>
 
   <startmode>Automatic</startmode>
   <stoptimeout>15sec</stoptimeout>
   <priority>Normal</priority>
+  <resetfailure>1 hour</resetfailure>
 
   <logpath>C:\ProgramData\AllGym\logs</logpath>
   <log mode="roll-by-size">
@@ -17,7 +18,8 @@
     <keepFiles>8</keepFiles>
   </log>
 
-  <onfailure action="restart" delay="10 sec" />
-  <onfailure action="restart" delay="20 sec" />
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="15 sec" />
+  <onfailure action="restart" delay="30 sec" />
   <onfailure action="none" />
 </service>
