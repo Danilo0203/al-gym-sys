@@ -81,7 +81,7 @@ function FormInputGroup<
               {...field}
               value={
                 type === 'number'
-                  ? field.value === 0 || field.value === undefined || field.value === null || (typeof field.value === 'number' && isNaN(field.value))
+                  ? field.value === '' || field.value === 0 || field.value === undefined || field.value === null || (typeof field.value === 'number' && Number.isNaN(field.value))
                     ? ''
                     : field.value
                   : field.value ?? ''
@@ -89,7 +89,7 @@ function FormInputGroup<
               onChange={(e) => {
                 if (type === 'number') {
                   const value = e.target.value;
-                  field.onChange(value === '' ? undefined : Number.parseFloat(value));
+                  field.onChange(value === '' ? '' : Number.parseFloat(value));
                 } else if (type === 'tel') {
                   const numericOnly = e.target.value.replace(/\D/g, '');
                   field.onChange(maxLength ? numericOnly.slice(0, maxLength) : numericOnly);
