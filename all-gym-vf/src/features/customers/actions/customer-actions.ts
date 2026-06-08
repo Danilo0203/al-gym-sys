@@ -947,6 +947,7 @@ export interface CreateCustomerData {
   emergency_phone?: string;
   // Subscription
   plan_id?: number;
+  amount_original?: number;
   final_price?: number;
   discount_amount?: number;
   payment_method?: "cash" | "card" | "transfer";
@@ -1087,6 +1088,7 @@ async function createSubscriptionAndPaymentLegacy(params: {
   planId?: number;
   startDate?: Date;
   endDate?: Date;
+  amountOriginal?: number;
   finalPrice?: number;
   discountAmount?: number;
   graceDays?: number;
@@ -1135,7 +1137,7 @@ async function createSubscriptionAndPaymentLegacy(params: {
     throw subscriptionError || new Error("No se pudo crear la suscripcion");
   }
 
-  const amountOriginal = Number(planData.price);
+  const amountOriginal = Number(params.amountOriginal ?? planData.price);
   const discountAmount = Number(params.discountAmount || 0);
   const amountPaid = Number(params.finalPrice ?? amountOriginal - discountAmount);
 
@@ -1162,6 +1164,7 @@ async function createSubscriptionAndPayment(params: {
   planId?: number;
   startDate?: Date;
   endDate?: Date;
+  amountOriginal?: number;
   finalPrice?: number;
   discountAmount?: number;
   graceDays?: number;
@@ -1179,6 +1182,7 @@ async function createSubscriptionAndPayment(params: {
       planId,
       startDate: formatToLocalISO(params.startDate) ?? null,
       endDate: formatToLocalISO(params.endDate) ?? null,
+      amountOriginal: params.amountOriginal,
       finalPrice: params.finalPrice,
       discountAmount: params.discountAmount,
       graceDays: params.graceDays,
@@ -1375,6 +1379,7 @@ export async function createCustomer(data: CreateCustomerData) {
         planId: data.plan_id,
         startDate: data.start_date,
         endDate: data.end_date,
+        amountOriginal: data.amount_original,
         finalPrice: data.final_price,
         discountAmount: data.discount_amount,
         graceDays: data.grace_days,
@@ -2109,11 +2114,11 @@ export interface RenewSubscriptionData {
   amount_paid: number;
   payment_method: "cash" | "card" | "transfer";
   // Physical Assessment
-  weight_kg: number;
-  height_cm: number;
-  body_type: BodyType;
-  diet_type: DietType;
-  activity_level: ActivityLevel;
+  weight_kg?: number;
+  height_cm?: number;
+  body_type?: BodyType;
+  diet_type?: DietType;
+  activity_level?: ActivityLevel;
   body_fat_percentage?: number;
   muscle_mass_kg?: number;
   chest?: number;
@@ -2139,6 +2144,24 @@ export interface RenewSubscriptionData {
   restricted_movements?: TrainingProfileInput["restricted_movements"];
   parq_requires_attention?: boolean;
   medical_clearance_notes?: string;
+}
+
+function hasRenewalAssessmentMetrics(
+  data: RenewSubscriptionData,
+): data is RenewSubscriptionData & {
+  weight_kg: number;
+  height_cm: number;
+  body_type: BodyType;
+  diet_type: DietType;
+  activity_level: ActivityLevel;
+} {
+  return (
+    typeof data.weight_kg === "number" &&
+    typeof data.height_cm === "number" &&
+    data.body_type !== undefined &&
+    data.diet_type !== undefined &&
+    data.activity_level !== undefined
+  );
 }
 
 async function renewSubscriptionWithPaymentLegacy(params: {
@@ -2271,30 +2294,32 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
       }
     }
 
-    await createAssessmentAndSnapshot({
-      supabase,
-      userId: customerId,
-      birthDate: new Date(profile.birth_date),
-      gender: profile.gender as "male" | "female" | "other",
-      sourceEvent: "renewal",
-      subscriptionId: newSubscriptionId,
-      metrics: {
-        weight_kg: data.weight_kg,
-        height_cm: data.height_cm,
-        body_type: data.body_type,
-        diet_type: data.diet_type,
-        activity_level: data.activity_level,
-        body_fat_percentage: data.body_fat_percentage,
-        muscle_mass_kg: data.muscle_mass_kg,
-        chest: data.chest,
-        waist: data.waist,
-        hip: data.hip,
-        arm_right: data.arm_right,
-        arm_left: data.arm_left,
-        leg_right: data.leg_right,
-        leg_left: data.leg_left,
-      },
-    });
+    if (hasRenewalAssessmentMetrics(data)) {
+      await createAssessmentAndSnapshot({
+        supabase,
+        userId: customerId,
+        birthDate: new Date(profile.birth_date),
+        gender: profile.gender as "male" | "female" | "other",
+        sourceEvent: "renewal",
+        subscriptionId: newSubscriptionId,
+        metrics: {
+          weight_kg: data.weight_kg,
+          height_cm: data.height_cm,
+          body_type: data.body_type,
+          diet_type: data.diet_type,
+          activity_level: data.activity_level,
+          body_fat_percentage: data.body_fat_percentage,
+          muscle_mass_kg: data.muscle_mass_kg,
+          chest: data.chest,
+          waist: data.waist,
+          hip: data.hip,
+          arm_right: data.arm_right,
+          arm_left: data.arm_left,
+          leg_right: data.leg_right,
+          leg_left: data.leg_left,
+        },
+      });
+    }
 
     try {
       const { data: existingTrainingProfile } = await supabase
@@ -2305,7 +2330,7 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
 
       const trainingProfileUpdate = buildPartialTrainingProfileUpdate(data);
 
-      if (existingTrainingProfile || Object.keys(trainingProfileUpdate).length > 0) {
+      if (Object.keys(trainingProfileUpdate).length > 0) {
         await syncTrainingProfileWithAdmin({
           adminClient: createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
             auth: { autoRefreshToken: false, persistSession: false },
@@ -2319,11 +2344,11 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
           nutritionContext: {
             birthDate: new Date(profile.birth_date),
             gender: profile.gender as "male" | "female" | "other",
-            weightKg: data.weight_kg,
-            heightCm: data.height_cm,
-            bodyType: data.body_type,
-            dietType: data.diet_type,
-            activityLevel: data.activity_level,
+            weightKg: data.weight_kg ?? null,
+            heightCm: data.height_cm ?? null,
+            bodyType: data.body_type ?? null,
+            dietType: data.diet_type ?? null,
+            activityLevel: data.activity_level ?? null,
           },
         });
       }

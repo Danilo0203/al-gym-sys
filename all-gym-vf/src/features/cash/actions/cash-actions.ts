@@ -1703,6 +1703,7 @@ export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
   planId?: number;
   startDate?: string | null;
   endDate?: string | null;
+  amountOriginal?: number;
   finalPrice?: number;
   discountAmount?: number;
   graceDays?: number;
@@ -1712,6 +1713,29 @@ export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
   const access = await requireCashAccess();
   if (params.requireSession) {
     await requireOperableOpenCashSession(access);
+  }
+
+  if (params.planId && params.amountOriginal !== undefined) {
+    const fallbackData = await createSubscriptionPaymentWithCashFallback({
+      access,
+      customerId: params.customerId,
+      planId: params.planId,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      amountOriginal: params.amountOriginal,
+      finalPrice: params.finalPrice,
+      discountAmount: params.discountAmount,
+      graceDays: params.graceDays,
+      paymentMethod: params.paymentMethod ?? "cash",
+      requireSession: params.requireSession,
+    });
+
+    revalidatePath("/panel/caja");
+    revalidatePath("/panel/caja/historial");
+    revalidatePath("/panel/pagos");
+    revalidatePath("/panel/resumen");
+
+    return fallbackData;
   }
 
   const supabase = await createClient();
