@@ -173,6 +173,8 @@ export interface SubscriptionEntry {
   plan_name: string;
   start_date: string;
   end_date: string;
+  grace_days?: number | null;
+  access_until?: string | null;
   status: string;
   price: number;
   discount_amount: number;
@@ -190,6 +192,8 @@ export interface CustomerProfile {
   is_active: boolean | null;
   subscription_status: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   injuries: string | null;
   medical_notes: string | null;
 }
@@ -200,7 +204,7 @@ export async function getCustomerProfile(customerId: string): Promise<CustomerPr
 
   const { data, error } = await supabase
     .from("customer_overview")
-    .select("id, full_name, phone, avatar_url, gender, birth_date, is_active, subscription_status, subscription_end_date")
+    .select("id, full_name, phone, avatar_url, gender, birth_date, is_active, subscription_status, subscription_end_date, subscription_grace_days, subscription_access_until")
     .eq("id", customerId)
     .single();
 
@@ -226,6 +230,8 @@ export async function getCustomerProfile(customerId: string): Promise<CustomerPr
     is_active: data.is_active,
     subscription_status: data.subscription_status,
     subscription_end_date: data.subscription_end_date,
+    subscription_grace_days: data.subscription_grace_days ?? null,
+    subscription_access_until: data.subscription_access_until ?? null,
     injuries: profile?.injuries ?? null,
     medical_notes: profile?.medical_notes ?? null,
   };
@@ -437,6 +443,7 @@ export async function getSubscriptionHistory(customerId: string): Promise<Subscr
       end_date,
       status,
       discount_amount,
+      grace_days,
       plan_id,
       plans!inner (
         name,
@@ -460,6 +467,8 @@ export async function getSubscriptionHistory(customerId: string): Promise<Subscr
       plan_name: plan?.name || "N/A",
       start_date: sub.start_date,
       end_date: sub.end_date,
+      grace_days: sub.grace_days ?? null,
+      access_until: null,
       status: sub.status,
       price: plan?.price || 0,
       discount_amount: sub.discount_amount || 0,

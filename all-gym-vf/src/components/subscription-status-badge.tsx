@@ -1,14 +1,17 @@
 
 import { Badge } from '@/components/ui/badge';
-import { differenceInDays } from 'date-fns';
+import { differenceInCalendarDays } from 'date-fns';
+import { getSubscriptionAccessUntilDate, parseLocalDate } from '@/lib/subscriptions/grace-period';
 
 interface SubscriptionStatusBadgeProps {
   status: string | null | undefined;
   endDate: string | Date | null | undefined;
+  graceDays?: number | null;
+  accessUntil?: string | Date | null;
   className?: string;
 }
 
-export function SubscriptionStatusBadge({ status, endDate, className }: SubscriptionStatusBadgeProps) {
+export function SubscriptionStatusBadge({ status, endDate, graceDays, accessUntil, className }: SubscriptionStatusBadgeProps) {
   let badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' = 'outline';
   let statusLabel = 'Sin Plan';
 
@@ -21,36 +24,34 @@ export function SubscriptionStatusBadge({ status, endDate, className }: Subscrip
     return <Badge variant={badgeVariant} className={className}>{statusLabel}</Badge>;
   }
 
-  // Calcular estado REAL basado en fecha de vencimiento
+  // Calcular estado REAL basado en fecha de vencimiento y prórroga.
   if (endDate) {
-    let parsedEndDate: Date;
-    if (typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      const [year, month, day] = endDate.split('-').map(Number);
-      parsedEndDate = new Date(year, month - 1, day);
-    } else {
-      parsedEndDate = new Date(endDate);
-    }
-    
-    // Check if date is valid
-    if (isNaN(parsedEndDate.getTime())) {
-        if (status === 'active') {
-            return <Badge variant="success" className={className}>Activo</Badge>;
-        }
-        return <Badge variant="outline" className={className}>Sin Plan</Badge>;
+    const parsedEndDate = parseLocalDate(endDate);
+    const parsedAccessUntil = accessUntil
+      ? parseLocalDate(accessUntil)
+      : getSubscriptionAccessUntilDate(endDate, graceDays ?? 0);
+    const today = parseLocalDate(new Date());
+
+    if (!parsedEndDate || !parsedAccessUntil || !today) {
+      if (status === 'active') {
+        return <Badge variant="success" className={className}>Activo</Badge>;
+      }
+      return <Badge variant="outline" className={className}>Sin Plan</Badge>;
     }
 
-    const daysLeft = differenceInDays(parsedEndDate, new Date());
-    
-    if (daysLeft < 0) {
-      // VENCIDO - independientemente de lo que diga la BD
+    const daysToEnd = differenceInCalendarDays(parsedEndDate, today);
+    const isInGracePeriod = parsedEndDate < today && parsedAccessUntil >= today;
+
+    if (parsedAccessUntil < today) {
       badgeVariant = 'destructive';
       statusLabel = 'Vencido';
-    } else if (daysLeft <= 3) {
-      // Por vencer (próximos 3 días)
+    } else if (isInGracePeriod) {
+      badgeVariant = 'warning';
+      statusLabel = 'En Prórroga';
+    } else if (daysToEnd <= 3) {
       badgeVariant = 'warning';
       statusLabel = 'Por Vencer';
     } else {
-      // Activo
       badgeVariant = 'success';
       statusLabel = 'Activo';
     }

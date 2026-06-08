@@ -18,6 +18,7 @@ import { syncTrainingProfileWithAdmin } from "@/features/customers/actions/custo
 import { DEFAULT_EQUIPMENT_AVAILABLE, DEFAULT_TRAINING_LOCATION } from "@/lib/training/profile-defaults";
 import type { NutritionContext, TrainingProfileInput } from "@/lib/training/types";
 import { normalizeAuthEmail, normalizeGuatemalaPhoneForAuth } from "@/lib/auth/identifiers";
+import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, getSubscriptionAccessUntilISO, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 type AdminSupabaseClient = any;
@@ -148,8 +149,9 @@ function addDaysToIsoDate(dateString: string, days: number) {
   return formatToLocalISO(date) || dateString;
 }
 
-function resolveSubscriptionStatus(endDate: string) {
-  return endDate < todayDateString() ? "expired" : "active";
+function resolveSubscriptionStatus(endDate: string, graceDays = DEFAULT_SUBSCRIPTION_GRACE_DAYS) {
+  const accessUntil = getSubscriptionAccessUntilISO(endDate, graceDays) ?? endDate;
+  return accessUntil < todayDateString() ? "expired" : "active";
 }
 
 function hasMembershipPayload(data: Partial<CreateCustomerData>) {
@@ -158,6 +160,7 @@ function hasMembershipPayload(data: Partial<CreateCustomerData>) {
     data.start_date !== undefined ||
     data.end_date !== undefined ||
     data.discount_amount !== undefined ||
+    data.grace_days !== undefined ||
     data.payment_method !== undefined ||
     data.final_price !== undefined
   );
@@ -170,6 +173,7 @@ interface MembershipSnapshot {
     start_date: string | null;
     end_date: string | null;
     discount_amount: number | null;
+    grace_days: number | null;
     status: string | null;
   } | null;
   payment: {
@@ -195,7 +199,7 @@ async function getLatestMembershipSnapshot(client: AdminSupabaseClient, customer
   let subscription =
     (await client
       .from("subscriptions")
-      .select("id, plan_id, start_date, end_date, discount_amount, status")
+      .select("id, plan_id, start_date, end_date, discount_amount, grace_days, status")
       .eq("user_id", customerId)
       .eq("status", "active")
       .order("end_date", { ascending: false, nullsFirst: false })
@@ -208,7 +212,7 @@ async function getLatestMembershipSnapshot(client: AdminSupabaseClient, customer
     subscription =
       (await client
         .from("subscriptions")
-        .select("id, plan_id, start_date, end_date, discount_amount, status")
+        .select("id, plan_id, start_date, end_date, discount_amount, grace_days, status")
         .eq("user_id", customerId)
         .order("end_date", { ascending: false, nullsFirst: false })
         .order("start_date", { ascending: false, nullsFirst: false })
@@ -447,6 +451,7 @@ async function upsertMembershipForCustomer(params: {
     snapshot.subscription?.end_date ??
     addDaysToIsoDate(startDate, Number(planRow.duration_days || 30));
   const discountAmount = Number(params.data.discount_amount ?? snapshot.subscription?.discount_amount ?? 0);
+  const graceDays = normalizeGraceDays(params.data.grace_days ?? snapshot.subscription?.grace_days);
   const amountOriginal = Number(planRow.price || 0);
   const amountPaid = Number(params.data.final_price ?? Math.max(0, amountOriginal - discountAmount));
   const paymentMethod = isPaymentMethod(params.data.payment_method)
@@ -454,7 +459,7 @@ async function upsertMembershipForCustomer(params: {
     : isPaymentMethod(snapshot.payment?.method)
       ? snapshot.payment.method
       : "cash";
-  const status = resolveSubscriptionStatus(endDate);
+  const status = resolveSubscriptionStatus(endDate, graceDays);
 
   if (!snapshot.subscription) {
     const { data: subscriptionRow, error: subscriptionError } = await params.adminClient
@@ -466,6 +471,7 @@ async function upsertMembershipForCustomer(params: {
         end_date: endDate,
         status,
         discount_amount: discountAmount,
+        grace_days: graceDays,
       })
       .select("id")
       .single();
@@ -509,6 +515,7 @@ async function upsertMembershipForCustomer(params: {
     snapshot.subscription.start_date !== startDate ||
     snapshot.subscription.end_date !== endDate ||
     Number(snapshot.subscription.discount_amount ?? 0) !== discountAmount ||
+    normalizeGraceDays(snapshot.subscription.grace_days) !== graceDays ||
     snapshot.subscription.status !== status;
 
   if (subscriptionChanged) {
@@ -520,6 +527,7 @@ async function upsertMembershipForCustomer(params: {
         end_date: endDate,
         status,
         discount_amount: discountAmount,
+        grace_days: graceDays,
       })
       .eq("id", snapshot.subscription.id);
 
@@ -586,6 +594,7 @@ function normalizeCustomerPayload<T extends Partial<CreateCustomerData>>(data: T
     plan_id: normalizeOptionalInteger(data.plan_id),
     final_price: normalizeOptionalNumber(data.final_price),
     discount_amount: normalizeOptionalNumber(data.discount_amount),
+    grace_days: data.grace_days === undefined ? undefined : normalizeGraceDays(data.grace_days),
     days_per_week: normalizeOptionalInteger(data.days_per_week),
     session_minutes: normalizeOptionalInteger(data.session_minutes),
     weight_kg: normalizeOptionalNumber(data.weight_kg),
@@ -631,22 +640,41 @@ async function getCustomerDeviceProfile(adminClient: AdminSupabaseClient, custom
 }
 
 async function expirePastDueSubscriptionsForCustomer(adminClient: AdminSupabaseClient, customerId: string) {
-  const { error } = await adminClient
+  const { data, error } = await adminClient
     .from("subscriptions")
-    .update({ status: "expired" })
+    .select("id, end_date, grace_days")
     .eq("user_id", customerId)
-    .eq("status", "active")
-    .lt("end_date", todayDateString());
+    .eq("status", "active");
 
   if (error) {
-    console.error(`Error expiring overdue subscriptions for customer ${customerId}:`, error);
+    console.error(`Error loading overdue subscriptions for customer ${customerId}:`, error);
+    return;
+  }
+
+  const today = todayDateString();
+  const expiredIds = (data || [])
+    .filter((subscription: { end_date?: string | null; grace_days?: number | null }) => {
+      const accessUntil = getSubscriptionAccessUntilISO(subscription.end_date ?? null, subscription.grace_days);
+      return Boolean(accessUntil && accessUntil < today);
+    })
+    .map((subscription: { id: string }) => subscription.id);
+
+  if (expiredIds.length === 0) return;
+
+  const { error: updateError } = await adminClient
+    .from("subscriptions")
+    .update({ status: "expired" })
+    .in("id", expiredIds);
+
+  if (updateError) {
+    console.error(`Error expiring overdue subscriptions for customer ${customerId}:`, updateError);
   }
 }
 
 async function customerHasActiveSubscription(adminClient: AdminSupabaseClient, customerId: string) {
   const { data, error } = await adminClient
     .from("subscriptions")
-    .select("id, end_date")
+    .select("id, end_date, grace_days")
     .eq("user_id", customerId)
     .eq("status", "active")
     .order("end_date", { ascending: false, nullsFirst: false });
@@ -657,7 +685,11 @@ async function customerHasActiveSubscription(adminClient: AdminSupabaseClient, c
   }
 
   const today = todayDateString();
-  return (data || []).some((subscription: { end_date?: string | null }) => !subscription.end_date || subscription.end_date >= today);
+  return (data || []).some((subscription: { end_date?: string | null; grace_days?: number | null }) => {
+    if (!subscription.end_date) return true;
+    const accessUntil = getSubscriptionAccessUntilISO(subscription.end_date, subscription.grace_days);
+    return Boolean(accessUntil && accessUntil >= today);
+  });
 }
 
 async function queueZkCommands(params: {
@@ -920,6 +952,7 @@ export interface CreateCustomerData {
   payment_method?: "cash" | "card" | "transfer";
   start_date?: Date;
   end_date?: Date;
+  grace_days?: number;
   // Body Assessment
   weight_kg?: number;
   height_cm?: number;
@@ -1056,6 +1089,7 @@ async function createSubscriptionAndPaymentLegacy(params: {
   endDate?: Date;
   finalPrice?: number;
   discountAmount?: number;
+  graceDays?: number;
   paymentMethod?: "cash" | "card" | "transfer";
 }) {
   const { adminClient, userId, planId } = params;
@@ -1092,6 +1126,7 @@ async function createSubscriptionAndPaymentLegacy(params: {
       end_date: subscriptionEndDate,
       status: "active",
       discount_amount: params.discountAmount || 0,
+      grace_days: normalizeGraceDays(params.graceDays),
     })
     .select("id")
     .single();
@@ -1129,6 +1164,7 @@ async function createSubscriptionAndPayment(params: {
   endDate?: Date;
   finalPrice?: number;
   discountAmount?: number;
+  graceDays?: number;
   paymentMethod?: "cash" | "card" | "transfer";
   requireSession?: boolean;
 }) {
@@ -1145,6 +1181,7 @@ async function createSubscriptionAndPayment(params: {
       endDate: formatToLocalISO(params.endDate) ?? null,
       finalPrice: params.finalPrice,
       discountAmount: params.discountAmount,
+      graceDays: params.graceDays,
       paymentMethod: params.paymentMethod,
       requireSession: params.requireSession,
     });
@@ -1340,6 +1377,7 @@ export async function createCustomer(data: CreateCustomerData) {
         endDate: data.end_date,
         finalPrice: data.final_price,
         discountAmount: data.discount_amount,
+        graceDays: data.grace_days,
         paymentMethod: data.payment_method,
         requireSession: isCashOrigin,
       });
@@ -1434,7 +1472,7 @@ export async function getCustomerById(id: string) {
   const { data: customerView, error: viewError } = await supabase
     .from("customer_overview")
     .select(
-      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, plan_name, last_check_in, plan_id, birth_date, gender, is_active",
+      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, plan_name, last_check_in, plan_id, birth_date, gender, is_active",
     )
     .eq("id", id)
     .single();
@@ -1605,6 +1643,12 @@ export async function getCustomerById(id: string) {
     // Usar fechas de la suscripción más reciente si existe, sino fallback a vista
     subscription_start_date: latestSubscription?.start_date || customerView.subscription_start_date || null,
     subscription_end_date: latestSubscription?.end_date || customerView.subscription_end_date || null,
+    subscription_grace_days: normalizeGraceDays(latestSubscription?.grace_days ?? customerView.subscription_grace_days),
+    subscription_access_until:
+      getSubscriptionAccessUntilISO(
+        latestSubscription?.end_date || customerView.subscription_end_date || null,
+        latestSubscription?.grace_days ?? customerView.subscription_grace_days,
+      ) || customerView.subscription_access_until || null,
 
     // Descuento aplicado (de la suscripción más reciente)
     discount_amount: latestSubscription?.discount_amount ?? 0,
@@ -2026,7 +2070,7 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
 
     const shouldSyncDeviceState =
       Boolean(DEFAULT_ZK_DEVICE_SN && SUPABASE_SERVICE_ROLE_KEY) &&
-      (data.full_name !== undefined || data.plan_id !== undefined || data.start_date !== undefined || data.end_date !== undefined);
+      (data.full_name !== undefined || data.plan_id !== undefined || data.start_date !== undefined || data.end_date !== undefined || data.grace_days !== undefined);
 
     let deviceSync: DeviceSyncResult | undefined;
 
@@ -2061,6 +2105,7 @@ export interface RenewSubscriptionData {
   end_date: Date;
   price: number;
   discount_amount: number;
+  grace_days: number;
   amount_paid: number;
   payment_method: "cash" | "card" | "transfer";
   // Physical Assessment
@@ -2122,6 +2167,7 @@ async function renewSubscriptionWithPaymentLegacy(params: {
       end_date: formatToLocalISO(data.end_date),
       status: "active",
       discount_amount: data.discount_amount,
+      grace_days: normalizeGraceDays(data.grace_days),
     })
     .select("id")
     .single();
@@ -2179,6 +2225,7 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
         endDate: formatToLocalISO(data.end_date) || "",
         price: data.price,
         discountAmount: data.discount_amount,
+        graceDays: data.grace_days,
         amountPaid: data.amount_paid,
         paymentMethod: data.payment_method,
         requireSession: origin === "cash",

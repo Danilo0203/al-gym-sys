@@ -50,7 +50,7 @@ async function getCurrentOverview(adminClient: ReturnType<typeof createAdminClie
   const { data, error } = await adminClient
     .from("customer_overview")
     .select(
-      "full_name, phone, avatar_url, gender, birth_date, plan_name, subscription_status, subscription_start_date, subscription_end_date, last_check_in, is_active",
+      "full_name, phone, avatar_url, gender, birth_date, plan_name, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, last_check_in, is_active",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -116,6 +116,7 @@ export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelop
         end_date,
         status,
         discount_amount,
+        grace_days,
         plan_id,
         plans!inner (
           name,
@@ -141,6 +142,8 @@ export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelop
       plan_name: plan?.name || "Plan",
       start_date: subscription.start_date,
       end_date: subscription.end_date,
+      grace_days: subscription.grace_days ?? null,
+      access_until: null,
       status: subscription.status,
       price: plan?.price || 0,
       discount_amount: subscription.discount_amount || 0,

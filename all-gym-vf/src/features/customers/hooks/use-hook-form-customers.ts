@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import * as z from "zod";
 import { addDays } from "date-fns";
+import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 import { computeFitnessPlan } from "@/lib/fitness/excel-calculator";
@@ -42,6 +43,19 @@ const optionalPercentageNumber = z.preprocess((value) => {
   const num = Number(value);
   return Number.isNaN(num) ? value : num;
 }, z.number({ message: "Debe ser un número" }).min(1, { message: "Debe ser mayor a 0" }).max(100, { message: "Máximo 100" }).optional());
+
+const graceDaysSchema = z.preprocess((value) => {
+  if (value === null || value === undefined) return DEFAULT_SUBSCRIPTION_GRACE_DAYS;
+  if (value === "") return value;
+  const num = Number(value);
+  return Number.isNaN(num) ? value : num;
+}, z.number({ message: "La prórroga es obligatoria" }).int({ message: "La prórroga debe ser un número entero" }).min(0, { message: "La prórroga no puede ser negativa" }));
+
+const dateModeValues = ["automatic", "manual"] as const;
+
+export function calculateSubscriptionEndDate(startDate: Date, planDurationDays: number) {
+  return addDays(startDate, planDurationDays);
+}
 
 const primaryGoalValues = ["fat_loss", "muscle_gain", "recomp", "strength", "general_fitness", "cardio"] as const;
 const experienceLevelValues = ["beginner", "intermediate", "advanced"] as const;
@@ -101,6 +115,8 @@ const customerSheetSchema = z
     plan_id: z.string().optional(),
     final_price: z.number().optional(),
     discount_amount: z.coerce.number().min(0).default(0),
+    grace_days: graceDaysSchema,
+    date_mode: z.enum(dateModeValues).default("automatic"),
     payment_method: z.enum(["cash", "card", "transfer"]).default("cash"),
     subscription_period: z
       .object({
@@ -168,6 +184,8 @@ const renewSubscriptionSchema = z
     }),
     price: z.number(),
     discount_amount: z.coerce.number().min(0).default(0),
+    grace_days: graceDaysSchema,
+    date_mode: z.enum(dateModeValues).default("automatic"),
     final_price: z.number(),
     payment_method: z.enum(["cash", "card", "transfer"]),
     weight_lb: z.coerce.number().positive("El peso debe ser mayor a 0"),
@@ -283,6 +301,7 @@ export interface CustomerData {
   plan_id?: number | null;
   subscription_start_date?: string | null;
   subscription_end_date?: string | null;
+  subscription_grace_days?: number | null;
   discount_amount?: number | null;
   final_price?: number | null;
   payment_method?: string | null;
@@ -367,8 +386,11 @@ export function useHookFormCustomerSheet({
   entrypoint = "customers",
 }: UseHookFormCustomerSheetParams) {
   const [internalOpen, setInternalOpen] = useState(false);
-  const userModifiedDatesRef = useRef(false);
-  const previousPlanId = useRef<string | null>(null);
+  const previousDateStateRef = useRef<{ dateMode?: CustomerSheetFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
+    dateMode: "automatic",
+    planId: null,
+    startTime: null,
+  });
   const { data: plans = [] } = usePlans(true);
   const { mutateAsync: createCustomerMutation, isPending: isCreating } = useCreateCustomer();
   const { mutateAsync: updateCustomerMutation, isPending: isUpdating } = useUpdateCustomer();
@@ -395,6 +417,8 @@ export function useHookFormCustomerSheet({
         plan_id: customer.plan_id?.toString() || "",
         final_price: customer.final_price ?? undefined,
         discount_amount: customer.discount_amount ?? 0,
+        grace_days: normalizeGraceDays(customer.subscription_grace_days),
+        date_mode: "automatic",
         payment_method: (customer.payment_method as "cash" | "card" | "transfer") || "cash",
         primary_goal: customer.primary_goal ?? undefined,
         secondary_goal: customer.secondary_goal ?? undefined,
@@ -448,6 +472,8 @@ export function useHookFormCustomerSheet({
       birth_date: new Date(),
       plan_id: "",
       discount_amount: 0,
+      grace_days: DEFAULT_SUBSCRIPTION_GRACE_DAYS,
+      date_mode: "automatic",
       payment_method: "cash",
       final_price: undefined,
       primary_goal: undefined,
@@ -497,11 +523,16 @@ export function useHookFormCustomerSheet({
     if (!open) return;
     const values = getDefaultValues();
     form.reset(values);
-    userModifiedDatesRef.current = false;
-    previousPlanId.current = customer?.plan_id?.toString() || null;
+    previousDateStateRef.current = {
+      dateMode: values.date_mode,
+      planId: values.plan_id || null,
+      startTime: values.subscription_period?.from?.getTime() ?? null,
+    };
   }, [open, customer, form, getDefaultValues]);
 
   const watchedPlanId = useWatch({ control: form.control, name: "plan_id" });
+  const watchedDateMode = useWatch({ control: form.control, name: "date_mode" });
+  const watchedSubscriptionStartDate = useWatch({ control: form.control, name: "subscription_period.from" });
   const watchedDiscount = useWatch({ control: form.control, name: "discount_amount" });
   const watchedParqRequiresAttention = useWatch({ control: form.control, name: "parq_requires_attention" });
   const watchedWeightLb = useWatch({ control: form.control, name: "weight_lb" });
@@ -513,27 +544,37 @@ export function useHookFormCustomerSheet({
   const watchedGender = useWatch({ control: form.control, name: "gender" });
   const subscriptionPeriod = useWatch({ control: form.control, name: "subscription_period" });
   const watchedWeightKg = useMemo(() => poundsToKilograms(watchedWeightLb), [watchedWeightLb]);
-  const selectedPlanPrice = useMemo(() => {
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
-    return selectedPlan?.price ?? 0;
-  }, [plans, watchedPlanId]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id.toString() === watchedPlanId), [plans, watchedPlanId]);
+  const selectedPlanPrice = selectedPlan?.price ?? 0;
 
   useEffect(() => {
-    if (!watchedPlanId) return;
-    const planChanged = previousPlanId.current !== watchedPlanId;
-    previousPlanId.current = watchedPlanId;
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
+    const startDate = watchedSubscriptionStartDate || form.getValues("subscription_period.from") || null;
+    const currentState = {
+      dateMode: watchedDateMode,
+      planId: watchedPlanId || null,
+      startTime: startDate?.getTime() ?? null,
+    };
+    const previousState = previousDateStateRef.current;
 
-    if (!selectedPlan) return;
-    if (planChanged && !userModifiedDatesRef.current) {
-      const startDate = form.getValues("subscription_period.from") || new Date();
-      const endDate = addDays(startDate, selectedPlan.duration_days);
+    if (watchedDateMode !== "automatic" || !watchedPlanId || !selectedPlan || !startDate) {
+      previousDateStateRef.current = currentState;
+      return;
+    }
+
+    const shouldRecalculate =
+      previousState.dateMode !== "automatic" ||
+      previousState.planId !== currentState.planId ||
+      previousState.startTime !== currentState.startTime;
+
+    if (shouldRecalculate) {
       form.setValue("subscription_period", {
         from: startDate,
-        to: endDate,
-      });
+        to: calculateSubscriptionEndDate(startDate, selectedPlan.duration_days),
+      }, { shouldValidate: false });
     }
-  }, [watchedPlanId, plans, form]);
+
+    previousDateStateRef.current = currentState;
+  }, [watchedDateMode, watchedPlanId, watchedSubscriptionStartDate, selectedPlan, form]);
 
   useEffect(() => {
     const discount = Number(watchedDiscount) || 0;
@@ -588,10 +629,17 @@ export function useHookFormCustomerSheet({
 
   const handleDateRangeChange = (range: DateRange | undefined) => {
     if (!range) return;
-    userModifiedDatesRef.current = true;
+    const startDate = range.from || new Date();
+    const currentDateMode = form.getValues("date_mode");
+    const currentPlanId = form.getValues("plan_id");
+    const currentPlan = plans.find((plan) => plan.id.toString() === currentPlanId);
+
     form.setValue("subscription_period", {
-      from: range.from || new Date(),
-      to: range.to || range.from || new Date(),
+      from: startDate,
+      to:
+        currentDateMode === "automatic" && currentPlan
+          ? calculateSubscriptionEndDate(startDate, currentPlan.duration_days)
+          : range.to || startDate,
     });
   };
 
@@ -607,6 +655,7 @@ export function useHookFormCustomerSheet({
         gender: values.gender,
         payment_method: values.payment_method,
         discount_amount: values.discount_amount,
+        grace_days: values.grace_days,
         plan_id: values.plan_id ? Number(values.plan_id) : undefined,
         final_price: values.final_price,
         start_date: values.subscription_period?.from,
@@ -681,9 +730,6 @@ export function useHookFormCustomerSheet({
     calculationPreview,
     onSubmit,
     handleDateRangeChange,
-    markDatesAsModified: () => {
-      userModifiedDatesRef.current = true;
-    },
     reactivateCustomer,
   };
 }
@@ -714,12 +760,14 @@ function getRenewSubscriptionDefaultValues(
 
   return {
     plan_id: "",
+    date_mode: "automatic",
     subscription_period: {
       from: new Date(),
       to: new Date(),
     },
     price: 0,
     discount_amount: 0,
+    grace_days: DEFAULT_SUBSCRIPTION_GRACE_DAYS,
     final_price: 0,
     payment_method: "cash",
     weight_lb: kilogramsToPounds(lastAssessment?.weight_kg) || 0,
@@ -789,8 +837,11 @@ export function useHookFormRenewSubscription({
 }: UseHookFormRenewSubscriptionParams) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const userModifiedDatesRef = useRef(false);
-  const previousPlanId = useRef<string | null>(null);
+  const previousDateStateRef = useRef<{ dateMode?: RenewSubscriptionFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
+    dateMode: "automatic",
+    planId: null,
+    startTime: null,
+  });
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange ?? setInternalOpen : setInternalOpen;
@@ -802,6 +853,8 @@ export function useHookFormRenewSubscription({
   });
 
   const watchedPlanId = useWatch({ control: form.control, name: "plan_id" });
+  const watchedDateMode = useWatch({ control: form.control, name: "date_mode" });
+  const watchedSubscriptionStartDate = useWatch({ control: form.control, name: "subscription_period.from" });
   const watchedDiscount = useWatch({ control: form.control, name: "discount_amount" });
   const watchedWeightLb = useWatch({ control: form.control, name: "weight_lb" });
   const watchedHeight = useWatch({ control: form.control, name: "height_cm" });
@@ -809,10 +862,8 @@ export function useHookFormRenewSubscription({
   const watchedDietType = useWatch({ control: form.control, name: "diet_type" });
   const watchedActivity = useWatch({ control: form.control, name: "activity_level" });
   const watchedParqRequiresAttention = useWatch({ control: form.control, name: "parq_requires_attention" });
-  const selectedPlanPrice = useMemo(() => {
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
-    return selectedPlan?.price ?? 0;
-  }, [plans, watchedPlanId]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id.toString() === watchedPlanId), [plans, watchedPlanId]);
+  const selectedPlanPrice = selectedPlan?.price ?? 0;
   const watchedWeightKg = useMemo(() => poundsToKilograms(watchedWeightLb), [watchedWeightLb]);
 
   const calculationPreview =
@@ -836,29 +887,48 @@ export function useHookFormRenewSubscription({
 
   useEffect(() => {
     if (!open) return;
-    form.reset(getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile));
-    userModifiedDatesRef.current = false;
-    previousPlanId.current = null;
+    const values = getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile);
+    form.reset(values);
+    previousDateStateRef.current = {
+      dateMode: values.date_mode,
+      planId: values.plan_id || null,
+      startTime: values.subscription_period?.from?.getTime() ?? null,
+    };
   }, [open, lastAssessment, trainingProfile, form]);
 
   useEffect(() => {
-    if (!watchedPlanId) return;
-    const planChanged = previousPlanId.current !== watchedPlanId;
-    previousPlanId.current = watchedPlanId;
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
     if (!selectedPlan) return;
-
     form.setValue("price", selectedPlan.price);
+  }, [selectedPlan, form]);
 
-    if (planChanged && !userModifiedDatesRef.current) {
-      const startDate = form.getValues("subscription_period.from") || new Date();
-      const endDate = addDays(startDate, selectedPlan.duration_days);
+  useEffect(() => {
+    const startDate = watchedSubscriptionStartDate || form.getValues("subscription_period.from") || null;
+    const currentState = {
+      dateMode: watchedDateMode,
+      planId: watchedPlanId || null,
+      startTime: startDate?.getTime() ?? null,
+    };
+    const previousState = previousDateStateRef.current;
+
+    if (watchedDateMode !== "automatic" || !watchedPlanId || !selectedPlan || !startDate) {
+      previousDateStateRef.current = currentState;
+      return;
+    }
+
+    const shouldRecalculate =
+      previousState.dateMode !== "automatic" ||
+      previousState.planId !== currentState.planId ||
+      previousState.startTime !== currentState.startTime;
+
+    if (shouldRecalculate) {
       form.setValue("subscription_period", {
         from: startDate,
-        to: endDate,
-      });
+        to: calculateSubscriptionEndDate(startDate, selectedPlan.duration_days),
+      }, { shouldValidate: false });
     }
-  }, [watchedPlanId, plans, form]);
+
+    previousDateStateRef.current = currentState;
+  }, [watchedDateMode, watchedPlanId, watchedSubscriptionStartDate, selectedPlan, form]);
 
   useEffect(() => {
     const discount = Number(watchedDiscount) || 0;
@@ -892,6 +962,7 @@ export function useHookFormRenewSubscription({
         end_date: values.subscription_period.to,
         price: values.price,
         discount_amount: values.discount_amount,
+        grace_days: values.grace_days,
         amount_paid: values.final_price,
         payment_method: values.payment_method,
         weight_kg: poundsToKilograms(values.weight_lb) ?? 0,
@@ -966,8 +1037,5 @@ export function useHookFormRenewSubscription({
     selectedPlanPrice,
     calculationPreview,
     onSubmit,
-    markDatesAsModified: () => {
-      userModifiedDatesRef.current = true;
-    },
   };
 }

@@ -88,7 +88,7 @@ export function ClientProfileScreen() {
               </div>
 
               {overview?.subscription_status ? (
-                <SubscriptionStatusBadge status={overview.subscription_status} endDate={overview.subscription_end_date} />
+                <SubscriptionStatusBadge status={overview.subscription_status} endDate={overview.subscription_end_date} graceDays={overview.subscription_grace_days} accessUntil={overview.subscription_access_until} />
               ) : null}
             </div>
 

@@ -27,7 +27,7 @@ import {
 } from "@tabler/icons-react";
 import { Separator } from "@/components/ui/separator";
 import { differenceInDays } from "date-fns";
-import { useHookFormRenewSubscription } from "../hooks/use-hook-form-customers";
+import { calculateSubscriptionEndDate, useHookFormRenewSubscription } from "../hooks/use-hook-form-customers";
 import {
   CARDIO_PREFERENCE_OPTIONS,
   DAYS_PER_WEEK_OPTIONS,
@@ -80,7 +80,7 @@ export function RenewSubscriptionSheet({
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
 }: RenewSubscriptionSheetProps) {
-  const { open, setOpen, form, plans, loading, selectedPlanPrice, calculationPreview, onSubmit, markDatesAsModified } =
+  const { open, setOpen, form, plans, loading, selectedPlanPrice, calculationPreview, onSubmit } =
     useHookFormRenewSubscription({
       customerId,
       customerGender,
@@ -139,6 +139,17 @@ export function RenewSubscriptionSheet({
                     }))}
                   />
 
+                  <FormRadioGroup
+                    control={form.control}
+                    name="date_mode"
+                    label="Modo de Fecha"
+                    orientation="horizontal"
+                    options={[
+                      { label: "Fecha automática", value: "automatic" },
+                      { label: "Fecha manual", value: "manual" },
+                    ]}
+                  />
+
                   {/* CALENDARIO DE RANGO */}
                   <Controller
                     control={form.control}
@@ -150,15 +161,21 @@ export function RenewSubscriptionSheet({
 
                       // Handlers for individual date inputs
                       const handleStartChange = (date?: Date) => {
-                        markDatesAsModified();
+                        const startDate = date || new Date();
+                        const dateMode = form.getValues("date_mode");
+                        const selectedPlanId = form.getValues("plan_id");
+                        const selectedPlan = plans.find((plan) => plan.id.toString() === selectedPlanId);
+
                         form.setValue("subscription_period", {
-                          from: date || new Date(),
-                          to: field.value?.to || date || new Date(),
+                          from: startDate,
+                          to:
+                            dateMode === "automatic" && selectedPlan
+                              ? calculateSubscriptionEndDate(startDate, selectedPlan.duration_days)
+                              : field.value?.to || startDate,
                         });
                       };
 
                       const handleEndChange = (date?: Date) => {
-                        markDatesAsModified();
                         form.setValue("subscription_period", {
                           from: field.value?.from || new Date(),
                           to: date || new Date(),
@@ -201,6 +218,18 @@ export function RenewSubscriptionSheet({
                       );
                     }}
                   />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormInputGroup
+                      control={form.control}
+                      name="grace_days"
+                      label="Prorroga"
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="3"
+                    />
+                  </div>
 
                   {/* Cálculos de Precio */}
                   <div className="grid grid-cols-3 gap-4 items-end bg-muted/30 p-3 rounded-md">

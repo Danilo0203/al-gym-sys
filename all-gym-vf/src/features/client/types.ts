@@ -19,6 +19,8 @@ export interface ClientOverviewSummary {
   subscription_status: string | null;
   subscription_start_date: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   last_check_in: string | null;
   is_active: boolean | null;
 }
@@ -43,6 +45,8 @@ export interface ClientMembershipHistoryEntry {
   plan_name: string;
   start_date: string;
   end_date: string;
+  grace_days?: number | null;
+  access_until?: string | null;
   status: string;
   price: number;
   discount_amount: number;
