@@ -1,8 +1,8 @@
 # Checklist de pendientes
 
-* [ ] En fechas: comprobar que tire automático los 3 días de prórroga, como en Excel.
-* [ ] Revisar las 30 fechas.
-* [ ] Validar condición: si la fecha cae en fin de semana, que pueda acceder el lunes.
+* [x] En fechas: comprobar que tire automático los 3 días de prórroga, como en Excel.
+* [x] Revisar las 30 fechas.
+* [x] Validar condición: si la fecha cae en fin de semana, que pueda acceder el lunes.
 * [ ] En renovar suscripciones: dejar opcionales todos los demás datos.
 * [ ] Revisar pago de 2 meses para que no cobre solo 1.
 * [ ] Activar el Firewall de Windows.
