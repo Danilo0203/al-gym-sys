@@ -62,9 +62,10 @@ interface CustomerTableProps {
   data: Customer[];
   totalItems: number;
   planOptions?: PlanOption[];
+  canUpdate: boolean;
 }
 
-export function CustomerTable({ data, totalItems, planOptions = [] }: CustomerTableProps) {
+export function CustomerTable({ data, totalItems, planOptions = [], canUpdate }: CustomerTableProps) {
   const router = useRouter();
   const [pageSize] = useQueryState("perPage", parseAsInteger.withDefault(10));
   const [liveData, setLiveData] = useState<Customer[]>(data);
@@ -152,8 +153,8 @@ export function CustomerTable({ data, totalItems, planOptions = [] }: CustomerTa
 
   // Generar columnas con las opciones de planes (memoizado)
   const columns = useMemo(
-    () => getColumns(planOptions, { fullNameColumnSize }),
-    [fullNameColumnSize, planOptions]
+    () => getColumns(planOptions, { fullNameColumnSize, canUpdate }),
+    [canUpdate, fullNameColumnSize, planOptions]
   );
 
   const { table } = useDataTable({
