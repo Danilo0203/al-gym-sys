@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { normalizeExerciseCatalogItem, mapProviderExerciseToCatalogPayload } from "@/lib/training/catalog";
 import {
+  hydrateExerciseCatalogItem,
+  hydrateExerciseCatalogMedia,
   hydrateProviderExerciseSummaries,
   resolveProviderExercisePayloadMedia,
 } from "@/lib/training/exercise-media";
@@ -60,7 +62,7 @@ async function listExerciseCatalog(
     .order("display_name", { ascending: true });
 
   if (error) throw error;
-  return (data || []).map((row) => normalizeExerciseCatalogItem(row as Record<string, unknown>));
+  return hydrateExerciseCatalogMedia((data || []).map((row) => normalizeExerciseCatalogItem(row as Record<string, unknown>)));
 }
 
 function normalizeDirectProviderSummary(item: Record<string, unknown>) {
@@ -336,6 +338,6 @@ export async function importExerciseFromProvider(rawExercise: Record<string, unk
 
   return {
     success: true,
-    data: normalizeExerciseCatalogItem(data as Record<string, unknown>),
+    data: await hydrateExerciseCatalogItem(normalizeExerciseCatalogItem(data as Record<string, unknown>)),
   };
 }

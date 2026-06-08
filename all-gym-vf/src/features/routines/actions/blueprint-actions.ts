@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { resolveExerciseImageUrl } from "@/lib/training/exercise-media";
 import type { RoutineBlockType } from "@/lib/training/types";
 
 export interface BlueprintRecord {
@@ -270,7 +271,7 @@ export async function getRoutineBlueprintDetail(blueprintId: string): Promise<{
         .single(),
       adminClient
         .from("routine_blueprint_details")
-        .select("*, exercise:exercises(id, image_url, video_url)")
+        .select("*, exercise:exercises(id, name, display_name, display_name_es, image_url, video_url)")
         .eq("blueprint_id", blueprintId)
         .order("day_of_week", { ascending: true })
         .order("exercise_order", { ascending: true }),
@@ -284,26 +285,39 @@ export async function getRoutineBlueprintDetail(blueprintId: string): Promise<{
   if (bpError || !bpData) throw new Error("Plantilla no encontrada.");
   const bp = bpData as Record<string, unknown>;
 
-  const details: BlueprintDetailRecord[] = (detailsData ?? []).map((row) => {
-    const ex = (Array.isArray(row.exercise) ? row.exercise[0] : row.exercise ?? {}) as Record<string, unknown>;
-    return {
-      id: Number(row.id),
-      blueprint_id: String(row.blueprint_id),
-      day_of_week: Number(row.day_of_week),
-      exercise_id: typeof row.exercise_id === "number" ? row.exercise_id : null,
-      exercise_order: typeof row.exercise_order === "number" ? row.exercise_order : null,
-      block_type: String(row.block_type ?? "strength") as RoutineBlockType,
-      sets: typeof row.sets === "number" ? row.sets : null,
-      reps: typeof row.reps === "string" ? row.reps : null,
-      rest_seconds: typeof row.rest_seconds === "number" ? row.rest_seconds : null,
-      duration_minutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
-      target_rir: typeof row.target_rir === "number" ? row.target_rir : null,
-      notes: typeof row.notes === "string" ? row.notes : null,
-      exercise_name_snapshot: typeof row.exercise_name_snapshot === "string" ? row.exercise_name_snapshot : null,
-      exercise_image_url: typeof ex.image_url === "string" ? ex.image_url : null,
-      exercise_video_url: typeof ex.video_url === "string" ? ex.video_url : null,
-    };
-  });
+  const details: BlueprintDetailRecord[] = await Promise.all(
+    (detailsData ?? []).map(async (row) => {
+      const ex = (Array.isArray(row.exercise) ? row.exercise[0] : row.exercise ?? {}) as Record<string, unknown>;
+      const exerciseName =
+        (typeof ex.display_name_es === "string" && ex.display_name_es) ||
+        (typeof ex.display_name === "string" && ex.display_name) ||
+        (typeof ex.name === "string" && ex.name) ||
+        (typeof row.exercise_name_snapshot === "string" ? row.exercise_name_snapshot : null);
+      const resolvedImageUrl = await resolveExerciseImageUrl({
+        imageUrl: typeof ex.image_url === "string" ? ex.image_url : null,
+        name: exerciseName,
+        fallbackQueries: [typeof row.exercise_name_snapshot === "string" ? row.exercise_name_snapshot : null],
+      });
+
+      return {
+        id: Number(row.id),
+        blueprint_id: String(row.blueprint_id),
+        day_of_week: Number(row.day_of_week),
+        exercise_id: typeof row.exercise_id === "number" ? row.exercise_id : null,
+        exercise_order: typeof row.exercise_order === "number" ? row.exercise_order : null,
+        block_type: String(row.block_type ?? "strength") as RoutineBlockType,
+        sets: typeof row.sets === "number" ? row.sets : null,
+        reps: typeof row.reps === "string" ? row.reps : null,
+        rest_seconds: typeof row.rest_seconds === "number" ? row.rest_seconds : null,
+        duration_minutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
+        target_rir: typeof row.target_rir === "number" ? row.target_rir : null,
+        notes: typeof row.notes === "string" ? row.notes : null,
+        exercise_name_snapshot: typeof row.exercise_name_snapshot === "string" ? row.exercise_name_snapshot : null,
+        exercise_image_url: resolvedImageUrl,
+        exercise_video_url: typeof ex.video_url === "string" ? ex.video_url : null,
+      };
+    }),
+  );
 
   const assignmentMap = new Map<string, string | null>();
   const assignmentUsers = new Set<string>();

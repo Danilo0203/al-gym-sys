@@ -8,6 +8,8 @@ import { saveRoutineAsBlueprint } from "@/features/routines/actions/blueprint-ac
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { normalizeExerciseCatalogItem, mapProviderExerciseToCatalogPayload } from "@/lib/training/catalog";
 import {
+  hydrateExerciseCatalogItem,
+  hydrateExerciseCatalogMedia,
   hydrateProviderExerciseSummaries,
   resolveExerciseImageUrl,
   resolveProviderExercisePayloadMedia,
@@ -495,7 +497,7 @@ async function listExerciseCatalog(adminClient: AdminSupabaseClient): Promise<Ex
     .order("display_name", { ascending: true });
 
   if (error) throw error;
-  return (data || []).map((row: Record<string, unknown>) => normalizeExerciseCatalogItem(row));
+  return hydrateExerciseCatalogMedia((data || []).map((row: Record<string, unknown>) => normalizeExerciseCatalogItem(row)));
 }
 
 function uniqueStrings(values: Array<string | null | undefined>) {
@@ -1249,7 +1251,7 @@ export async function importExerciseFromProvider(rawExercise: Record<string, unk
 
   return {
     success: true,
-    data: normalizeExerciseCatalogItem(data as Record<string, unknown>),
+    data: await hydrateExerciseCatalogItem(normalizeExerciseCatalogItem(data as Record<string, unknown>)),
   };
 }
 
@@ -1298,7 +1300,8 @@ export async function seedExerciseCatalog() {
         });
 
         const rawExercise = (providerResult?.data as Record<string, unknown>) || item;
-        const payload = mapProviderExerciseToCatalogPayload(rawExercise);
+        const normalizedProviderExercise = await resolveProviderExercisePayloadMedia(rawExercise);
+        const payload = mapProviderExerciseToCatalogPayload(normalizedProviderExercise);
 
         const { error } = await adminClient
           .from("exercises")

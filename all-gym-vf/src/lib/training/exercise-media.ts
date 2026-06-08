@@ -4,6 +4,8 @@ import type { ExerciseCatalogItem, ProviderExerciseSummary } from "@/lib/trainin
 const EXERCISEDB_PUBLIC_SEARCH_BASE_URL = "https://www.exercisedb.dev";
 const EXERCISEDB_PUBLIC_MEDIA_HOST = "static.exercisedb.dev";
 const EXERCISEDB_LEGACY_MEDIA_HOST = "v2.exercisedb.io";
+const EXERCISEDB_DIRECT_MEDIA_HOST = "exercisedb.p.rapidapi.com";
+const EXERCISEDB_PUBLIC_MEDIA_BASE_URL = `https://${EXERCISEDB_PUBLIC_MEDIA_HOST}`;
 const PUBLIC_EXERCISE_MEDIA_CACHE = new Map<string, Promise<string | null>>();
 
 function uniqueStrings(values: Array<string | null | undefined>) {
@@ -17,12 +19,40 @@ function getExerciseDisplayName(exercise: ExerciseCatalogItem) {
 function normalizeExerciseMediaUrl(url: string | null | undefined) {
   if (typeof url !== "string") return null;
 
-  const normalizedUrl = url.trim();
+  const normalizedUrl = url.trim().replace(/^\/\//, "https://");
   if (!normalizedUrl || normalizedUrl === "null" || normalizedUrl === "undefined") {
     return null;
   }
 
   return normalizedUrl;
+}
+
+function isAbsoluteHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
+function looksLikeRelativeExerciseMediaPath(value: string) {
+  if (!value || isAbsoluteHttpUrl(value) || value.startsWith("data:image/")) {
+    return false;
+  }
+
+  return (
+    value.startsWith("/") ||
+    value.startsWith("./") ||
+    value.startsWith("../") ||
+    value.startsWith("media/") ||
+    value.startsWith("images/") ||
+    value.startsWith("exercises/") ||
+    /\.(gif|png|jpe?g|webp)(\?.*)?$/i.test(value)
+  );
+}
+
+function tryParseUrl(value: string) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
 }
 
 export function isExerciseMediaStoredLocally(url: string | null | undefined) {
@@ -39,22 +69,62 @@ export function isLegacyExerciseDbImageUrl(url: string | null | undefined) {
   const normalizedUrl = normalizeExerciseMediaUrl(url);
   if (!normalizedUrl) return false;
 
-  try {
-    return new URL(normalizedUrl).hostname === EXERCISEDB_LEGACY_MEDIA_HOST;
-  } catch {
-    return false;
-  }
+  return tryParseUrl(normalizedUrl)?.hostname === EXERCISEDB_LEGACY_MEDIA_HOST;
 }
 
 function isCurrentExerciseDbImageUrl(url: string | null | undefined) {
   const normalizedUrl = normalizeExerciseMediaUrl(url);
   if (!normalizedUrl) return false;
 
-  try {
-    return new URL(normalizedUrl).hostname === EXERCISEDB_PUBLIC_MEDIA_HOST;
-  } catch {
-    return false;
+  return tryParseUrl(normalizedUrl)?.hostname === EXERCISEDB_PUBLIC_MEDIA_HOST;
+}
+
+function isDirectExerciseDbImageUrl(url: string | null | undefined) {
+  const normalizedUrl = normalizeExerciseMediaUrl(url);
+  if (!normalizedUrl) return false;
+
+  return tryParseUrl(normalizedUrl)?.hostname === EXERCISEDB_DIRECT_MEDIA_HOST;
+}
+
+function normalizePublicExerciseMediaUrl(url: string) {
+  const parsed = tryParseUrl(url);
+  if (!parsed) return null;
+
+  if (parsed.hostname !== EXERCISEDB_PUBLIC_MEDIA_HOST) {
+    return null;
   }
+
+  parsed.protocol = "https:";
+  return parsed.toString();
+}
+
+function buildCanonicalExerciseDbPublicMediaUrl(url: string | null | undefined) {
+  const normalizedUrl = normalizeExerciseMediaUrl(url);
+  if (!normalizedUrl) return null;
+
+  if (isCurrentExerciseDbImageUrl(normalizedUrl)) {
+    return normalizePublicExerciseMediaUrl(normalizedUrl);
+  }
+
+  if (looksLikeRelativeExerciseMediaPath(normalizedUrl)) {
+    return new URL(normalizedUrl.replace(/^\.?\/*/, ""), `${EXERCISEDB_PUBLIC_MEDIA_BASE_URL}/`).toString();
+  }
+
+  const parsed = tryParseUrl(normalizedUrl);
+  if (!parsed) {
+    return null;
+  }
+
+  if (![EXERCISEDB_LEGACY_MEDIA_HOST, EXERCISEDB_DIRECT_MEDIA_HOST].includes(parsed.hostname)) {
+    return null;
+  }
+
+  const pathname = parsed.pathname.replace(/^\/+/, "");
+  if (!pathname) {
+    return null;
+  }
+
+  return new URL(pathname, `${EXERCISEDB_PUBLIC_MEDIA_BASE_URL}/`).toString();
 }
 
 function selectBestPublicMediaMatch(
@@ -144,9 +214,9 @@ export async function resolveExerciseImageUrl(input: {
   fallbackQueries?: Array<string | null | undefined>;
 }) {
   const normalizedUrl = normalizeExerciseMediaUrl(input.imageUrl);
+  const fallbackQueries = uniqueStrings([input.name, ...(input.fallbackQueries || [])]);
 
   if (!normalizedUrl) {
-    const fallbackQueries = uniqueStrings([input.name, ...(input.fallbackQueries || [])]);
     for (const query of fallbackQueries) {
       const resolvedUrl = await fetchPublicExerciseMedia(query);
       if (resolvedUrl) {
@@ -158,14 +228,21 @@ export async function resolveExerciseImageUrl(input: {
   }
 
   if (isExerciseMediaStoredLocally(normalizedUrl) || isCurrentExerciseDbImageUrl(normalizedUrl)) {
+    return isCurrentExerciseDbImageUrl(normalizedUrl)
+      ? normalizePublicExerciseMediaUrl(normalizedUrl) || normalizedUrl
+      : normalizedUrl;
+  }
+
+  const needsPublicResolution =
+    isLegacyExerciseDbImageUrl(normalizedUrl) ||
+    isDirectExerciseDbImageUrl(normalizedUrl) ||
+    looksLikeRelativeExerciseMediaPath(normalizedUrl);
+  const canonicalExerciseDbUrl = buildCanonicalExerciseDbPublicMediaUrl(normalizedUrl);
+
+  if (!needsPublicResolution) {
     return normalizedUrl;
   }
 
-  if (!isLegacyExerciseDbImageUrl(normalizedUrl)) {
-    return normalizedUrl;
-  }
-
-  const fallbackQueries = uniqueStrings([input.name, ...(input.fallbackQueries || [])]);
   for (const query of fallbackQueries) {
     const resolvedUrl = await fetchPublicExerciseMedia(query);
     if (resolvedUrl) {
@@ -173,7 +250,7 @@ export async function resolveExerciseImageUrl(input: {
     }
   }
 
-  return normalizedUrl;
+  return canonicalExerciseDbUrl || normalizedUrl;
 }
 
 export async function hydrateExerciseCatalogMedia(exercises: ExerciseCatalogItem[]) {
@@ -195,6 +272,11 @@ export async function hydrateExerciseCatalogMedia(exercises: ExerciseCatalogItem
       };
     }),
   );
+}
+
+export async function hydrateExerciseCatalogItem(exercise: ExerciseCatalogItem) {
+  const [hydratedExercise] = await hydrateExerciseCatalogMedia([exercise]);
+  return hydratedExercise;
 }
 
 export async function hydrateProviderExerciseSummaries(exercises: ProviderExerciseSummary[]) {
