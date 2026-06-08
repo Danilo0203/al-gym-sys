@@ -17,7 +17,7 @@ export default async function CustomerDetailLayout({ children, params }: Custome
   const { data: customers } = await supabase
     .from("customer_overview")
     .select(
-      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, plan_name, last_check_in",
+      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, plan_name, last_check_in",
     )
     .order("subscription_status", { ascending: true }) // Active first
     .order("full_name", { ascending: true })

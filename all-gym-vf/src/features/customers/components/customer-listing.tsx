@@ -3,8 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { CustomerTable } from "./customer-tables/customer-table";
 import { Customer } from "./customer-tables/columns";
 import { searchParamsCache } from "@/lib/searchparams";
+import { getSubscriptionAccessUntilISO, todayLocalISO } from "@/lib/subscriptions/grace-period";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 
 export default async function CustomerListingPage() {
+  const access = await getUserAccessContext();
+  const canUpdate = hasPermission(access, "customers.update");
+
   const page = searchParamsCache.get("page");
   const pageLimit = searchParamsCache.get("perPage");
   const fullName = searchParamsCache.get("full_name");
@@ -27,13 +32,44 @@ export default async function CustomerListingPage() {
   const supabase = await createClient();
   const adminClient = createAdminClient();
 
-  // Actualizar automáticamente suscripciones vencidas en la BD
-  // Esto marca como 'expired' cualquier suscripción cuya end_date haya pasado
-  await supabase
+  // Actualizar automáticamente suscripciones vencidas respetando la prórroga.
+  const today = todayLocalISO();
+  const { data: activeSubscriptions, error: expireFetchError } = await adminClient
     .from("subscriptions")
-    .update({ status: "expired" })
-    .eq("status", "active")
-    .lt("end_date", new Date().toISOString().split("T")[0]);
+    .select("id, end_date, grace_days")
+    .eq("status", "active");
+
+  if (expireFetchError) {
+    console.error("Error fetching subscriptions to expire:", {
+      code: expireFetchError.code,
+      message: expireFetchError.message,
+      details: expireFetchError.details,
+      hint: expireFetchError.hint,
+    });
+  } else {
+    const expiredSubscriptionIds = (activeSubscriptions || [])
+      .filter((subscription) => {
+        const accessUntil = getSubscriptionAccessUntilISO(subscription.end_date, subscription.grace_days);
+        return accessUntil !== null && accessUntil < today;
+      })
+      .map((subscription) => subscription.id);
+
+    if (expiredSubscriptionIds.length > 0) {
+      const { error: expireUpdateError } = await adminClient
+        .from("subscriptions")
+        .update({ status: "expired" })
+        .in("id", expiredSubscriptionIds);
+
+      if (expireUpdateError) {
+        console.error("Error expiring subscriptions:", {
+          code: expireUpdateError.code,
+          message: expireUpdateError.message,
+          details: expireUpdateError.details,
+          hint: expireUpdateError.hint,
+        });
+      }
+    }
+  }
 
   // Obtener la lista de planes para el filtro
   const { data: plans } = await supabase.from("plans").select("id, name").order("name");
@@ -48,7 +84,7 @@ export default async function CustomerListingPage() {
   let query = supabase
     .from("customer_overview")
     .select(
-      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, plan_name, last_check_in, is_active",
+      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, plan_name, last_check_in, is_active",
       { count: "exact" },
     );
 
@@ -121,7 +157,12 @@ export default async function CustomerListingPage() {
   const { data: customers, error, count } = await query;
 
   if (error) {
-    console.error("Error fetching customers (view):", error);
+    console.error("Error fetching customers (view):", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
   }
 
   const totalitems = count || 0;
@@ -201,5 +242,5 @@ export default async function CustomerListingPage() {
     }
   }
 
-  return <CustomerTable data={enrichedCustomers} totalItems={totalitems} planOptions={planOptions} />;
+  return <CustomerTable data={enrichedCustomers} totalItems={totalitems} planOptions={planOptions} canUpdate={canUpdate} />;
 }

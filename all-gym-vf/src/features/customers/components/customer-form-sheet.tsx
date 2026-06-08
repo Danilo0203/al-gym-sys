@@ -44,7 +44,7 @@ import {
   PRIMARY_GOAL_OPTIONS,
   RESTRICTED_MOVEMENT_OPTIONS,
 } from "@/lib/training/options";
-import { CustomerData, useHookFormCustomerSheet } from "../hooks/use-hook-form-customers";
+import { CustomerData, calculateSubscriptionEndDate, useHookFormCustomerSheet } from "../hooks/use-hook-form-customers";
 export type { CustomerData } from "../hooks/use-hook-form-customers";
 
 interface CustomerFormSheetProps {
@@ -72,11 +72,14 @@ export function CustomerFormSheet({
     isEditing,
     isPending,
     selectedPlanPrice,
+    selectedPlanDurationDays,
+    membershipPricing,
+    allowManualFinalPrice,
+    markFinalPriceAsManual,
     subscriptionPeriod,
     calculationPreview,
     onSubmit,
     handleDateRangeChange,
-    markDatesAsModified,
     reactivateCustomer,
   } = useHookFormCustomerSheet({
     mode,
@@ -236,6 +239,17 @@ export function CustomerFormSheet({
                     }))}
                   />
 
+                  <FormRadioGroup
+                    control={form.control}
+                    name="date_mode"
+                    label="Modo de Fecha"
+                    orientation="horizontal"
+                    options={[
+                      { label: "Fecha automática", value: "automatic" },
+                      { label: "Fecha manual", value: "manual" },
+                    ]}
+                  />
+
                   <Controller
                     control={form.control}
                     name="subscription_period"
@@ -246,15 +260,21 @@ export function CustomerFormSheet({
                       const membershipEndMonth = new Date(new Date().getFullYear() + 10, 11);
 
                       const handleStartChange = (date?: Date) => {
-                        markDatesAsModified();
+                        const startDate = date || new Date();
+                        const dateMode = form.getValues("date_mode");
+                        const selectedPlanId = form.getValues("plan_id");
+                        const selectedPlan = plans.find((plan) => plan.id.toString() === selectedPlanId);
+
                         form.setValue("subscription_period", {
-                          from: date || new Date(),
-                          to: field.value?.to || date || new Date(),
+                          from: startDate,
+                          to:
+                            dateMode === "automatic" && selectedPlan
+                              ? calculateSubscriptionEndDate(startDate, selectedPlan.duration_days)
+                              : field.value?.to || startDate,
                         });
                       };
 
                       const handleEndChange = (date?: Date) => {
-                        markDatesAsModified();
                         form.setValue("subscription_period", {
                           from: field.value?.from || new Date(),
                           to: date || new Date(),
@@ -262,7 +282,6 @@ export function CustomerFormSheet({
                       };
 
                       const applyPreset = (days: number) => {
-                        markDatesAsModified();
                         const start = field.value?.from || new Date();
                         const end = addDays(start, days);
                         form.setValue("subscription_period", {
@@ -355,6 +374,18 @@ export function CustomerFormSheet({
                     }}
                   />
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormInputGroup
+                      control={form.control}
+                      name="grace_days"
+                      label="Prorroga"
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="3"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-3 gap-4 items-end bg-muted/30 p-3 rounded-md">
                     <div className="flex flex-col gap-2">
                       <label className="text-xs font-medium text-muted-foreground">Precio Plan</label>
@@ -375,16 +406,42 @@ export function CustomerFormSheet({
 
                     <div className="flex flex-col gap-2">
                       <label className="text-xs font-medium text-primary">Precio Final</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-2.5 text-sm font-bold">Q</span>
-                        <input
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 pl-7 py-2 text-sm font-bold text-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled
-                          value={form.watch("final_price")?.toFixed(2) || "0.00"}
-                        />
-                      </div>
+                      <Controller
+                        control={form.control}
+                        name="final_price"
+                        render={({ field, fieldState }) => (
+                          <Field data-invalid={fieldState.invalid}>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-sm font-bold">Q</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 pl-7 py-2 text-sm font-bold text-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!allowManualFinalPrice}
+                                value={field.value ?? ""}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  markFinalPriceAsManual();
+                                  field.onChange(value === "" ? undefined : Number.parseFloat(value));
+                                }}
+                              />
+                            </div>
+                            <FieldError errors={[fieldState.error]} />
+                          </Field>
+                        )}
+                      />
                     </div>
                   </div>
+
+                  {allowManualFinalPrice && membershipPricing && (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      La duración seleccionada ({membershipPricing.selectedDays} días) no coincide exactamente con el plan
+                      {selectedPlanDurationDays ? ` de ${selectedPlanDurationDays} días` : ""}. El sistema sugiere cobrar
+                      {" "}<span className="font-semibold">Q{membershipPricing.suggestedFinalPrice.toFixed(2)}</span>
+                      {" "}({membershipPricing.suggestedCycles} períodos), pero puedes modificar el monto final a tu gusto.
+                    </p>
+                  )}
 
                   <FormSelect
                     control={form.control}

@@ -74,6 +74,8 @@ export function ClientMembershipScreen() {
               <SubscriptionStatusBadge
                 status={overview?.subscription_status}
                 endDate={overview?.subscription_end_date}
+                graceDays={overview?.subscription_grace_days}
+                accessUntil={overview?.subscription_access_until}
               />
             </div>
 
@@ -141,7 +143,7 @@ export function ClientMembershipScreen() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <SubscriptionStatusBadge status={subscription.status} endDate={subscription.end_date} />
+                  <SubscriptionStatusBadge status={subscription.status} endDate={subscription.end_date} graceDays={subscription.grace_days} accessUntil={subscription.access_until} />
                   <div className="text-right text-sm">
                     <p className="font-semibold">{formatCurrency(subscription.price - subscription.discount_amount)}</p>
                     {subscription.discount_amount > 0 ? (

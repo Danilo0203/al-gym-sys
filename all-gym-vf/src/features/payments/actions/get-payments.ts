@@ -31,6 +31,8 @@ interface PaymentRow {
   plan_name: string | null;
   subscription_status: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
 }
 
 export async function getPayments({
@@ -146,6 +148,8 @@ export async function getPayments({
       plan_name: p.plan_name || "Sin plan",
       subscription_status: p.subscription_status,
       subscription_end_date: p.subscription_end_date,
+      subscription_grace_days: p.subscription_grace_days ?? null,
+      subscription_access_until: p.subscription_access_until ?? null,
     };
   });
 

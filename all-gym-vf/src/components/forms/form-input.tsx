@@ -58,7 +58,7 @@ function FormInput<
             {...field}
             value={
               type === 'number'
-                ? field.value === 0 || field.value === undefined || field.value === null
+                ? field.value === '' || field.value === 0 || field.value === undefined || field.value === null || (typeof field.value === 'number' && Number.isNaN(field.value))
                   ? ''
                   : field.value
                 : field.value ?? ''
@@ -66,7 +66,7 @@ function FormInput<
             onChange={(e) => {
               if (type === 'number') {
                 const value = e.target.value;
-                field.onChange(value === '' ? undefined : parseFloat(value));
+                field.onChange(value === '' ? '' : Number.parseFloat(value));
               } else {
                 field.onChange(e.target.value);
               }

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays } from "date-fns";
+import { getSubscriptionAccessUntilDate } from "@/lib/subscriptions/grace-period";
 import { es } from "date-fns/locale";
 import {
   IconRotateClockwise,
@@ -116,11 +117,12 @@ export function SubscriptionHistoryTab({
 
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  const endDateNormalized = new Date(endDate);
-                  endDateNormalized.setHours(0, 0, 0, 0);
+                  const accessUntil = getSubscriptionAccessUntilDate(sub.end_date, sub.grace_days);
+                  const accessUntilNormalized = accessUntil ? new Date(accessUntil) : new Date(endDate);
+                  accessUntilNormalized.setHours(0, 0, 0, 0);
 
                   let realStatus = sub.status;
-                  if (sub.status === "active" && endDateNormalized < today) {
+                  if (sub.status === "active" && accessUntilNormalized < today) {
                     realStatus = "expired";
                   }
 

@@ -35,7 +35,7 @@ export function OrgSwitcher() {
          id: "mem_1",
          organization: {
             id: "org_1",
-            name: "AllGym",
+            name: "AlGym",
             slug: "allgym",
             imageUrl: "",
             hasImage: false
@@ -120,7 +120,7 @@ export function OrgSwitcher() {
                 : 'visible max-w-full opacity-100'
             }`}
           >
-            <span className='truncate font-medium'>AllGym</span>
+            <span className='truncate font-medium'>AlGym</span>
             <span className='text-muted-foreground truncate text-xs'>
               {userMemberships.data.find(
                 (m) => m.organization.id === displayOrganization.id

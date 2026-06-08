@@ -20,6 +20,8 @@ export interface Payment {
   user_id: string;
   subscription_status?: string | null;
   subscription_end_date?: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
 }
 
 export interface MethodOption {
@@ -132,7 +134,9 @@ export function getColumns(methodOptions: MethodOption[] = defaultMethodOptions)
       cell: ({ row }) => (
         <SubscriptionStatusBadge 
           status={row.original.subscription_status} 
-          endDate={row.original.subscription_end_date} 
+          endDate={row.original.subscription_end_date}
+          graceDays={row.original.subscription_grace_days}
+          accessUntil={row.original.subscription_access_until}
         />
       ),
     },

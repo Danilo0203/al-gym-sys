@@ -5,7 +5,8 @@ import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import * as z from "zod";
-import { addDays } from "date-fns";
+import { addDays, differenceInDays } from "date-fns";
+import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
 import { computeFitnessPlan } from "@/lib/fitness/excel-calculator";
@@ -42,6 +43,90 @@ const optionalPercentageNumber = z.preprocess((value) => {
   const num = Number(value);
   return Number.isNaN(num) ? value : num;
 }, z.number({ message: "Debe ser un número" }).min(1, { message: "Debe ser mayor a 0" }).max(100, { message: "Máximo 100" }).optional());
+
+const optionalBoundedInteger = (min: number, max: number, invalidMessage: string) =>
+  z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) return undefined;
+    const num = Number(value);
+    return Number.isNaN(num) ? value : num;
+  }, z.number({ message: invalidMessage }).int({ message: invalidMessage }).min(min).max(max).optional());
+
+const graceDaysSchema = z.preprocess((value) => {
+  if (value === null || value === undefined) return DEFAULT_SUBSCRIPTION_GRACE_DAYS;
+  if (value === "") return value;
+  const num = Number(value);
+  return Number.isNaN(num) ? value : num;
+}, z.number({ message: "La prórroga es obligatoria" }).int({ message: "La prórroga debe ser un número entero" }).min(0, { message: "La prórroga no puede ser negativa" }));
+
+const dateModeValues = ["automatic", "manual"] as const;
+
+export function calculateSubscriptionEndDate(startDate: Date, planDurationDays: number) {
+  return addDays(startDate, planDurationDays);
+}
+
+interface MembershipPricingSummary {
+  selectedDays: number;
+  isExactMultiple: boolean;
+  suggestedCycles: number;
+  suggestedBasePrice: number;
+  suggestedFinalPrice: number;
+}
+
+function calculateMembershipPricing(params: {
+  planPrice?: number | null;
+  planDurationDays?: number | null;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  discountAmount?: number | null;
+}): MembershipPricingSummary | null {
+  const { planPrice, planDurationDays, startDate, endDate, discountAmount } = params;
+
+  if (
+    typeof planPrice !== "number" ||
+    !Number.isFinite(planPrice) ||
+    typeof planDurationDays !== "number" ||
+    !Number.isFinite(planDurationDays) ||
+    planDurationDays <= 0 ||
+    !startDate ||
+    !endDate
+  ) {
+    return null;
+  }
+
+  const selectedDays = differenceInDays(endDate, startDate);
+  if (!Number.isFinite(selectedDays) || selectedDays <= 0) {
+    return null;
+  }
+
+  const exactCycles = selectedDays / planDurationDays;
+  const isExactMultiple = Number.isInteger(exactCycles);
+  const suggestedCycles = isExactMultiple ? exactCycles : Math.ceil(exactCycles);
+  const suggestedBasePrice = Math.max(0, planPrice * suggestedCycles);
+  const normalizedDiscount = typeof discountAmount === "number" && Number.isFinite(discountAmount) ? discountAmount : 0;
+
+  return {
+    selectedDays,
+    isExactMultiple,
+    suggestedCycles,
+    suggestedBasePrice,
+    suggestedFinalPrice: Math.max(0, suggestedBasePrice - normalizedDiscount),
+  };
+}
+
+function buildMembershipPricingContextKey(params: {
+  planId?: string | null;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  discountAmount?: number | null;
+}) {
+  const { planId, startDate, endDate, discountAmount } = params;
+  return [
+    planId || "",
+    startDate?.getTime() ?? "",
+    endDate?.getTime() ?? "",
+    typeof discountAmount === "number" && Number.isFinite(discountAmount) ? discountAmount : 0,
+  ].join("|");
+}
 
 const primaryGoalValues = ["fat_loss", "muscle_gain", "recomp", "strength", "general_fitness", "cardio"] as const;
 const experienceLevelValues = ["beginner", "intermediate", "advanced"] as const;
@@ -101,6 +186,8 @@ const customerSheetSchema = z
     plan_id: z.string().optional(),
     final_price: z.number().optional(),
     discount_amount: z.coerce.number().min(0).default(0),
+    grace_days: graceDaysSchema,
+    date_mode: z.enum(dateModeValues).default("automatic"),
     payment_method: z.enum(["cash", "card", "transfer"]).default("cash"),
     subscription_period: z
       .object({
@@ -168,32 +255,34 @@ const renewSubscriptionSchema = z
     }),
     price: z.number(),
     discount_amount: z.coerce.number().min(0).default(0),
+    grace_days: graceDaysSchema,
+    date_mode: z.enum(dateModeValues).default("automatic"),
     final_price: z.number(),
     payment_method: z.enum(["cash", "card", "transfer"]),
-    weight_lb: z.coerce.number().positive("El peso debe ser mayor a 0"),
-    height_cm: z.coerce.number().positive("La estatura debe ser mayor a 0"),
-    body_type: z.enum(["ectomorph", "mesomorph", "endomorph"]),
-    diet_type: z.enum(["hipocalorica", "normocalorica", "hipercalorica"]),
-    activity_level: z.enum(["sedentario", "1_3_dias", "3_5_dias", "6_7_dias", "2_veces_dia"]),
-    body_fat_percentage: z.coerce.number().min(1, "Ingresa % grasa").max(100),
-    muscle_mass_kg: z.coerce.number().positive("Ingresa masa muscular"),
-    chest: z.coerce.number().positive("Ingresa pecho"),
-    waist: z.coerce.number().positive("Ingresa cintura"),
-    hip: z.coerce.number().positive("Ingresa cadera"),
-    arm_right: z.coerce.number().positive("Ingresa brazo derecho"),
-    arm_left: z.coerce.number().positive("Ingresa brazo izquierdo"),
-    leg_right: z.coerce.number().positive("Ingresa pierna derecha"),
-    leg_left: z.coerce.number().positive("Ingresa pierna izquierda"),
+    weight_lb: optionalPositiveNumber,
+    height_cm: optionalPositiveNumber,
+    body_type: z.enum(["ectomorph", "mesomorph", "endomorph"]).optional(),
+    diet_type: z.enum(["hipocalorica", "normocalorica", "hipercalorica"]).optional(),
+    activity_level: z.enum(["sedentario", "1_3_dias", "3_5_dias", "6_7_dias", "2_veces_dia"]).optional(),
+    body_fat_percentage: optionalPercentageNumber,
+    muscle_mass_kg: optionalPositiveNumber,
+    chest: optionalPositiveNumber,
+    waist: optionalPositiveNumber,
+    hip: optionalPositiveNumber,
+    arm_right: optionalPositiveNumber,
+    arm_left: optionalPositiveNumber,
+    leg_right: optionalPositiveNumber,
+    leg_left: optionalPositiveNumber,
     injuries: z.string().optional().or(z.literal("")),
     primary_goal: z.enum(primaryGoalValues).optional(),
     secondary_goal: z.enum(primaryGoalValues).optional(),
     focus_areas: z.array(z.enum(focusAreaValues)).default([]),
     experience_level: z.enum(experienceLevelValues).optional(),
     days_per_week: z.enum(daysPerWeekValues).optional(),
-    session_hours: z.coerce.number().int().min(0).max(8).default(0),
-    session_minutes_extra: z.coerce.number().int().min(0).max(59).default(0),
-    training_location: z.enum(trainingLocationValues).default(DEFAULT_TRAINING_LOCATION),
-    equipment_available: z.array(z.enum(equipmentOptionValues)).default(DEFAULT_EQUIPMENT_AVAILABLE),
+    session_hours: optionalBoundedInteger(0, 8, "Las horas deben estar entre 0 y 8"),
+    session_minutes_extra: optionalBoundedInteger(0, 59, "Los minutos deben estar entre 0 y 59"),
+    training_location: z.enum(trainingLocationValues).optional(),
+    equipment_available: z.array(z.enum(equipmentOptionValues)).default([]),
     cardio_preference: z.enum(cardioPreferenceValues).optional(),
     parq_requires_attention: z.enum(parqChoiceValues).optional(),
     restricted_movements: z.array(z.enum(restrictedMovementValues)).default([]),
@@ -221,21 +310,21 @@ const renewSubscriptionSchema = z
     }
   });
 
-function toBodyType(value?: string | null): BodyType {
+function toOptionalBodyType(value?: string | null): BodyType | undefined {
   if (value === "ectomorph" || value === "mesomorph" || value === "endomorph") return value;
-  return "mesomorph";
+  return undefined;
 }
 
-function toDietType(value?: string | null): DietType {
+function toOptionalDietType(value?: string | null): DietType | undefined {
   if (value === "hipocalorica" || value === "normocalorica" || value === "hipercalorica") return value;
-  return "normocalorica";
+  return undefined;
 }
 
-function toActivityLevel(value?: string | null): ActivityLevel {
+function toOptionalActivityLevel(value?: string | null): ActivityLevel | undefined {
   if (value === "sedentario" || value === "1_3_dias" || value === "3_5_dias" || value === "6_7_dias" || value === "2_veces_dia") {
     return value;
   }
-  return "3_5_dias";
+  return undefined;
 }
 
 function parseDatabaseDate(dateString: Date | string | null | undefined): Date | undefined {
@@ -252,6 +341,16 @@ function parseDatabaseDate(dateString: Date | string | null | undefined): Date |
 function normalizeTextFieldValue(value?: string | null) {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function hasMeaningfulText(value?: string | null) {
+  return normalizeTextFieldValue(value).length > 0;
+}
+
+function areSameNumber(a: number | null | undefined, b: number | null | undefined) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Math.abs(a - b) < 0.0001;
 }
 
 export interface ProfileFormData {
@@ -283,6 +382,7 @@ export interface CustomerData {
   plan_id?: number | null;
   subscription_start_date?: string | null;
   subscription_end_date?: string | null;
+  subscription_grace_days?: number | null;
   discount_amount?: number | null;
   final_price?: number | null;
   payment_method?: string | null;
@@ -367,8 +467,11 @@ export function useHookFormCustomerSheet({
   entrypoint = "customers",
 }: UseHookFormCustomerSheetParams) {
   const [internalOpen, setInternalOpen] = useState(false);
-  const userModifiedDatesRef = useRef(false);
-  const previousPlanId = useRef<string | null>(null);
+  const previousDateStateRef = useRef<{ dateMode?: CustomerSheetFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
+    dateMode: "automatic",
+    planId: null,
+    startTime: null,
+  });
   const { data: plans = [] } = usePlans(true);
   const { mutateAsync: createCustomerMutation, isPending: isCreating } = useCreateCustomer();
   const { mutateAsync: updateCustomerMutation, isPending: isUpdating } = useUpdateCustomer();
@@ -395,6 +498,8 @@ export function useHookFormCustomerSheet({
         plan_id: customer.plan_id?.toString() || "",
         final_price: customer.final_price ?? undefined,
         discount_amount: customer.discount_amount ?? 0,
+        grace_days: normalizeGraceDays(customer.subscription_grace_days),
+        date_mode: "automatic",
         payment_method: (customer.payment_method as "cash" | "card" | "transfer") || "cash",
         primary_goal: customer.primary_goal ?? undefined,
         secondary_goal: customer.secondary_goal ?? undefined,
@@ -448,6 +553,8 @@ export function useHookFormCustomerSheet({
       birth_date: new Date(),
       plan_id: "",
       discount_amount: 0,
+      grace_days: DEFAULT_SUBSCRIPTION_GRACE_DAYS,
+      date_mode: "automatic",
       payment_method: "cash",
       final_price: undefined,
       primary_goal: undefined,
@@ -492,16 +599,30 @@ export function useHookFormCustomerSheet({
     resolver: zodResolver(customerSheetSchema) as Resolver<CustomerSheetFormValues>,
     defaultValues: getDefaultValues(),
   });
+  const { reset, getValues, setValue, setError, clearErrors } = form;
+
+  const priceContextRef = useRef<string | null>(null);
+  const lastSuggestedFinalPriceRef = useRef<number | null>(null);
+  const manualFinalPriceOverrideRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
     const values = getDefaultValues();
-    form.reset(values);
-    userModifiedDatesRef.current = false;
-    previousPlanId.current = customer?.plan_id?.toString() || null;
-  }, [open, customer, form, getDefaultValues]);
+    reset(values);
+    priceContextRef.current = null;
+    lastSuggestedFinalPriceRef.current = null;
+    manualFinalPriceOverrideRef.current = false;
+    previousDateStateRef.current = {
+      dateMode: values.date_mode,
+      planId: values.plan_id || null,
+      startTime: values.subscription_period?.from?.getTime() ?? null,
+    };
+  }, [open, customer, getDefaultValues, reset]);
 
   const watchedPlanId = useWatch({ control: form.control, name: "plan_id" });
+  const watchedDateMode = useWatch({ control: form.control, name: "date_mode" });
+  const watchedSubscriptionStartDate = useWatch({ control: form.control, name: "subscription_period.from" });
+  const watchedSubscriptionEndDate = useWatch({ control: form.control, name: "subscription_period.to" });
   const watchedDiscount = useWatch({ control: form.control, name: "discount_amount" });
   const watchedParqRequiresAttention = useWatch({ control: form.control, name: "parq_requires_attention" });
   const watchedWeightLb = useWatch({ control: form.control, name: "weight_lb" });
@@ -513,59 +634,136 @@ export function useHookFormCustomerSheet({
   const watchedGender = useWatch({ control: form.control, name: "gender" });
   const subscriptionPeriod = useWatch({ control: form.control, name: "subscription_period" });
   const watchedWeightKg = useMemo(() => poundsToKilograms(watchedWeightLb), [watchedWeightLb]);
-  const selectedPlanPrice = useMemo(() => {
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
-    return selectedPlan?.price ?? 0;
-  }, [plans, watchedPlanId]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id.toString() === watchedPlanId), [plans, watchedPlanId]);
+  const selectedPlanPrice = selectedPlan?.price ?? 0;
+  const membershipPricing = useMemo(
+    () =>
+      calculateMembershipPricing({
+        planPrice: selectedPlan?.price,
+        planDurationDays: selectedPlan?.duration_days,
+        startDate: watchedSubscriptionStartDate,
+        endDate: watchedSubscriptionEndDate,
+        discountAmount: watchedDiscount,
+      }),
+    [selectedPlan?.duration_days, selectedPlan?.price, watchedDiscount, watchedSubscriptionEndDate, watchedSubscriptionStartDate],
+  );
+  const membershipPricingContextKey = useMemo(
+    () =>
+      buildMembershipPricingContextKey({
+        planId: watchedPlanId,
+        startDate: watchedSubscriptionStartDate,
+        endDate: watchedSubscriptionEndDate,
+        discountAmount: watchedDiscount,
+      }),
+    [watchedDiscount, watchedPlanId, watchedSubscriptionEndDate, watchedSubscriptionStartDate],
+  );
 
   useEffect(() => {
-    if (!watchedPlanId) return;
-    const planChanged = previousPlanId.current !== watchedPlanId;
-    previousPlanId.current = watchedPlanId;
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
+    const startDate = watchedSubscriptionStartDate || getValues("subscription_period.from") || null;
+    const currentState = {
+      dateMode: watchedDateMode,
+      planId: watchedPlanId || null,
+      startTime: startDate?.getTime() ?? null,
+    };
+    const previousState = previousDateStateRef.current;
 
-    if (!selectedPlan) return;
-    if (planChanged && !userModifiedDatesRef.current) {
-      const startDate = form.getValues("subscription_period.from") || new Date();
-      const endDate = addDays(startDate, selectedPlan.duration_days);
-      form.setValue("subscription_period", {
-        from: startDate,
-        to: endDate,
-      });
+    if (watchedDateMode !== "automatic" || !watchedPlanId || !selectedPlan || !startDate) {
+      previousDateStateRef.current = currentState;
+      return;
     }
-  }, [watchedPlanId, plans, form]);
+
+    const shouldRecalculate =
+      previousState.dateMode !== "automatic" ||
+      previousState.planId !== currentState.planId ||
+      previousState.startTime !== currentState.startTime;
+
+    if (shouldRecalculate) {
+      setValue("subscription_period", {
+        from: startDate,
+        to: calculateSubscriptionEndDate(startDate, selectedPlan.duration_days),
+      }, { shouldValidate: false });
+    }
+
+    previousDateStateRef.current = currentState;
+  }, [watchedDateMode, watchedPlanId, watchedSubscriptionStartDate, selectedPlan, getValues, setValue]);
 
   useEffect(() => {
-    const discount = Number(watchedDiscount) || 0;
-    const finalPrice = Math.max(0, selectedPlanPrice - discount);
-    form.setValue("final_price", finalPrice, { shouldValidate: false });
+    if (!membershipPricing) {
+      if (!selectedPlanPrice) {
+        const currentFinalPrice = getValues("final_price");
+        if (!areSameNumber(currentFinalPrice, 0)) {
+          setValue("final_price", 0, { shouldValidate: false });
+        }
+      }
+      return;
+    }
 
-    if (discount > selectedPlanPrice && selectedPlanPrice > 0) {
-      form.setError("discount_amount", {
+    const currentFinalPrice = getValues("final_price");
+    const contextChanged = priceContextRef.current !== membershipPricingContextKey;
+    const shouldPreserveStoredCustomPrice =
+      isEditing &&
+      contextChanged &&
+      priceContextRef.current === null &&
+      !membershipPricing.isExactMultiple &&
+      typeof currentFinalPrice === "number" &&
+      currentFinalPrice > 0;
+
+    if (membershipPricing.isExactMultiple) {
+      manualFinalPriceOverrideRef.current = false;
+      if (!areSameNumber(currentFinalPrice, membershipPricing.suggestedFinalPrice)) {
+        setValue("final_price", membershipPricing.suggestedFinalPrice, { shouldValidate: false });
+      }
+    } else if (shouldPreserveStoredCustomPrice) {
+      manualFinalPriceOverrideRef.current = true;
+    } else {
+      const matchesPreviousSuggestion =
+        typeof currentFinalPrice === "number" &&
+        lastSuggestedFinalPriceRef.current !== null &&
+        Math.abs(currentFinalPrice - lastSuggestedFinalPriceRef.current) < 0.0001;
+
+      if (
+        contextChanged ||
+        !manualFinalPriceOverrideRef.current ||
+        currentFinalPrice === undefined ||
+        currentFinalPrice === null ||
+        matchesPreviousSuggestion
+      ) {
+        manualFinalPriceOverrideRef.current = false;
+        if (!areSameNumber(currentFinalPrice, membershipPricing.suggestedFinalPrice)) {
+          setValue("final_price", membershipPricing.suggestedFinalPrice, { shouldValidate: false });
+        }
+      }
+    }
+
+    lastSuggestedFinalPriceRef.current = membershipPricing.suggestedFinalPrice;
+    priceContextRef.current = membershipPricingContextKey;
+
+    if (Number(watchedDiscount) > membershipPricing.suggestedBasePrice && membershipPricing.suggestedBasePrice > 0) {
+      setError("discount_amount", {
         type: "manual",
-        message: `El descuento no puede ser mayor al precio del plan (Q${selectedPlanPrice.toFixed(2)})`,
+        message: `El descuento no puede ser mayor al precio calculado (Q${membershipPricing.suggestedBasePrice.toFixed(2)})`,
       });
       return;
     }
 
-    form.clearErrors("discount_amount");
-  }, [selectedPlanPrice, watchedDiscount, form]);
+    clearErrors("discount_amount");
+  }, [clearErrors, getValues, isEditing, membershipPricing, membershipPricingContextKey, selectedPlanPrice, setError, setValue, watchedDiscount]);
 
   useEffect(() => {
     if (watchedParqRequiresAttention !== "no") return;
 
-    form.setValue("injuries_or_pain", "", {
+    setValue("injuries_or_pain", "", {
       shouldDirty: false,
       shouldTouch: false,
       shouldValidate: false,
     });
-    form.setValue("medical_clearance_notes", "", {
+    setValue("medical_clearance_notes", "", {
       shouldDirty: false,
       shouldTouch: false,
       shouldValidate: false,
     });
-    form.clearErrors(["injuries_or_pain", "medical_clearance_notes"]);
-  }, [form, watchedParqRequiresAttention]);
+    clearErrors(["injuries_or_pain", "medical_clearance_notes"]);
+  }, [clearErrors, setValue, watchedParqRequiresAttention]);
 
   const calculationPreview =
     watchedWeightKg &&
@@ -588,10 +786,17 @@ export function useHookFormCustomerSheet({
 
   const handleDateRangeChange = (range: DateRange | undefined) => {
     if (!range) return;
-    userModifiedDatesRef.current = true;
-    form.setValue("subscription_period", {
-      from: range.from || new Date(),
-      to: range.to || range.from || new Date(),
+    const startDate = range.from || new Date();
+    const currentDateMode = getValues("date_mode");
+    const currentPlanId = getValues("plan_id");
+    const currentPlan = plans.find((plan) => plan.id.toString() === currentPlanId);
+
+    setValue("subscription_period", {
+      from: startDate,
+      to:
+        currentDateMode === "automatic" && currentPlan
+          ? calculateSubscriptionEndDate(startDate, currentPlan.duration_days)
+          : range.to || startDate,
     });
   };
 
@@ -607,6 +812,11 @@ export function useHookFormCustomerSheet({
         gender: values.gender,
         payment_method: values.payment_method,
         discount_amount: values.discount_amount,
+        amount_original:
+          values.final_price !== undefined
+            ? Math.max(0, values.final_price + (Number(values.discount_amount) || 0))
+            : membershipPricing?.suggestedBasePrice,
+        grace_days: values.grace_days,
         plan_id: values.plan_id ? Number(values.plan_id) : undefined,
         final_price: values.final_price,
         start_date: values.subscription_period?.from,
@@ -677,13 +887,16 @@ export function useHookFormCustomerSheet({
     isEditing,
     isPending,
     selectedPlanPrice,
+    selectedPlanDurationDays: selectedPlan?.duration_days ?? null,
+    membershipPricing,
+    allowManualFinalPrice: Boolean(membershipPricing && !membershipPricing.isExactMultiple),
+    markFinalPriceAsManual: () => {
+      manualFinalPriceOverrideRef.current = true;
+    },
     subscriptionPeriod,
     calculationPreview,
     onSubmit,
     handleDateRangeChange,
-    markDatesAsModified: () => {
-      userModifiedDatesRef.current = true;
-    },
     reactivateCustomer,
   };
 }
@@ -714,29 +927,31 @@ function getRenewSubscriptionDefaultValues(
 
   return {
     plan_id: "",
+    date_mode: "automatic",
     subscription_period: {
       from: new Date(),
       to: new Date(),
     },
     price: 0,
     discount_amount: 0,
+    grace_days: DEFAULT_SUBSCRIPTION_GRACE_DAYS,
     final_price: 0,
     payment_method: "cash",
-    weight_lb: kilogramsToPounds(lastAssessment?.weight_kg) || 0,
-    height_cm: lastAssessment?.height_cm || 0,
-    body_type: toBodyType(lastAssessment?.body_type),
-    diet_type: toDietType(lastAssessment?.diet_type),
-    activity_level: toActivityLevel(trainingProfile?.activity_level ?? lastAssessment?.activity_level),
-    body_fat_percentage: lastAssessment?.body_fat_percentage || 0,
-    muscle_mass_kg: lastAssessment?.muscle_mass || 0,
-    chest: lastAssessment?.chest_cm || 0,
-    waist: lastAssessment?.waist_cm || 0,
-    hip: lastAssessment?.hip_cm || 0,
-    arm_right: lastAssessment?.arm_right_cm || 0,
-    arm_left: lastAssessment?.arm_left_cm || 0,
-    leg_right: lastAssessment?.leg_right_cm || 0,
-    leg_left: lastAssessment?.leg_left_cm || 0,
-    injuries: lastAssessment?.injuries || "",
+    weight_lb: kilogramsToPounds(lastAssessment?.weight_kg) ?? undefined,
+    height_cm: lastAssessment?.height_cm ?? undefined,
+    body_type: toOptionalBodyType(lastAssessment?.body_type),
+    diet_type: toOptionalDietType(lastAssessment?.diet_type),
+    activity_level: toOptionalActivityLevel(trainingProfile?.activity_level ?? lastAssessment?.activity_level),
+    body_fat_percentage: lastAssessment?.body_fat_percentage ?? undefined,
+    muscle_mass_kg: lastAssessment?.muscle_mass ?? undefined,
+    chest: lastAssessment?.chest_cm ?? undefined,
+    waist: lastAssessment?.waist_cm ?? undefined,
+    hip: lastAssessment?.hip_cm ?? undefined,
+    arm_right: lastAssessment?.arm_right_cm ?? undefined,
+    arm_left: lastAssessment?.arm_left_cm ?? undefined,
+    leg_right: lastAssessment?.leg_right_cm ?? undefined,
+    leg_left: lastAssessment?.leg_left_cm ?? undefined,
+    injuries: lastAssessment?.injuries ?? "",
     primary_goal: trainingProfile?.primary_goal ?? undefined,
     secondary_goal: trainingProfile?.secondary_goal ?? undefined,
     focus_areas: trainingProfile?.focus_areas ?? [],
@@ -744,13 +959,13 @@ function getRenewSubscriptionDefaultValues(
     days_per_week: trainingProfile?.days_per_week
       ? (trainingProfile.days_per_week.toString() as RenewSubscriptionFormValues["days_per_week"])
       : undefined,
-    session_hours: sessionDuration.hours,
-    session_minutes_extra: sessionDuration.minutes,
-    training_location: trainingProfile?.training_location ?? DEFAULT_TRAINING_LOCATION,
+    session_hours: trainingProfile?.session_minutes != null ? sessionDuration.hours : undefined,
+    session_minutes_extra: trainingProfile?.session_minutes != null ? sessionDuration.minutes : undefined,
+    training_location: trainingProfile?.training_location ?? undefined,
     equipment_available:
       trainingProfile?.equipment_available && trainingProfile.equipment_available.length > 0
         ? trainingProfile.equipment_available
-        : DEFAULT_EQUIPMENT_AVAILABLE,
+        : [],
     cardio_preference: trainingProfile?.cardio_preference ?? undefined,
     parq_requires_attention:
       trainingProfile?.parq_requires_attention === true
@@ -789,8 +1004,11 @@ export function useHookFormRenewSubscription({
 }: UseHookFormRenewSubscriptionParams) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const userModifiedDatesRef = useRef(false);
-  const previousPlanId = useRef<string | null>(null);
+  const previousDateStateRef = useRef<{ dateMode?: RenewSubscriptionFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
+    dateMode: "automatic",
+    planId: null,
+    startTime: null,
+  });
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange ?? setInternalOpen : setInternalOpen;
@@ -800,8 +1018,22 @@ export function useHookFormRenewSubscription({
     resolver: zodResolver(renewSubscriptionSchema) as Resolver<RenewSubscriptionFormValues>,
     defaultValues: getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile),
   });
+  const {
+    reset: resetRenew,
+    getValues: getRenewValues,
+    setValue: setRenewValue,
+    setError: setRenewError,
+    clearErrors: clearRenewErrors,
+  } = form;
+
+  const priceContextRef = useRef<string | null>(null);
+  const lastSuggestedFinalPriceRef = useRef<number | null>(null);
+  const manualFinalPriceOverrideRef = useRef(false);
 
   const watchedPlanId = useWatch({ control: form.control, name: "plan_id" });
+  const watchedDateMode = useWatch({ control: form.control, name: "date_mode" });
+  const watchedSubscriptionStartDate = useWatch({ control: form.control, name: "subscription_period.from" });
+  const watchedSubscriptionEndDate = useWatch({ control: form.control, name: "subscription_period.to" });
   const watchedDiscount = useWatch({ control: form.control, name: "discount_amount" });
   const watchedWeightLb = useWatch({ control: form.control, name: "weight_lb" });
   const watchedHeight = useWatch({ control: form.control, name: "height_cm" });
@@ -809,10 +1041,29 @@ export function useHookFormRenewSubscription({
   const watchedDietType = useWatch({ control: form.control, name: "diet_type" });
   const watchedActivity = useWatch({ control: form.control, name: "activity_level" });
   const watchedParqRequiresAttention = useWatch({ control: form.control, name: "parq_requires_attention" });
-  const selectedPlanPrice = useMemo(() => {
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
-    return selectedPlan?.price ?? 0;
-  }, [plans, watchedPlanId]);
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id.toString() === watchedPlanId), [plans, watchedPlanId]);
+  const selectedPlanPrice = selectedPlan?.price ?? 0;
+  const membershipPricing = useMemo(
+    () =>
+      calculateMembershipPricing({
+        planPrice: selectedPlan?.price,
+        planDurationDays: selectedPlan?.duration_days,
+        startDate: watchedSubscriptionStartDate,
+        endDate: watchedSubscriptionEndDate,
+        discountAmount: watchedDiscount,
+      }),
+    [selectedPlan?.duration_days, selectedPlan?.price, watchedDiscount, watchedSubscriptionEndDate, watchedSubscriptionStartDate],
+  );
+  const membershipPricingContextKey = useMemo(
+    () =>
+      buildMembershipPricingContextKey({
+        planId: watchedPlanId,
+        startDate: watchedSubscriptionStartDate,
+        endDate: watchedSubscriptionEndDate,
+        discountAmount: watchedDiscount,
+      }),
+    [watchedDiscount, watchedPlanId, watchedSubscriptionEndDate, watchedSubscriptionStartDate],
+  );
   const watchedWeightKg = useMemo(() => poundsToKilograms(watchedWeightLb), [watchedWeightLb]);
 
   const calculationPreview =
@@ -836,102 +1087,206 @@ export function useHookFormRenewSubscription({
 
   useEffect(() => {
     if (!open) return;
-    form.reset(getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile));
-    userModifiedDatesRef.current = false;
-    previousPlanId.current = null;
-  }, [open, lastAssessment, trainingProfile, form]);
+    const values = getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile);
+    resetRenew(values);
+    priceContextRef.current = null;
+    lastSuggestedFinalPriceRef.current = null;
+    manualFinalPriceOverrideRef.current = false;
+    previousDateStateRef.current = {
+      dateMode: values.date_mode,
+      planId: values.plan_id || null,
+      startTime: values.subscription_period?.from?.getTime() ?? null,
+    };
+  }, [lastAssessment, open, resetRenew, trainingProfile]);
 
   useEffect(() => {
-    if (!watchedPlanId) return;
-    const planChanged = previousPlanId.current !== watchedPlanId;
-    previousPlanId.current = watchedPlanId;
-    const selectedPlan = plans.find((plan) => plan.id.toString() === watchedPlanId);
-    if (!selectedPlan) return;
-
-    form.setValue("price", selectedPlan.price);
-
-    if (planChanged && !userModifiedDatesRef.current) {
-      const startDate = form.getValues("subscription_period.from") || new Date();
-      const endDate = addDays(startDate, selectedPlan.duration_days);
-      form.setValue("subscription_period", {
-        from: startDate,
-        to: endDate,
-      });
+    if (!membershipPricing) return;
+    const currentPrice = getRenewValues("price");
+    if (!areSameNumber(currentPrice, membershipPricing.suggestedBasePrice)) {
+      setRenewValue("price", membershipPricing.suggestedBasePrice, { shouldValidate: false });
     }
-  }, [watchedPlanId, plans, form]);
+  }, [getRenewValues, membershipPricing, setRenewValue]);
 
   useEffect(() => {
-    const discount = Number(watchedDiscount) || 0;
-    const finalPrice = Math.max(0, selectedPlanPrice - discount);
-    form.setValue("final_price", finalPrice);
-  }, [selectedPlanPrice, watchedDiscount, form]);
+    const startDate = watchedSubscriptionStartDate || getRenewValues("subscription_period.from") || null;
+    const currentState = {
+      dateMode: watchedDateMode,
+      planId: watchedPlanId || null,
+      startTime: startDate?.getTime() ?? null,
+    };
+    const previousState = previousDateStateRef.current;
+
+    if (watchedDateMode !== "automatic" || !watchedPlanId || !selectedPlan || !startDate) {
+      previousDateStateRef.current = currentState;
+      return;
+    }
+
+    const shouldRecalculate =
+      previousState.dateMode !== "automatic" ||
+      previousState.planId !== currentState.planId ||
+      previousState.startTime !== currentState.startTime;
+
+    if (shouldRecalculate) {
+      setRenewValue("subscription_period", {
+        from: startDate,
+        to: calculateSubscriptionEndDate(startDate, selectedPlan.duration_days),
+      }, { shouldValidate: false });
+    }
+
+    previousDateStateRef.current = currentState;
+  }, [getRenewValues, selectedPlan, setRenewValue, watchedDateMode, watchedPlanId, watchedSubscriptionStartDate]);
+
+  useEffect(() => {
+    if (!membershipPricing) {
+      if (!selectedPlanPrice) {
+        const currentFinalPrice = getRenewValues("final_price");
+        if (!areSameNumber(currentFinalPrice, 0)) {
+          setRenewValue("final_price", 0, { shouldValidate: false });
+        }
+      }
+      return;
+    }
+
+    const currentFinalPrice = getRenewValues("final_price");
+    const contextChanged = priceContextRef.current !== membershipPricingContextKey;
+    const shouldPreserveStoredCustomPrice =
+      contextChanged &&
+      priceContextRef.current === null &&
+      !membershipPricing.isExactMultiple &&
+      typeof currentFinalPrice === "number" &&
+      currentFinalPrice > 0;
+
+    if (membershipPricing.isExactMultiple) {
+      manualFinalPriceOverrideRef.current = false;
+      if (!areSameNumber(currentFinalPrice, membershipPricing.suggestedFinalPrice)) {
+        setRenewValue("final_price", membershipPricing.suggestedFinalPrice, { shouldValidate: false });
+      }
+    } else if (shouldPreserveStoredCustomPrice) {
+      manualFinalPriceOverrideRef.current = true;
+    } else {
+      const matchesPreviousSuggestion =
+        typeof currentFinalPrice === "number" &&
+        lastSuggestedFinalPriceRef.current !== null &&
+        Math.abs(currentFinalPrice - lastSuggestedFinalPriceRef.current) < 0.0001;
+
+      if (
+        contextChanged ||
+        !manualFinalPriceOverrideRef.current ||
+        currentFinalPrice === undefined ||
+        currentFinalPrice === null ||
+        matchesPreviousSuggestion
+      ) {
+        manualFinalPriceOverrideRef.current = false;
+        if (!areSameNumber(currentFinalPrice, membershipPricing.suggestedFinalPrice)) {
+          setRenewValue("final_price", membershipPricing.suggestedFinalPrice, { shouldValidate: false });
+        }
+      }
+    }
+
+    lastSuggestedFinalPriceRef.current = membershipPricing.suggestedFinalPrice;
+    priceContextRef.current = membershipPricingContextKey;
+
+    if (Number(watchedDiscount) > membershipPricing.suggestedBasePrice && membershipPricing.suggestedBasePrice > 0) {
+      setRenewError("discount_amount", {
+        type: "manual",
+        message: `El descuento no puede ser mayor al precio calculado (Q${membershipPricing.suggestedBasePrice.toFixed(2)})`,
+      });
+      return;
+    }
+
+    clearRenewErrors("discount_amount");
+  }, [clearRenewErrors, getRenewValues, membershipPricing, membershipPricingContextKey, selectedPlanPrice, setRenewError, setRenewValue, watchedDiscount]);
 
   useEffect(() => {
     if (watchedParqRequiresAttention !== "no") return;
 
-    form.setValue("injuries_or_pain", "", {
+    setRenewValue("injuries_or_pain", "", {
       shouldDirty: false,
       shouldTouch: false,
       shouldValidate: false,
     });
-    form.setValue("medical_clearance_notes", "", {
+    setRenewValue("medical_clearance_notes", "", {
       shouldDirty: false,
       shouldTouch: false,
       shouldValidate: false,
     });
-    form.clearErrors(["injuries_or_pain", "medical_clearance_notes"]);
-  }, [form, watchedParqRequiresAttention]);
+    clearRenewErrors(["injuries_or_pain", "medical_clearance_notes"]);
+  }, [clearRenewErrors, setRenewValue, watchedParqRequiresAttention]);
 
   const onSubmit = async (values: RenewSubscriptionFormValues) => {
     try {
       setLoading(true);
-      const result = await renewSubscription(customerId, {
+      const renewalPayload: Parameters<typeof renewSubscription>[1] = {
         origin: entrypoint,
         plan_id: Number(values.plan_id),
         start_date: values.subscription_period.from,
         end_date: values.subscription_period.to,
         price: values.price,
         discount_amount: values.discount_amount,
+        grace_days: values.grace_days,
         amount_paid: values.final_price,
         payment_method: values.payment_method,
-        weight_kg: poundsToKilograms(values.weight_lb) ?? 0,
-        height_cm: values.height_cm,
-        body_type: values.body_type,
-        diet_type: values.diet_type,
-        activity_level: values.activity_level,
-        body_fat_percentage: values.body_fat_percentage,
-        muscle_mass_kg: values.muscle_mass_kg,
-        chest: values.chest,
-        waist: values.waist,
-        hip: values.hip,
-        arm_right: values.arm_right,
-        arm_left: values.arm_left,
-        leg_right: values.leg_right,
-        leg_left: values.leg_left,
-        injuries: normalizeTextFieldValue(values.injuries),
-        primary_goal: values.primary_goal,
-        secondary_goal: values.secondary_goal,
-        focus_areas: values.focus_areas,
-        experience_level: values.experience_level,
-        days_per_week: values.days_per_week ? Number(values.days_per_week) : undefined,
-        session_minutes: combineSessionDuration(values.session_hours, values.session_minutes_extra) ?? undefined,
-        training_location: DEFAULT_TRAINING_LOCATION,
-        equipment_available: values.equipment_available,
-        cardio_preference: values.cardio_preference,
-        parq_requires_attention:
-          values.parq_requires_attention === "yes"
-            ? true
-            : values.parq_requires_attention === "no"
-              ? false
-              : undefined,
-        restricted_movements: values.restricted_movements,
-        exercise_preferences: normalizeTextFieldValue(values.exercise_preferences),
-        exercise_dislikes: normalizeTextFieldValue(values.exercise_dislikes),
-        injuries_or_pain:
-          values.parq_requires_attention === "yes" ? normalizeTextFieldValue(values.injuries_or_pain) : "",
-        medical_clearance_notes:
-          values.parq_requires_attention === "yes" ? normalizeTextFieldValue(values.medical_clearance_notes) : "",
-      });
+      };
+
+      const weightKg = poundsToKilograms(values.weight_lb);
+      if (weightKg != null) renewalPayload.weight_kg = weightKg;
+      if (values.height_cm !== undefined) renewalPayload.height_cm = values.height_cm;
+      if (values.body_type !== undefined) renewalPayload.body_type = values.body_type;
+      if (values.diet_type !== undefined) renewalPayload.diet_type = values.diet_type;
+      if (values.activity_level !== undefined) renewalPayload.activity_level = values.activity_level;
+      if (values.body_fat_percentage !== undefined) renewalPayload.body_fat_percentage = values.body_fat_percentage;
+      if (values.muscle_mass_kg !== undefined) renewalPayload.muscle_mass_kg = values.muscle_mass_kg;
+      if (values.chest !== undefined) renewalPayload.chest = values.chest;
+      if (values.waist !== undefined) renewalPayload.waist = values.waist;
+      if (values.hip !== undefined) renewalPayload.hip = values.hip;
+      if (values.arm_right !== undefined) renewalPayload.arm_right = values.arm_right;
+      if (values.arm_left !== undefined) renewalPayload.arm_left = values.arm_left;
+      if (values.leg_right !== undefined) renewalPayload.leg_right = values.leg_right;
+      if (values.leg_left !== undefined) renewalPayload.leg_left = values.leg_left;
+
+      const normalizedInjuries = normalizeTextFieldValue(values.injuries);
+      if (hasMeaningfulText(normalizedInjuries) || lastAssessment?.injuries !== undefined) {
+        renewalPayload.injuries = normalizedInjuries;
+      }
+
+      if (values.primary_goal !== undefined) renewalPayload.primary_goal = values.primary_goal;
+      if (values.secondary_goal !== undefined) renewalPayload.secondary_goal = values.secondary_goal;
+      if (values.focus_areas.length > 0) renewalPayload.focus_areas = values.focus_areas;
+      if (values.experience_level !== undefined) renewalPayload.experience_level = values.experience_level;
+      if (values.days_per_week) renewalPayload.days_per_week = Number(values.days_per_week);
+
+      const sessionMinutes = combineSessionDuration(values.session_hours ?? 0, values.session_minutes_extra ?? 0);
+      if (sessionMinutes !== null && sessionMinutes > 0) {
+        renewalPayload.session_minutes = sessionMinutes;
+      }
+
+      if (values.training_location !== undefined) renewalPayload.training_location = values.training_location;
+      if (values.equipment_available.length > 0) renewalPayload.equipment_available = values.equipment_available;
+      if (values.cardio_preference !== undefined) renewalPayload.cardio_preference = values.cardio_preference;
+
+      if (values.parq_requires_attention === "yes") {
+        renewalPayload.parq_requires_attention = true;
+      } else if (values.parq_requires_attention === "no") {
+        renewalPayload.parq_requires_attention = false;
+      }
+
+      if (values.restricted_movements.length > 0) renewalPayload.restricted_movements = values.restricted_movements;
+
+      const exercisePreferences = normalizeTextFieldValue(values.exercise_preferences);
+      if (hasMeaningfulText(exercisePreferences)) renewalPayload.exercise_preferences = exercisePreferences;
+
+      const exerciseDislikes = normalizeTextFieldValue(values.exercise_dislikes);
+      if (hasMeaningfulText(exerciseDislikes)) renewalPayload.exercise_dislikes = exerciseDislikes;
+
+      if (values.parq_requires_attention === "yes") {
+        const injuriesOrPain = normalizeTextFieldValue(values.injuries_or_pain);
+        if (hasMeaningfulText(injuriesOrPain)) renewalPayload.injuries_or_pain = injuriesOrPain;
+
+        const medicalClearanceNotes = normalizeTextFieldValue(values.medical_clearance_notes);
+        if (hasMeaningfulText(medicalClearanceNotes)) renewalPayload.medical_clearance_notes = medicalClearanceNotes;
+      }
+
+      const result = await renewSubscription(customerId, renewalPayload);
 
       if (result.success) {
         const deviceSync =
@@ -964,10 +1319,13 @@ export function useHookFormRenewSubscription({
     plans,
     loading,
     selectedPlanPrice,
+    selectedPlanDurationDays: selectedPlan?.duration_days ?? null,
+    membershipPricing,
+    allowManualFinalPrice: Boolean(membershipPricing && !membershipPricing.isExactMultiple),
+    markFinalPriceAsManual: () => {
+      manualFinalPriceOverrideRef.current = true;
+    },
     calculationPreview,
     onSubmit,
-    markDatesAsModified: () => {
-      userModifiedDatesRef.current = true;
-    },
   };
 }

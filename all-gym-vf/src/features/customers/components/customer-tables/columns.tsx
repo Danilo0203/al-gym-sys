@@ -53,6 +53,8 @@ export type Customer = {
   subscription_status: string | null;
   subscription_start_date: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   plan_name: string | null;
   last_check_in: string | null;
   is_active: boolean | null;
@@ -67,6 +69,7 @@ export interface PlanOption {
 
 interface CustomerColumnsOptions {
   fullNameColumnSize?: number;
+  canUpdate?: boolean;
 }
 
 // Función factory para crear columnas con opciones dinámicas
@@ -75,6 +78,7 @@ export function getColumns(
   options: CustomerColumnsOptions = {}
 ): ColumnDef<Customer>[] {
   const fullNameColumnSize = options.fullNameColumnSize ?? 220;
+  const canUpdate = options.canUpdate ?? false;
 
   return [
     {
@@ -193,6 +197,8 @@ export function getColumns(
         <SubscriptionStatusBadge
           status={row.original.subscription_status}
           endDate={row.original.subscription_end_date}
+          graceDays={row.original.subscription_grace_days}
+          accessUntil={row.original.subscription_access_until}
         />
       ),
     },
@@ -325,7 +331,7 @@ export function getColumns(
       meta: {
         label: "Acciones",
       },
-      cell: ({ row }) => <CellAction data={row.original} />,
+      cell: ({ row }) => <CellAction data={row.original} canUpdate={canUpdate} />,
     },
   ];
 }

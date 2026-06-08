@@ -18,6 +18,8 @@ interface CustomerStatusActionSummaryProps {
   planName?: string | null;
   subscriptionStatus?: string | null;
   subscriptionEndDate?: string | null;
+  subscriptionGraceDays?: number | null;
+  subscriptionAccessUntil?: string | null;
 }
 
 function formatEndDate(value?: string | null) {
@@ -60,6 +62,8 @@ export function CustomerStatusActionSummary({
   planName,
   subscriptionStatus,
   subscriptionEndDate,
+  subscriptionGraceDays,
+  subscriptionAccessUntil,
 }: CustomerStatusActionSummaryProps) {
   const actionTone = isActive
     ? {
@@ -117,7 +121,7 @@ export function CustomerStatusActionSummary({
         <SummaryCard
           icon={<IconCreditCard className="size-4" />}
           label="Suscripción"
-          value={<SubscriptionStatusBadge status={subscriptionStatus} endDate={subscriptionEndDate} />}
+          value={<SubscriptionStatusBadge status={subscriptionStatus} endDate={subscriptionEndDate} graceDays={subscriptionGraceDays} accessUntil={subscriptionAccessUntil} />}
         />
         <SummaryCard icon={<IconPhone className="size-4" />} label="Teléfono" value={phone || "Sin teléfono"} />
         <SummaryCard

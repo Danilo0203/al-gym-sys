@@ -27,7 +27,7 @@ import {
   IconPhone,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { differenceInDays, formatDistanceToNow } from "date-fns";
+import { differenceInCalendarDays, formatDistanceToNow } from "date-fns";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { es } from "date-fns/locale";
 import type { CustomerRoutineWorkspace } from "@/lib/training/types";
@@ -50,6 +50,7 @@ import {
 } from "./tabs";
 import { cn } from "@/lib/utils";
 import { kilogramsToPounds } from "@/lib/fitness/measurements";
+import { getSubscriptionAccessUntilDate, parseLocalDate } from "@/lib/subscriptions/grace-period";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -77,7 +78,12 @@ function toCustomerGender(value: string | null): "male" | "female" | "other" | n
   return null;
 }
 
-function getSubscriptionHeaderMeta(status: string | null | undefined, endDate: string | Date | null | undefined) {
+function getSubscriptionHeaderMeta(
+  status: string | null | undefined,
+  endDate: string | Date | null | undefined,
+  graceDays?: number | null,
+  accessUntil?: string | Date | null,
+) {
   if (!status || status === "cancelled") {
     return {
       label: status === "cancelled" ? "Plan cancelado" : "Sin plan",
@@ -86,20 +92,19 @@ function getSubscriptionHeaderMeta(status: string | null | undefined, endDate: s
   }
 
   if (endDate) {
-    let parsedEndDate: Date;
+    const parsedEndDate = parseLocalDate(endDate);
+    const parsedAccessUntil = accessUntil ? parseLocalDate(accessUntil) : getSubscriptionAccessUntilDate(endDate, graceDays ?? 0);
+    const today = parseLocalDate(new Date());
 
-    if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      const [year, month, day] = endDate.split("-").map(Number);
-      parsedEndDate = new Date(year, month - 1, day);
-    } else {
-      parsedEndDate = new Date(endDate);
-    }
+    if (parsedEndDate && parsedAccessUntil && today) {
+      const daysLeft = differenceInCalendarDays(parsedEndDate, today);
 
-    if (!Number.isNaN(parsedEndDate.getTime())) {
-      const daysLeft = differenceInDays(parsedEndDate, new Date());
-
-      if (daysLeft < 0) {
+      if (parsedAccessUntil < today) {
         return { label: "Plan vencido", tone: "danger" as const };
+      }
+
+      if (parsedEndDate < today) {
+        return { label: "Plan en prórroga", tone: "warning" as const };
       }
 
       if (daysLeft <= 3) {
@@ -116,6 +121,7 @@ function getSubscriptionHeaderMeta(status: string | null | undefined, endDate: s
 
   return { label: "Plan al dia", tone: "success" as const };
 }
+
 
 interface CustomerHistoryClientProps {
   profile: CustomerProfile;
@@ -202,7 +208,12 @@ export function CustomerHistoryClient({
     : "N/A";
   const customerEmail = profile.email?.trim() || "Sin correo";
   const customerPhone = profile.phone?.trim() || "Sin teléfono";
-  const subscriptionMeta = getSubscriptionHeaderMeta(profile.subscription_status, profile.subscription_end_date);
+  const subscriptionMeta = getSubscriptionHeaderMeta(
+    profile.subscription_status,
+    profile.subscription_end_date,
+    profile.subscription_grace_days,
+    profile.subscription_access_until,
+  );
 
   const lastAssessment = bodyAssessments.length > 0 ? bodyAssessments[0] : null;
   const currentSubscription =
@@ -439,6 +450,8 @@ export function CustomerHistoryClient({
             planName={currentSubscription?.plan_name ?? null}
             subscriptionStatus={profile.subscription_status}
             subscriptionEndDate={profile.subscription_end_date}
+            subscriptionGraceDays={profile.subscription_grace_days}
+            subscriptionAccessUntil={profile.subscription_access_until}
           />
         }
         confirmText={profile.is_active ? "Desactivar" : "Reactivar"}

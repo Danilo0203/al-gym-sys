@@ -7,6 +7,7 @@ import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { createClient } from "@/lib/supabase/server";
 import { toCashActionError } from "@/features/cash/lib/cash-module-errors";
 import type { TrainingProfileInput } from "@/lib/training/types";
+import { normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 
 const GUATEMALA_UTC_OFFSET = "-06:00";
 const CASH_CLOSE_WITHOUT_PASSWORD_PERMISSION = "cash.close_without_admin_password";
@@ -104,6 +105,8 @@ interface CashCustomerRow {
   plan_name: string | null;
   subscription_status: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   is_active: boolean | null;
 }
 
@@ -241,6 +244,8 @@ export interface CashCustomerSearchResult {
   plan_name: string | null;
   subscription_status: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   is_active: boolean;
   last_payment_date: string | null;
   last_payment_amount: number | null;
@@ -254,6 +259,8 @@ export interface CashCustomerSummary {
   plan_name: string | null;
   subscription_status: string | null;
   subscription_end_date: string | null;
+  subscription_grace_days?: number | null;
+  subscription_access_until?: string | null;
   is_active: boolean;
   birth_date: string | null;
   gender: "male" | "female" | "other" | null;
@@ -348,6 +355,7 @@ export interface ReversePaymentInput {
   paymentId: string;
   amountOriginal: number;
   discountAmount: number;
+  graceDays?: number;
   amountPaid: number;
   paymentMethod: PaymentMethod;
   reason: string;
@@ -814,6 +822,7 @@ async function createSubscriptionPaymentWithCashFallback(params: {
   amountOriginal?: number;
   finalPrice?: number;
   discountAmount?: number;
+  graceDays?: number;
   paymentMethod: PaymentMethod;
   requireSession?: boolean;
   expireCurrentSubscription?: boolean;
@@ -882,6 +891,7 @@ async function createSubscriptionPaymentWithCashFallback(params: {
       end_date: endDate,
       status: "active",
       discount_amount: discountAmount,
+      grace_days: normalizeGraceDays(params.graceDays),
     })
     .select("id")
     .single();
@@ -1266,7 +1276,7 @@ export async function searchCashCustomers(search: string): Promise<CashCustomerS
   const normalizedSearch = search.trim();
   let query = adminClient
     .from("customer_overview")
-    .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, is_active")
+    .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
     .eq("role", "client");
 
   if (normalizedSearch.length > 0) {
@@ -1311,6 +1321,8 @@ export async function searchCashCustomers(search: string): Promise<CashCustomerS
       plan_name: customer.plan_name,
       subscription_status: customer.subscription_status,
       subscription_end_date: customer.subscription_end_date,
+      subscription_grace_days: customer.subscription_grace_days ?? null,
+      subscription_access_until: customer.subscription_access_until ?? null,
       is_active: customer.is_active !== false,
       last_payment_date: latestPayment?.payment_date || null,
       last_payment_amount: latestPayment?.amount_paid ?? null,
@@ -1332,7 +1344,7 @@ export async function getCashCustomerSummary(customerId: string): Promise<CashCu
   ] = await Promise.all([
     adminClient
       .from("customer_overview")
-      .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, is_active")
+      .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
       .eq("role", "client")
       .eq("id", customerId)
       .maybeSingle(),
@@ -1388,6 +1400,8 @@ export async function getCashCustomerSummary(customerId: string): Promise<CashCu
     plan_name: customer.plan_name,
     subscription_status: customer.subscription_status,
     subscription_end_date: customer.subscription_end_date,
+    subscription_grace_days: customer.subscription_grace_days ?? null,
+    subscription_access_until: customer.subscription_access_until ?? null,
     is_active: customer.is_active !== false,
     birth_date: profile?.birth_date || null,
     gender: profile?.gender || null,
@@ -1689,14 +1703,39 @@ export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
   planId?: number;
   startDate?: string | null;
   endDate?: string | null;
+  amountOriginal?: number;
   finalPrice?: number;
   discountAmount?: number;
+  graceDays?: number;
   paymentMethod?: PaymentMethod;
   requireSession?: boolean;
 }) {
   const access = await requireCashAccess();
   if (params.requireSession) {
     await requireOperableOpenCashSession(access);
+  }
+
+  if (params.planId && params.amountOriginal !== undefined) {
+    const fallbackData = await createSubscriptionPaymentWithCashFallback({
+      access,
+      customerId: params.customerId,
+      planId: params.planId,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      amountOriginal: params.amountOriginal,
+      finalPrice: params.finalPrice,
+      discountAmount: params.discountAmount,
+      graceDays: params.graceDays,
+      paymentMethod: params.paymentMethod ?? "cash",
+      requireSession: params.requireSession,
+    });
+
+    revalidatePath("/panel/caja");
+    revalidatePath("/panel/caja/historial");
+    revalidatePath("/panel/pagos");
+    revalidatePath("/panel/resumen");
+
+    return fallbackData;
   }
 
   const supabase = await createClient();
@@ -1707,6 +1746,7 @@ export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
     p_end_date: params.endDate ?? null,
     p_final_price: params.finalPrice ?? null,
     p_discount_amount: params.discountAmount ?? 0,
+    p_grace_days: normalizeGraceDays(params.graceDays),
     p_payment_method: params.paymentMethod ?? "cash",
     p_created_by_user_id: access.userId,
   });
@@ -1721,6 +1761,7 @@ export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
         endDate: params.endDate,
         finalPrice: params.finalPrice,
         discountAmount: params.discountAmount,
+        graceDays: params.graceDays,
         paymentMethod: params.paymentMethod ?? "cash",
         requireSession: params.requireSession,
       });
@@ -1751,6 +1792,7 @@ export async function runRenewSubscriptionWithPayment(params: {
   endDate: string;
   price: number;
   discountAmount: number;
+  graceDays?: number;
   amountPaid: number;
   paymentMethod: PaymentMethod;
   requireSession?: boolean;
@@ -1768,6 +1810,7 @@ export async function runRenewSubscriptionWithPayment(params: {
     p_end_date: params.endDate,
     p_price: params.price,
     p_discount_amount: params.discountAmount,
+    p_grace_days: normalizeGraceDays(params.graceDays),
     p_amount_paid: params.amountPaid,
     p_payment_method: params.paymentMethod,
     p_created_by_user_id: access.userId,
@@ -1784,6 +1827,7 @@ export async function runRenewSubscriptionWithPayment(params: {
         amountOriginal: params.price,
         finalPrice: params.amountPaid,
         discountAmount: params.discountAmount,
+        graceDays: params.graceDays,
         paymentMethod: params.paymentMethod,
         requireSession: params.requireSession,
         expireCurrentSubscription: true,
