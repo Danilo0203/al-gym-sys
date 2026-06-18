@@ -54,26 +54,32 @@ export async function proxy(request: NextRequest) {
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   const roleSlug = (profile?.role || user.user_metadata?.role || null) as string | null;
   const role = parseUserRole(roleSlug);
+  const isOwner = roleSlug === "owner";
 
   // Fetch role scope from DB
   let scope: string | null = null;
+  let permissions: string[] = [];
   if (roleSlug) {
-    const { data: roleData } = await supabase
-      .from("roles")
-      .select("scope")
-      .eq("slug", roleSlug)
-      .maybeSingle();
+    const [{ data: roleData }, { data: perms }] = await Promise.all([
+      supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
+      supabase.rpc("get_current_permissions"),
+    ]);
     scope = roleData?.scope || null;
+    permissions = (perms as string[] | null) || [];
   }
 
   const defaultRoute = resolvePostLoginRoute({
     role,
     roleScope: scope,
+    permissions,
+    isOwner,
   });
   const requestedPath = `${pathname}${request.nextUrl.search}`;
   const resolvedRequestedPath = resolvePostLoginRoute({
     role,
     roleScope: scope,
+    permissions,
+    isOwner,
     requestedPath,
   });
 

@@ -29,6 +29,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
 
   const roleLabel = user.roleName || user.role || "Usuario";
   const userEmail = user.email || "Sin correo";
+  const canChangePassword = Boolean(user.isOwner || user.role === "admin");
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-2 md:p-4">
@@ -77,7 +78,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
         <ProfileForm profile={user} />
 
         {/* Password Change Form */}
-        <PasswordForm />
+        {canChangePassword ? <PasswordForm /> : null}
       </div>
 
       {/* Account Information (Read-only) */}

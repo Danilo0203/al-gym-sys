@@ -34,13 +34,46 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   "/mi/membresia": "",
 };
 
+const PANEL_ROUTE_PRIORITY = [
+  "/panel/resumen",
+  "/panel/clientes",
+  "/panel/pagos",
+  "/panel/caja",
+  "/panel/caja/historial",
+  "/panel/inventario/productos",
+  "/panel/inventario/movimientos",
+  "/panel/asistencias",
+  "/panel/rutinas",
+  "/panel/ejercicios",
+  "/panel/usuarios",
+  "/panel/planes",
+  "/panel/roles",
+  "/panel/mensajes",
+  "/panel/perfil",
+] as const;
+
+function matchesRoutePattern(route: string, candidate: string) {
+  return route === candidate || route.startsWith(`${candidate}/`);
+}
+
+export function getRequiredPermissionForRoute(route: string): string | null {
+  const normalizedRoute = route.split("?")[0]?.split("#")[0] || route;
+  const matchingRoute = Object.keys(ROUTE_PERMISSIONS)
+    .sort((a, b) => b.length - a.length)
+    .find((candidate) => matchesRoutePattern(normalizedRoute, candidate));
+
+  if (!matchingRoute) return null;
+
+  return ROUTE_PERMISSIONS[matchingRoute] || null;
+}
+
 /**
  * Check if a user has access to a route based on permissions
  */
 export function canAccessRoute(route: string, permissions: string[], isOwner: boolean): boolean {
   if (isOwner) return true;
 
-  const requiredPermission = ROUTE_PERMISSIONS[route];
+  const requiredPermission = getRequiredPermissionForRoute(route);
   if (!requiredPermission) {
     // Routes without a permission requirement default to allowed (like /mi)
     return true;
@@ -102,6 +135,12 @@ export function getAccessibleRoutes(permissions: string[], isOwner: boolean): st
   return Object.entries(ROUTE_PERMISSIONS)
     .filter(([, perm]) => !perm || permissions.includes(perm))
     .map(([route]) => route);
+}
+
+export function getFirstAccessiblePanelRoute(permissions: string[], isOwner: boolean): string | null {
+  if (isOwner) return PANEL_ROUTE_PRIORITY[0];
+
+  return PANEL_ROUTE_PRIORITY.find((route) => canAccessRoute(route, permissions, isOwner)) ?? null;
 }
 
 /**

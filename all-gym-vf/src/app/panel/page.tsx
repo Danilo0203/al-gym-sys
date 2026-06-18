@@ -13,6 +13,8 @@ export default async function Dashboard() {
     resolvePostLoginRoute({
       role: access.role,
       roleScope: access.roleScope,
+      permissions: access.permissions,
+      isOwner: access.isOwner,
     }),
   );
 }

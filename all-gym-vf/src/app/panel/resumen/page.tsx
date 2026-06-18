@@ -1,5 +1,7 @@
 import DashboardView from "@/features/overview/components/panel-view";
 import { DashboardDateRange } from "@/features/overview/actions/panel-actions";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { redirect } from "next/navigation";
 import { SearchParams } from "nuqs/server";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths, startOfYear, endOfYear, format } from "date-fns";
 
@@ -44,6 +46,14 @@ function getDateRangeFromPeriod(period?: string, from?: string, to?: string): Da
 }
 
 export default async function OverviewPage(props: pageProps) {
+  const access = await getUserAccessContext();
+  if (!access.isAuthenticated) {
+    redirect("/iniciar-sesion");
+  }
+  if (!hasPermission(access, "dashboard.view")) {
+    redirect("/panel");
+  }
+
   const searchParams = await props.searchParams;
   const period = (searchParams.period as string) || "month";
   const from = (searchParams.from as string) || undefined;

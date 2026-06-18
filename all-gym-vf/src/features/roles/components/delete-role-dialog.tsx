@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { deleteRole, type RoleData } from "../actions/role-actions";
 import {
@@ -19,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { profileKeys } from "@/features/profile/hooks/use-profile";
 
 interface DeleteRoleDialogProps {
   open: boolean;
@@ -29,6 +32,8 @@ interface DeleteRoleDialogProps {
 }
 
 export function DeleteRoleDialog({ open, onOpenChange, role, roles, onSuccess }: DeleteRoleDialogProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [replacementSlug, setReplacementSlug] = useState("");
   const [needsReassign, setNeedsReassign] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -44,6 +49,8 @@ export function DeleteRoleDialog({ open, onOpenChange, role, roles, onSuccess }:
         replacementRoleSlug: needsReassign ? replacementSlug : undefined,
       });
       if (result.success) {
+        await queryClient.invalidateQueries({ queryKey: profileKeys.current() });
+        router.refresh();
         toast.success("Rol eliminado correctamente");
         onSuccess();
         onOpenChange(false);

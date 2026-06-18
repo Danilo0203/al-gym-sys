@@ -47,6 +47,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         let roleSlug = typeof data.user.user_metadata?.role === "string" ? data.user.user_metadata.role : null;
         let role = parseUserRole(roleSlug);
         let roleScope: string | null = null;
+        let permissions: string[] = [];
 
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) {
@@ -73,16 +74,21 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             role = parseUserRole(roleSlug) ?? role;
 
             if (roleSlug) {
-              const { data: roleData, error: roleError } = await supabase
-                .from("roles")
-                .select("scope")
-                .eq("slug", roleSlug)
-                .maybeSingle();
+              const [{ data: roleData, error: roleError }, { data: perms, error: permissionsError }] = await Promise.all([
+                supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
+                supabase.rpc("get_current_permissions"),
+              ]);
 
               if (roleError) {
                 console.error("[login] role scope lookup failed", roleError);
               } else {
                 roleScope = roleData?.scope ?? null;
+              }
+
+              if (permissionsError) {
+                console.error("[login] permissions lookup failed", permissionsError);
+              } else {
+                permissions = (perms as string[] | null) || [];
               }
             }
           }
@@ -97,6 +103,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
           resolvePostLoginRoute({
             role,
             roleScope,
+            permissions,
+            isOwner: roleSlug === "owner",
           }),
         );
       }

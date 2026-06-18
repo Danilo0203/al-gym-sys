@@ -23,7 +23,7 @@ export function useCurrentUser() {
       }
       return result.data as ProfileData;
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 0,
     retry: 1,
   });
 }

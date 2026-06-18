@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizeGuatemalaPhoneForAuth } from '@/lib/auth/identifiers';
+import { getUserAccessContext } from '@/lib/auth/authorization';
 
 export interface ProfileData {
   id: string;
@@ -182,6 +183,14 @@ export async function updatePassword(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const access = await getUserAccessContext();
+    if (!access.isAuthenticated) {
+      return { success: false, error: 'Usuario no autenticado' };
+    }
+    if (!(access.isOwner || access.role === 'admin')) {
+      return { success: false, error: 'No autorizado para cambiar contraseña' };
+    }
+
     const supabase = await createClient();
     
     // Get the authenticated user

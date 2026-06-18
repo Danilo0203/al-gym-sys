@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       let roleSlug = typeof user?.user_metadata?.role === "string" ? user.user_metadata.role : null;
       let role = parseUserRole(roleSlug);
       let roleScope: string | null = null;
+      let permissions: string[] = [];
 
       if (user) {
         const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
@@ -33,8 +34,12 @@ export async function GET(request: Request) {
         }
 
         if (roleSlug) {
-          const { data: roleData } = await supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle();
+          const [{ data: roleData }, { data: perms }] = await Promise.all([
+            supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
+            supabase.rpc("get_current_permissions"),
+          ]);
           roleScope = roleData?.scope ?? null;
+          permissions = (perms as string[] | null) || [];
         }
       }
 
@@ -42,6 +47,8 @@ export async function GET(request: Request) {
         `${origin}${resolvePostLoginRoute({
           role,
           roleScope,
+          permissions,
+          isOwner: roleSlug === "owner",
           requestedPath: next,
         })}`,
       );

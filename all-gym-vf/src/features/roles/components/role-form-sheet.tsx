@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import * as z from "zod";
 import { toast } from "sonner";
 import { CheckCircle2, Shield, Sparkles } from "lucide-react";
@@ -26,6 +28,7 @@ import {
   type RoleData,
   type PermissionData,
 } from "../actions/role-actions";
+import { profileKeys } from "@/features/profile/hooks/use-profile";
 
 const formSchema = z.object({
   name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
@@ -43,6 +46,8 @@ interface RoleFormSheetProps {
 }
 
 export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormSheetProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const isEditing = !!role;
   const [permissions, setPermissions] = useState<PermissionData[]>([]);
   const [selectedPermIds, setSelectedPermIds] = useState<Set<string>>(new Set());
@@ -57,21 +62,6 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
     },
   });
 
-  useEffect(() => {
-    if (open) {
-      form.reset({
-        name: role?.name || "",
-        slug: role?.slug || "",
-      });
-      setSelectedPermIds(new Set());
-      setPermissionQuery("");
-      loadPermissions();
-      if (role) {
-        loadRolePermissions(role.id);
-      }
-    }
-  }, [open, role, form]);
-
   const loadPermissions = async () => {
     const result = await getPermissions();
     if (result.success && result.data) {
@@ -85,6 +75,22 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
       setSelectedPermIds(new Set(result.data));
     }
   };
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        name: role?.name || "",
+        slug: role?.slug || "",
+      });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedPermIds(new Set());
+      setPermissionQuery("");
+      loadPermissions();
+      if (role) {
+        loadRolePermissions(role.id);
+      }
+    }
+  }, [open, role, form]);
 
   const togglePermission = (permId: string) => {
     setSelectedPermIds((prev) => {
@@ -204,7 +210,10 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
 
       const result = await actionPromise;
       if (result.success) {
+        await queryClient.invalidateQueries({ queryKey: profileKeys.current() });
+        router.refresh();
         onSuccess();
+        onOpenChange(false);
       }
     } catch {
       toast.error("Error inesperado");

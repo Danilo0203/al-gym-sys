@@ -1,4 +1,5 @@
 import type { UserRole } from "@/types";
+import { canAccessRoute, getFirstAccessiblePanelRoute } from "@/lib/rbac";
 
 export const VALID_USER_ROLES = ["owner", "admin", "trainer", "employee", "client"] as const satisfies readonly UserRole[];
 export const INTERNAL_USER_ROLES = ["owner", "admin", "trainer", "employee"] as const satisfies readonly Exclude<
@@ -33,14 +34,21 @@ export function isClientAccess(roleScope: string | null | undefined, role: UserR
   return isClientScope(roleScope) || (!roleScope && isClientRole(role));
 }
 
-export function getDefaultRouteForAccess(roleScope: string | null | undefined, role: UserRole | null | undefined) {
+export function getDefaultRouteForAccess(
+  roleScope: string | null | undefined,
+  role: UserRole | null | undefined,
+  permissions: string[] = [],
+  isOwner = false,
+) {
   if (isClientAccess(roleScope, role)) return DEFAULT_CLIENT_ROUTE;
-  if (isPanelScope(roleScope)) return DEFAULT_PANEL_ROUTE;
-  return DEFAULT_PANEL_ROUTE;
+
+  const defaultPanelRoute = getFirstAccessiblePanelRoute(permissions, isOwner);
+  if (isPanelScope(roleScope)) return defaultPanelRoute || DEFAULT_PANEL_ROUTE;
+  return defaultPanelRoute || DEFAULT_PANEL_ROUTE;
 }
 
-export function getDefaultRouteForRole(role: UserRole | null | undefined) {
-  return getDefaultRouteForAccess(null, role);
+export function getDefaultRouteForRole(role: UserRole | null | undefined, permissions: string[] = [], isOwner = false) {
+  return getDefaultRouteForAccess(null, role, permissions, isOwner);
 }
 
 function normalizeRequestedPath(requestedPath: string | null | undefined) {
@@ -61,13 +69,17 @@ function normalizeRequestedPath(requestedPath: string | null | undefined) {
 export function resolvePostLoginRoute({
   role,
   roleScope,
+  permissions = [],
+  isOwner = false,
   requestedPath,
 }: {
   role: UserRole | null | undefined;
   roleScope: string | null | undefined;
+  permissions?: string[];
+  isOwner?: boolean;
   requestedPath?: string | null | undefined;
 }) {
-  const defaultRoute = getDefaultRouteForAccess(roleScope, role);
+  const defaultRoute = getDefaultRouteForAccess(roleScope, role, permissions, isOwner);
   const normalizedPath = normalizeRequestedPath(requestedPath);
 
   if (!normalizedPath) {
@@ -90,11 +102,15 @@ export function resolvePostLoginRoute({
   }
 
   if (pathname === "/panel") {
-    return hasClientAccess ? DEFAULT_CLIENT_ROUTE : `${DEFAULT_PANEL_ROUTE}${suffix}`;
+    return hasClientAccess ? DEFAULT_CLIENT_ROUTE : `${defaultRoute}${suffix}`;
   }
 
   if (pathname.startsWith("/panel/")) {
-    return hasClientAccess ? DEFAULT_CLIENT_ROUTE : `${pathname}${suffix}`;
+    if (hasClientAccess) {
+      return DEFAULT_CLIENT_ROUTE;
+    }
+
+    return canAccessRoute(pathname, permissions, isOwner) ? `${pathname}${suffix}` : defaultRoute;
   }
 
   return `${pathname}${suffix}`;
