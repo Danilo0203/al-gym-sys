@@ -1816,7 +1816,7 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
 
   try {
     const currentAccess = await getUserAccessContext();
-    if (!currentAccess.isAuthenticated || !currentAccess.isAdmin || !currentAccess.userId) {
+    if (!currentAccess.isAuthenticated || !currentAccess.userId || !hasPermission(currentAccess, "customers.update")) {
       return { success: false, error: "No autorizado" };
     }
 
@@ -2401,6 +2401,11 @@ async function deleteRowsIfPossible(
 }
 
 export async function deleteCustomer(id: string) {
+  const access = await getUserAccessContext();
+  if (!access.isAuthenticated || !access.userId || !hasPermission(access, "customers.update")) {
+    return { success: false, error: "No autorizado para desactivar clientes" };
+  }
+
   const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
@@ -2437,6 +2442,11 @@ export async function deleteCustomer(id: string) {
 }
 
 export async function reactivateCustomer(id: string) {
+  const access = await getUserAccessContext();
+  if (!access.isAuthenticated || !access.userId || !hasPermission(access, "customers.update")) {
+    return { success: false, error: "No autorizado para reactivar clientes" };
+  }
+
   const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
@@ -2473,6 +2483,11 @@ export async function reactivateCustomer(id: string) {
 }
 
 export async function permanentlyDeleteCustomer(id: string) {
+  const access = await getUserAccessContext();
+  if (!access.isAuthenticated || !access.userId || !(access.isOwner || access.role === "admin")) {
+    return { success: false, error: "No autorizado para eliminar clientes permanentemente" };
+  }
+
   const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,

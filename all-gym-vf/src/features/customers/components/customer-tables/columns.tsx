@@ -55,6 +55,7 @@ export type Customer = {
   subscription_end_date: string | null;
   subscription_grace_days?: number | null;
   subscription_access_until?: string | null;
+  subscription_display_status?: string | null;
   plan_name: string | null;
   last_check_in: string | null;
   is_active: boolean | null;
@@ -189,6 +190,7 @@ export function getColumns(
         variant: "multiSelect" as const,
         options: [
           { label: "Activa", value: "active" },
+          { label: "Por vencer", value: "expiring" },
           { label: "Vencida", value: "expired" },
           { label: "Cancelada", value: "cancelled" },
         ],
@@ -199,6 +201,7 @@ export function getColumns(
           endDate={row.original.subscription_end_date}
           graceDays={row.original.subscription_grace_days}
           accessUntil={row.original.subscription_access_until}
+          displayStatus={row.original.subscription_display_status}
         />
       ),
     },

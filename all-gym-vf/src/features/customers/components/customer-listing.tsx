@@ -5,6 +5,7 @@ import { Customer } from "./customer-tables/columns";
 import { searchParamsCache } from "@/lib/searchparams";
 import { getSubscriptionAccessUntilISO, todayLocalISO } from "@/lib/subscriptions/grace-period";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { normalizeCustomerSearchText } from "@/lib/customers/search";
 
 export default async function CustomerListingPage() {
   const access = await getUserAccessContext();
@@ -84,7 +85,7 @@ export default async function CustomerListingPage() {
   let query = supabase
     .from("customer_overview")
     .select(
-      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, plan_name, last_check_in, is_active",
+      "id, full_name, phone, avatar_url, role, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, subscription_display_status, plan_name, last_check_in, is_active",
       { count: "exact" },
     );
 
@@ -93,7 +94,10 @@ export default async function CustomerListingPage() {
   }
 
   if (filters.full_name) {
-    query = query.ilike("full_name", `%${filters.full_name}%`);
+    const normalizedFullName = normalizeCustomerSearchText(filters.full_name);
+    if (normalizedFullName) {
+      query = query.ilike("full_name_search", `%${normalizedFullName}%`);
+    }
   }
 
   // Filtro por estado del cliente (Active/Inactive)
@@ -114,7 +118,23 @@ export default async function CustomerListingPage() {
       .filter(Boolean);
 
     if (subscriptionStatuses.length > 0) {
-      query = query.in("subscription_status", subscriptionStatuses);
+      const displayStatuses = new Set<string>();
+
+      for (const subscriptionStatus of subscriptionStatuses) {
+        if (subscriptionStatus === "expiring") {
+          displayStatuses.add("expiring");
+          displayStatuses.add("grace");
+          continue;
+        }
+
+        if (subscriptionStatus === "active" || subscriptionStatus === "expired" || subscriptionStatus === "cancelled") {
+          displayStatuses.add(subscriptionStatus);
+        }
+      }
+
+      if (displayStatuses.size > 0) {
+        query = query.in("subscription_display_status", Array.from(displayStatuses));
+      }
     }
   }
 

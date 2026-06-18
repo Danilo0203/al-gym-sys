@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, XAxis } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
-export const description = "An interactive bar chart";
+export const description = "Gráfico de barras interactivo";
 
 const chartData = [
   { date: "2024-04-01", desktop: 222, mobile: 150 },
@@ -104,14 +104,14 @@ const chartData = [
 
 const chartConfig = {
   views: {
-    label: "Page Views",
+    label: "Vistas de página",
   },
   desktop: {
-    label: "Desktop",
+    label: "Escritorio",
     color: "var(--primary)",
   },
   mobile: {
-    label: "Mobile",
+    label: "Móvil",
     color: "var(--primary)",
   },
   error: {

@@ -1,4 +1,4 @@
-import { getUserAccessContext } from "@/lib/auth/authorization";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_LIMIT = 12;
@@ -13,7 +13,7 @@ function parsePositiveInteger(value: string | null, fallback: number) {
 
 export async function GET(request: Request) {
   const access = await getUserAccessContext();
-  if (!access.isAuthenticated || !access.isAdmin) {
+  if (!access.isAuthenticated || !hasPermission(access, "customers.view")) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 

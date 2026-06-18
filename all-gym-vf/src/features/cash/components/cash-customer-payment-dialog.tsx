@@ -355,6 +355,8 @@ export function CashCustomerPaymentDialog({
           customerName={selectedCustomer.full_name}
           customerGender={selectedCustomer.gender}
           customerBirthDate={selectedCustomer.birth_date}
+          previousSubscriptionStartDate={selectedCustomer.subscription_start_date}
+          previousSubscriptionEndDate={selectedCustomer.subscription_end_date}
           lastAssessment={selectedCustomer.last_assessment}
           trainingProfile={selectedCustomer.training_profile}
         />

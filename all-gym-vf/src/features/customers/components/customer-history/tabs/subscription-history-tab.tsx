@@ -58,6 +58,7 @@ export function SubscriptionHistoryTab({
     expired: { label: "Vencida", style: "bg-muted text-muted-foreground border-muted-foreground/20" },
     cancelled: { label: "Cancelada", style: "bg-red-500/10 text-red-600 border-red-500/20" },
   };
+  const previousSubscription = subscriptionHistory.find((subscription) => subscription.status === "active") ?? subscriptionHistory[0] ?? null;
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -78,6 +79,8 @@ export function SubscriptionHistoryTab({
               customerName={customerName}
               customerGender={customerGender}
               customerBirthDate={customerBirthDate}
+              previousSubscriptionStartDate={previousSubscription?.start_date ?? null}
+              previousSubscriptionEndDate={previousSubscription?.end_date ?? null}
               lastAssessment={lastAssessment}
               trainingProfile={trainingProfile}
             />

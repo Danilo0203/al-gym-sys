@@ -44,6 +44,8 @@ interface RenewSubscriptionSheetProps {
   customerName: string;
   customerGender?: "male" | "female" | "other" | null;
   customerBirthDate?: string | null;
+  previousSubscriptionStartDate?: string | null;
+  previousSubscriptionEndDate?: string | null;
   lastAssessment?: {
     weight_kg: number;
     height_cm: number;
@@ -73,6 +75,8 @@ export function RenewSubscriptionSheet({
   customerName,
   customerGender,
   customerBirthDate,
+  previousSubscriptionStartDate,
+  previousSubscriptionEndDate,
   lastAssessment,
   trainingProfile,
   trigger,
@@ -98,6 +102,8 @@ export function RenewSubscriptionSheet({
       customerId,
       customerGender,
       customerBirthDate,
+      previousSubscriptionStartDate,
+      previousSubscriptionEndDate,
       lastAssessment,
       trainingProfile,
       open: controlledOpen,

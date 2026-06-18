@@ -104,6 +104,7 @@ interface CashCustomerRow {
   phone: string | null;
   plan_name: string | null;
   subscription_status: string | null;
+  subscription_start_date: string | null;
   subscription_end_date: string | null;
   subscription_grace_days?: number | null;
   subscription_access_until?: string | null;
@@ -258,6 +259,7 @@ export interface CashCustomerSummary {
   phone: string | null;
   plan_name: string | null;
   subscription_status: string | null;
+  subscription_start_date: string | null;
   subscription_end_date: string | null;
   subscription_grace_days?: number | null;
   subscription_access_until?: string | null;
@@ -1344,7 +1346,7 @@ export async function getCashCustomerSummary(customerId: string): Promise<CashCu
   ] = await Promise.all([
     adminClient
       .from("customer_overview")
-      .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
+      .select("id, full_name, phone, plan_name, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
       .eq("role", "client")
       .eq("id", customerId)
       .maybeSingle(),
@@ -1399,6 +1401,7 @@ export async function getCashCustomerSummary(customerId: string): Promise<CashCu
     phone: customer.phone,
     plan_name: customer.plan_name,
     subscription_status: customer.subscription_status,
+    subscription_start_date: customer.subscription_start_date,
     subscription_end_date: customer.subscription_end_date,
     subscription_grace_days: customer.subscription_grace_days ?? null,
     subscription_access_until: customer.subscription_access_until ?? null,

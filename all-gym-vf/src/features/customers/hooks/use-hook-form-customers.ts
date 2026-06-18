@@ -5,7 +5,7 @@ import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import * as z from "zod";
-import { addDays, differenceInDays } from "date-fns";
+import { addDays, addMonths, differenceInDays, endOfMonth } from "date-fns";
 import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
@@ -62,6 +62,17 @@ const dateModeValues = ["automatic", "manual"] as const;
 
 export function calculateSubscriptionEndDate(startDate: Date, planDurationDays: number) {
   return addDays(startDate, planDurationDays);
+}
+
+export function calculateNextSubscriptionStartDate(previousStartDate?: Date | null) {
+  if (!previousStartDate) return new Date();
+
+  const nextMonthSameDay = addMonths(previousStartDate, 1);
+  if (nextMonthSameDay.getDate() === previousStartDate.getDate()) {
+    return nextMonthSameDay;
+  }
+
+  return endOfMonth(nextMonthSameDay);
 }
 
 interface MembershipPricingSummary {
@@ -920,17 +931,19 @@ interface RenewAssessmentData {
 }
 
 function getRenewSubscriptionDefaultValues(
+  previousSubscriptionStartDate?: string | null,
   lastAssessment?: RenewAssessmentData | null,
   trainingProfile?: TrainingProfileInput | null,
 ): RenewSubscriptionFormValues {
   const sessionDuration = splitSessionMinutes(trainingProfile?.session_minutes);
+  const renewalStartDate = calculateNextSubscriptionStartDate(parseDatabaseDate(previousSubscriptionStartDate));
 
   return {
     plan_id: "",
     date_mode: "automatic",
     subscription_period: {
-      from: new Date(),
-      to: new Date(),
+      from: renewalStartDate,
+      to: renewalStartDate,
     },
     price: 0,
     discount_amount: 0,
@@ -985,6 +998,8 @@ interface UseHookFormRenewSubscriptionParams {
   customerId: string;
   customerGender?: "male" | "female" | "other" | null;
   customerBirthDate?: string | null;
+  previousSubscriptionStartDate?: string | null;
+  previousSubscriptionEndDate?: string | null;
   lastAssessment?: RenewAssessmentData | null;
   trainingProfile?: TrainingProfileInput | null;
   open?: boolean;
@@ -996,6 +1011,8 @@ export function useHookFormRenewSubscription({
   customerId,
   customerGender,
   customerBirthDate,
+  previousSubscriptionStartDate,
+  previousSubscriptionEndDate: _previousSubscriptionEndDate,
   lastAssessment,
   trainingProfile,
   open: controlledOpen,
@@ -1004,6 +1021,7 @@ export function useHookFormRenewSubscription({
 }: UseHookFormRenewSubscriptionParams) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  void _previousSubscriptionEndDate;
   const previousDateStateRef = useRef<{ dateMode?: RenewSubscriptionFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
     dateMode: "automatic",
     planId: null,
@@ -1016,7 +1034,7 @@ export function useHookFormRenewSubscription({
 
   const form = useForm<RenewSubscriptionFormValues>({
     resolver: zodResolver(renewSubscriptionSchema) as Resolver<RenewSubscriptionFormValues>,
-    defaultValues: getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile),
+    defaultValues: getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, lastAssessment, trainingProfile),
   });
   const {
     reset: resetRenew,
@@ -1087,7 +1105,7 @@ export function useHookFormRenewSubscription({
 
   useEffect(() => {
     if (!open) return;
-    const values = getRenewSubscriptionDefaultValues(lastAssessment, trainingProfile);
+    const values = getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, lastAssessment, trainingProfile);
     resetRenew(values);
     priceContextRef.current = null;
     lastSuggestedFinalPriceRef.current = null;
@@ -1097,7 +1115,7 @@ export function useHookFormRenewSubscription({
       planId: values.plan_id || null,
       startTime: values.subscription_period?.from?.getTime() ?? null,
     };
-  }, [lastAssessment, open, resetRenew, trainingProfile]);
+  }, [lastAssessment, open, previousSubscriptionStartDate, resetRenew, trainingProfile]);
 
   useEffect(() => {
     if (!membershipPricing) return;

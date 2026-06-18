@@ -8,12 +8,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { IconBrandWhatsapp, IconAlertTriangle } from '@tabler/icons-react';
 import type { ExpiringSubscription } from '../actions/panel-actions';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface ExpiringSubscriptionsTableProps {
   data: ExpiringSubscription[];
 }
 
 export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableProps) {
+  const router = useRouter();
+
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -97,9 +100,11 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
         <ScrollArea className='h-[220px] pr-4'>
           <div className='space-y-3'>
             {data.map((sub) => (
-              <div
+              <button
                 key={sub.user_id}
-                className='flex items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3'
+                type='button'
+                className='flex w-full items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-left transition-colors hover:bg-yellow-500/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-yellow-500/50'
+                onClick={() => router.push(`/panel/clientes/${sub.user_id}/history`)}
               >
                 <div className='flex items-center gap-3'>
                   <Avatar className='h-9 w-9'>
@@ -131,7 +136,7 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
                     </Link>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </ScrollArea>

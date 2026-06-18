@@ -155,6 +155,7 @@ export function CustomerHistoryClient({
   const { data: customerDetails } = useCustomer(editOpen ? profile.id : null);
   const { data: currentUser } = useCurrentUser();
   const canUpdateCustomer = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("customers.update"));
+  const canPermanentlyDeleteCustomer = Boolean(currentUser?.isOwner || currentUser?.role === "admin");
 
   // ScrollSpy Implementation
   useEffect(() => {
@@ -601,7 +602,7 @@ export function CustomerHistoryClient({
                     </span>
                   </DropdownMenuItem>
                   )}
-                  {canUpdateCustomer && (
+                  {canPermanentlyDeleteCustomer && (
                   <DropdownMenuItem
                     className="gap-2 py-2 cursor-pointer text-red-500 hover:text-red-600 hover:bg-red-500/10 focus:text-red-600 focus:bg-red-500/10"
                     onClick={() => setDeleteOpen(true)}

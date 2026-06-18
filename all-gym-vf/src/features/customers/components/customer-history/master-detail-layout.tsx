@@ -2,18 +2,18 @@
 
 import { useEffect, useState, useRef } from "react";
 import { CustomerList } from "./customer-list";
-import { Customer } from "../customer-tables/columns";
 import { useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import type { CustomerListItem } from "./customer-list";
 
 interface MasterDetailLayoutProps {
   children: React.ReactNode;
-  customers: Customer[];
+  initialCustomers: CustomerListItem[];
 }
 
-export function MasterDetailLayout({ children, customers }: MasterDetailLayoutProps) {
+export function MasterDetailLayout({ children, initialCustomers }: MasterDetailLayoutProps) {
   const { setOpen, isMobile } = useSidebar();
   const [isListCollapsed, setIsListCollapsed] = useState(false);
   const hasCollapsedOnMount = useRef(false);
@@ -36,7 +36,7 @@ export function MasterDetailLayout({ children, customers }: MasterDetailLayoutPr
           isListCollapsed ? "w-0 overflow-hidden" : "w-[320px] lg:w-[380px]",
         )}
       >
-        <CustomerList customers={customers} />
+        <CustomerList initialCustomers={initialCustomers} />
       </div>
 
       {/* Main Content (Detail View) */}

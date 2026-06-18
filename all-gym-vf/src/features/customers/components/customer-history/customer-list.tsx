@@ -1,28 +1,89 @@
 'use client';
 
-import { useState } from 'react';
-import { Customer } from '../customer-tables/columns';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { IconSearch } from '@tabler/icons-react';
+import { IconLoader2, IconSearch } from '@tabler/icons-react';
 
-interface CustomerListProps {
-  customers: Customer[];
+export interface CustomerListItem {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  plan_name: string | null;
+  subscription_status: string | null;
+  is_active: boolean | null;
 }
 
-export function CustomerList({ customers }: CustomerListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const params = useParams();
-  const currentcustomerId = params?.customerId as string;
+interface CustomerListProps {
+  initialCustomers: CustomerListItem[];
+}
 
-  const filteredCustomers = customers.filter(customer => 
-    customer.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+interface CustomerListResponse {
+  data?: CustomerListItem[];
+  error?: string;
+}
+
+export function CustomerList({ initialCustomers }: CustomerListProps) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [results, setResults] = useState<CustomerListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const params = useParams();
+  const deferredSearchTerm = useDeferredValue(searchTerm.trim());
+  const currentcustomerId = params?.customerId as string;
+  const isSearching = deferredSearchTerm.length > 0;
+  const visibleCustomers = isSearching ? results : initialCustomers;
+
+  useEffect(() => {
+    if (!isSearching) {
+      return;
+    }
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const controller = new AbortController();
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const url = new URL('/api/panel/clientes/sidebar', window.location.origin);
+        url.searchParams.set('query', deferredSearchTerm);
+        url.searchParams.set('limit', '20');
+
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        const payload = (await response.json()) as CustomerListResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error || 'No se pudieron cargar los clientes.');
+        }
+
+        if (requestIdRef.current !== requestId) return;
+        setResults(Array.isArray(payload.data) ? payload.data : []);
+      } catch (fetchError) {
+        if (controller.signal.aborted) return;
+        if (requestIdRef.current !== requestId) return;
+        setResults([]);
+        setError(fetchError instanceof Error ? fetchError.message : 'No se pudieron cargar los clientes.');
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setIsLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [deferredSearchTerm, initialCustomers, isSearching]);
 
   return (
     <div className="flex flex-col h-full border-r bg-muted/10 w-full max-w-sm min-w-[300px]">
@@ -34,7 +95,17 @@ export function CustomerList({ customers }: CustomerListProps) {
             placeholder="Buscar..."
             className="pl-9"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setSearchTerm(nextValue);
+              if (!nextValue.trim()) {
+                setError(null);
+                setIsLoading(false);
+              } else {
+                setError(null);
+                setIsLoading(true);
+              }
+            }}
           />
         </div>
       </div>
@@ -48,7 +119,20 @@ export function CustomerList({ customers }: CustomerListProps) {
                 </Button>
             </Link> */}
             
-          {filteredCustomers.map(customer => {
+          {isLoading && (
+            <div className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+              <IconLoader2 className="h-4 w-4 animate-spin" />
+              Buscando clientes...
+            </div>
+          )}
+
+          {!isLoading && error && (
+            <div className="p-4 text-center text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {!error && visibleCustomers.map(customer => {
              const initials = customer.full_name
               ?.split(' ')
               .map((n) => n[0])
@@ -86,7 +170,7 @@ export function CustomerList({ customers }: CustomerListProps) {
              );
           })}
           
-          {filteredCustomers.length === 0 && (
+          {!isLoading && !error && visibleCustomers.length === 0 && (
             <div className="p-4 text-center text-sm text-muted-foreground">
               No se encontraron clientes
             </div>
