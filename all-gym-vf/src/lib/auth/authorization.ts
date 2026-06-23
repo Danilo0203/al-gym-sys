@@ -1,6 +1,7 @@
-import { createClient } from "@/lib/supabase/server";
 import { UserRole } from "@/types";
 import { parseUserRole } from "@/lib/auth/role-utils";
+import { getServerAuthContext } from "@/lib/auth/server-auth";
+import type { AuthContext } from "@/lib/auth/contracts";
 
 export interface UserAccessContext {
   isAuthenticated: boolean;
@@ -24,53 +25,41 @@ export function requirePermission(access: UserAccessContext, permission: string)
   }
 }
 
-export async function getUserAccessContext(): Promise<UserAccessContext> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+function unauthenticatedAccessContext(): UserAccessContext {
+  return {
+    isAuthenticated: false,
+    isAdmin: false,
+    role: null,
+    userId: null,
+    roleSlug: null,
+    roleScope: null,
+    permissions: [],
+    isOwner: false,
+  };
+}
 
-  if (!user) {
-    return {
-      isAuthenticated: false,
-      isAdmin: false,
-      role: null,
-      userId: null,
-      roleSlug: null,
-      roleScope: null,
-      permissions: [],
-      isOwner: false,
-    };
+export function toUserAccessContext(context: AuthContext | null): UserAccessContext {
+  if (!context) {
+    return unauthenticatedAccessContext();
   }
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  const roleSlug = (profile?.role || user.user_metadata?.role || null) as string | null;
+  const roleSlug = context.authorization.roleSlug;
   const role = parseUserRole(roleSlug);
-  const isOwner = roleSlug === "owner";
-
-  let roleScope: "panel" | "client" | null = null;
-  let permissions: string[] = [];
-
-  if (roleSlug) {
-    const [{ data: roleData }, { data: perms }] = await Promise.all([
-      supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
-      supabase.rpc("get_current_permissions"),
-    ]);
-
-    roleScope = (roleData?.scope as "panel" | "client") || null;
-    if (perms) {
-      permissions = perms as string[];
-    }
-  }
+  const isOwner = context.authorization.isOwner;
 
   return {
     isAuthenticated: true,
     isAdmin: isOwner || role === "admin",
     role,
-    userId: user.id,
-    roleSlug: roleSlug || null,
-    roleScope,
-    permissions,
+    userId: context.user.id,
+    roleSlug,
+    roleScope: context.authorization.scope,
+    permissions: context.authorization.permissions,
     isOwner,
   };
+}
+
+export async function getUserAccessContext(): Promise<UserAccessContext> {
+  const context = await getServerAuthContext();
+  return toUserAccessContext(context);
 }

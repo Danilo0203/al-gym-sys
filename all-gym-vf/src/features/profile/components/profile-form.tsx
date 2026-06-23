@@ -12,16 +12,21 @@ import { useHookFormProfile } from "../hooks/use-hook-form-profile";
 
 interface ProfileFormProps {
   profile: ProfileData;
+  canEditProfile: boolean;
 }
 
-export function ProfileForm({ profile }: ProfileFormProps) {
+export function ProfileForm({ profile, canEditProfile }: ProfileFormProps) {
   const { form, isPending, onSubmit } = useHookFormProfile(profile);
 
   return (
     <Card className="py-4 gap-4">
       <CardHeader className="px-4 py-0">
         <CardTitle>Información Personal</CardTitle>
-        <CardDescription>Actualiza tu información personal.</CardDescription>
+        <CardDescription>
+          {canEditProfile
+            ? "Actualiza tu información personal."
+            : "Puedes ver tu información personal, pero no tienes permiso para editarla."}
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-4">
         <FormProvider {...form}>
@@ -32,17 +37,30 @@ export function ProfileForm({ profile }: ProfileFormProps) {
                 name="full_name"
                 label="Nombre Completo"
                 placeholder="Tu nombre completo"
+                disabled={!canEditProfile}
               />
-              <FormInput control={form.control} name="phone" label="Teléfono" placeholder="+502 1234-5678" />
+              <FormInput
+                control={form.control}
+                name="phone"
+                label="Teléfono"
+                placeholder="+502 1234-5678"
+                disabled={!canEditProfile}
+              />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <FormDatePicker control={form.control} name="birth_date" label="Fecha de Nacimiento" />
+              <FormDatePicker
+                control={form.control}
+                name="birth_date"
+                label="Fecha de Nacimiento"
+                disabled={!canEditProfile}
+              />
               <FormSelect
                 control={form.control}
                 name="gender"
                 label="Género"
                 placeholder="Selecciona género"
+                disabled={!canEditProfile}
                 options={[
                   { label: "Masculino", value: "male" },
                   { label: "Femenino", value: "female" },
@@ -51,16 +69,18 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               />
             </div>
 
-            <div className="flex justify-end pt-4">
-              <Button type="submit" disabled={isPending}>
-                {isPending ? (
-                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <IconDeviceFloppy className="mr-2 h-4 w-4" />
-                )}
-                Guardar Cambios
-              </Button>
-            </div>
+            {canEditProfile ? (
+              <div className="flex justify-end pt-4">
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? (
+                    <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <IconDeviceFloppy className="mr-2 h-4 w-4" />
+                  )}
+                  Guardar Cambios
+                </Button>
+              </div>
+            ) : null}
           </form>
         </FormProvider>
       </CardContent>

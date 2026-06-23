@@ -1,72 +1,58 @@
-import { createServerClient } from "@supabase/ssr";
+import { fetchAuthBackend } from "@/lib/auth/backend-auth";
+import { getAuthErrorMessage, parseAuthContext, parseJsonText } from "@/lib/auth/contracts";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  let response = NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    if (request.nextUrl.pathname.startsWith("/panel")) {
-      console.warn("Supabase environment variables are missing! Authentication will not work.");
-    }
-    return response;
-  }
-
-  const supabase = createServerClient(supabaseUrl, supabaseKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-      },
-    },
-  });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
 
-  if (!user && isProtectedArea) {
+  let authResponse: Response;
+
+  try {
+    authResponse = await fetchAuthBackend("/auth/me", {
+      headers: request.headers.get("cookie") ? { cookie: request.headers.get("cookie") as string } : undefined,
+    });
+  } catch (error) {
+    return new NextResponse(
+      error instanceof Error ? error.message : "No fue posible contactar el backend de autenticación local.",
+      { status: 503 },
+    );
+  }
+
+  if (authResponse.status === 401) {
+    if (!isProtectedArea) {
+      return response;
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/iniciar-sesion";
     return NextResponse.redirect(url);
   }
 
-  if (!user) {
-    return response;
+  const authResponseText = await authResponse.text();
+
+  if (!authResponse.ok) {
+    const payload = authResponseText.trim() ? parseJsonText(authResponseText, "Local auth backend") : null;
+    const errorMessage = payload ? getAuthErrorMessage(payload) : null;
+
+    return new NextResponse(errorMessage ?? "No fue posible validar la sesión local.", {
+      status: authResponse.status,
+    });
   }
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  const roleSlug = (profile?.role || user.user_metadata?.role || null) as string | null;
+  const authContext = parseAuthContext(parseJsonText(authResponseText, "Local auth backend"), "Local auth backend");
+  const roleSlug = authContext.authorization.roleSlug;
   const role = parseUserRole(roleSlug);
-  const isOwner = roleSlug === "owner";
-
-  // Fetch role scope from DB
-  let scope: string | null = null;
-  let permissions: string[] = [];
-  if (roleSlug) {
-    const [{ data: roleData }, { data: perms }] = await Promise.all([
-      supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
-      supabase.rpc("get_current_permissions"),
-    ]);
-    scope = roleData?.scope || null;
-    permissions = (perms as string[] | null) || [];
-  }
+  const scope = authContext.authorization.scope;
+  const permissions = authContext.authorization.permissions;
+  const isOwner = authContext.authorization.isOwner;
 
   const defaultRoute = resolvePostLoginRoute({
     role,

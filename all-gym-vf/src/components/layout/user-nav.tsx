@@ -22,8 +22,6 @@ export function UserNav() {
 
   const handleSignOut = async () => {
     await signOutCurrentUser();
-    router.replace('/iniciar-sesion');
-    router.refresh();
   };
 
   // Loading state
