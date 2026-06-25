@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { getCurrentUser, updateProfile, updatePassword, ProfileData, UpdateProfileData } from '../actions/profile-actions';
 import { toast } from 'sonner';
 
@@ -33,6 +34,7 @@ export function useCurrentUser() {
  */
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   return useMutation({
     mutationFn: async (data: UpdateProfileData) => {
@@ -42,8 +44,12 @@ export function useUpdateProfile() {
       }
       return result;
     },
-    onSuccess: () => {
+    onSuccess: async (result) => {
+      if (result.data) {
+        queryClient.setQueryData(profileKeys.current(), result.data);
+      }
       queryClient.invalidateQueries({ queryKey: profileKeys.current() });
+      router.refresh();
       toast.success('Perfil actualizado correctamente');
     },
     onError: (error: Error) => {

@@ -1,10 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
 import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
 import { getServerAuthContext } from '@/lib/auth/server-auth';
 import { canEditOwnProfile, PROFILE_EDIT_PERMISSION_KEYS } from '../lib/profile-permissions';
+import { LocalProfileHttpError, getLocalProfile, updateLocalProfile } from '../server/local-profile';
 
 export interface ProfileData {
   id: string;
@@ -25,8 +25,35 @@ export interface ProfileData {
 export interface UpdateProfileData {
   full_name?: string;
   phone?: string;
-  birth_date?: string | null;
+  birth_date?: string;
   gender?: 'male' | 'female' | 'other';
+}
+
+function mapProfileBackendError(error: unknown): string {
+  if (error instanceof LocalProfileHttpError) {
+    switch (error.status) {
+      case 400:
+        return error.message || 'Datos inválidos para actualizar el perfil.';
+      case 401:
+        return 'Sesión inválida. Inicia sesión nuevamente.';
+      case 403:
+        return 'No tienes permiso para editar este perfil.';
+      case 404:
+        return 'Perfil no encontrado.';
+      default:
+        return error.message || `Error del backend local (${error.status}).`;
+    }
+  }
+
+  if (error instanceof Error && error.message.startsWith('Could not reach local profile backend:')) {
+    return 'No fue posible conectar con el backend local del perfil.';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Error inesperado al procesar el perfil.';
 }
 
 /**
@@ -40,34 +67,38 @@ export async function getCurrentUser(): Promise<{ success: boolean; data?: Profi
       return { success: false, error: 'Usuario no autenticado' };
     }
 
+    const profile = await getLocalProfile();
+
     return {
       success: true,
       data: {
-        id: authContext.user.id,
-        email: authContext.user.email || null,
-        full_name: authContext.user.profile.fullName || null,
-        phone: null,
-        birth_date: null,
-        gender: null,
-        avatar_url: null,
-        role: authContext.authorization.roleSlug,
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        phone: profile.phone,
+        birth_date: profile.birth_date || null,
+        gender: profile.gender,
+        avatar_url: profile.avatar_url,
+        role: profile.role ?? authContext.authorization.roleSlug,
         roleName: null,
         permissions: authContext.authorization.permissions,
         isOwner: authContext.authorization.isOwner,
-        created_at: null,
-        updated_at: null,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
       }
     };
   } catch (error) {
     console.error('Error in getCurrentUser:', error);
-    return { success: false, error: 'Error al obtener datos del usuario' };
+    return { success: false, error: mapProfileBackendError(error) };
   }
 }
 
 /**
  * Update the currently authenticated user's profile
  */
-export async function updateProfile(data: UpdateProfileData): Promise<{ success: boolean; error?: string }> {
+export async function updateProfile(
+  data: UpdateProfileData,
+): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) {
@@ -84,34 +115,41 @@ export async function updateProfile(data: UpdateProfileData): Promise<{ success:
       return { success: false, error: 'Usuario no autenticado' };
     }
 
-    const supabase = await createClient();
-
-    // Prepare update data
-    const updateData: Record<string, string | null> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (data.full_name !== undefined) updateData.full_name = data.full_name;
-    if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.birth_date !== undefined) updateData.birth_date = data.birth_date;
-    if (data.gender !== undefined) updateData.gender = data.gender;
-
-    // Update profile
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', access.userId);
-
-    if (updateError) {
-      console.error('Error updating profile:', updateError);
-      return { success: false, error: `Error al actualizar: ${updateError.message}` };
+    if (Object.keys(data).length === 0) {
+      return { success: false, error: 'No hay cambios para actualizar.' };
     }
 
+    const authContext = await getServerAuthContext();
+    if (!authContext) {
+      return { success: false, error: 'Usuario no autenticado' };
+    }
+
+    const updatedProfile = await updateLocalProfile(data);
+
     revalidatePath('/panel/perfil');
-    return { success: true };
+    revalidatePath('/panel/perfil/[[...profile]]');
+
+    return {
+      success: true,
+      data: {
+        id: updatedProfile.id,
+        email: updatedProfile.email,
+        full_name: updatedProfile.full_name,
+        phone: updatedProfile.phone,
+        birth_date: updatedProfile.birth_date || null,
+        gender: updatedProfile.gender,
+        avatar_url: updatedProfile.avatar_url,
+        role: updatedProfile.role ?? authContext.authorization.roleSlug,
+        roleName: null,
+        permissions: authContext.authorization.permissions,
+        isOwner: authContext.authorization.isOwner,
+        created_at: updatedProfile.created_at,
+        updated_at: updatedProfile.updated_at,
+      },
+    };
   } catch (error) {
     console.error('Error in updateProfile:', error);
-    return { success: false, error: 'Error inesperado al actualizar perfil' };
+    return { success: false, error: mapProfileBackendError(error) };
   }
 }
 

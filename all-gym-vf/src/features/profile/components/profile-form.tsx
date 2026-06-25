@@ -1,5 +1,6 @@
 "use client";
 
+import { endOfDay } from "date-fns";
 import { FormProvider } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { FormInput } from "@/components/forms/form-input";
@@ -44,6 +45,7 @@ export function ProfileForm({ profile, canEditProfile }: ProfileFormProps) {
                 name="phone"
                 label="Teléfono"
                 placeholder="+502 1234-5678"
+                type="tel"
                 disabled={!canEditProfile}
               />
             </div>
@@ -53,6 +55,11 @@ export function ProfileForm({ profile, canEditProfile }: ProfileFormProps) {
                 control={form.control}
                 name="birth_date"
                 label="Fecha de Nacimiento"
+                required
+                config={{
+                  placeholder: "Selecciona una fecha",
+                  maxDate: endOfDay(new Date()),
+                }}
                 disabled={!canEditProfile}
               />
               <FormSelect
@@ -60,6 +67,7 @@ export function ProfileForm({ profile, canEditProfile }: ProfileFormProps) {
                 name="gender"
                 label="Género"
                 placeholder="Selecciona género"
+                required
                 disabled={!canEditProfile}
                 options={[
                   { label: "Masculino", value: "male" },
