@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { format, isValid } from "date-fns";
+import { toast } from "sonner";
 import { ProfileData } from "../actions/profile-actions";
 import { useUpdatePassword, useUpdateProfile } from "./use-profile";
 
@@ -20,12 +21,28 @@ const profileSchema = z.object({
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, "La contraseña actual es requerida"),
-    newPassword: z.string().min(6, "La nueva contraseña debe tener al menos 6 caracteres"),
+    newPassword: z
+      .string()
+      .min(8, "La nueva contraseña debe tener al menos 8 caracteres")
+      .max(128, "La nueva contraseña no puede exceder 128 caracteres"),
     confirmPassword: z.string().min(1, "Confirma tu nueva contraseña"),
   })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    message: "Las contraseñas no coinciden",
-    path: ["confirmPassword"],
+  .superRefine((data, ctx) => {
+    if (data.newPassword === data.currentPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["newPassword"],
+        message: "La nueva contraseña debe ser diferente a la actual",
+      });
+    }
+
+    if (data.newPassword !== data.confirmPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["confirmPassword"],
+        message: "Las contraseñas no coinciden",
+      });
+    }
   });
 
 export type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -94,6 +111,7 @@ export function useHookFormPassword() {
   const updatePassword = useUpdatePassword();
   const form = useForm<PasswordFormValues>({
     resolver: zodResolver(passwordSchema),
+    mode: "onSubmit",
     defaultValues: {
       currentPassword: "",
       newPassword: "",
@@ -106,7 +124,10 @@ export function useHookFormPassword() {
       currentPassword: values.currentPassword,
       newPassword: values.newPassword,
     });
+
     form.reset();
+    toast.success("Contraseña actualizada correctamente");
+    window.location.replace("/iniciar-sesion");
   };
 
   return {
