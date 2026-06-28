@@ -97,6 +97,7 @@ export function CustomerFormSheet({
   );
   const parqRequiresAttention = form.watch("parq_requires_attention");
   const showAttentionDetails = parqRequiresAttention === "yes";
+  const isPhaseAForm = entrypoint === "customers";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -112,10 +113,12 @@ export function CustomerFormSheet({
           </SheetTitle>
           <SheetDescription>
             {isEditing
-              ? "Modifica perfil, membresía, métricas y entrenamiento desde una sola ficha."
+              ? isPhaseAForm
+                ? "Edita únicamente la ficha básica del cliente en esta Fase A."
+                : "Modifica perfil, membresía, métricas y entrenamiento desde una sola ficha."
               : entrypoint === "cash"
                 ? "Registra la ficha del cliente, asigna el plan y cobra dentro del turno actual."
-                : "Completa la ficha de inscripción. El precio y fechas se calculan según el plan."}
+                : "Completa la ficha básica. Membresías y pagos se configurarán en fases posteriores."}
           </SheetDescription>
         </SheetHeader>
 
@@ -150,14 +153,16 @@ export function CustomerFormSheet({
                     label="Correo electrónico"
                     placeholder="user@gym.com (opcional)"
                     type="email"
+                    disabled={isPhaseAForm && isEditing}
                     icon={<IconMail className="h-4 w-4" />}
                   />
                   <FormInputGroup
                     control={form.control}
                     name="password"
                     label={isEditing ? "Nueva Contraseña" : "Contraseña"}
-                    placeholder={isEditing ? "(Dejar vacío para no cambiar)" : "(Opcional)"}
+                    placeholder={isPhaseAForm ? "No se configura en Fase A" : isEditing ? "(Dejar vacío para no cambiar)" : "(Opcional)"}
                     type="password"
+                    disabled={isPhaseAForm}
                     icon={<IconLock className="h-4 w-4" />}
                   />
                 </div>
@@ -219,6 +224,43 @@ export function CustomerFormSheet({
 
               <Separator />
 
+              {isPhaseAForm ? (
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
+                        3
+                      </span>
+                      Ficha Básica
+                    </h4>
+                    <div className="grid grid-cols-1 gap-4 pl-4">
+                      <FormTextarea
+                        control={form.control}
+                        name="injuries"
+                        label="Lesiones"
+                        placeholder="Describe lesiones previas o actuales..."
+                        config={{ rows: 3, maxLength: 240 }}
+                      />
+                      <FormTextarea
+                        control={form.control}
+                        name="medical_notes"
+                        label="Notas médicas"
+                        placeholder="Alergias, restricciones o indicaciones médicas relevantes."
+                        config={{ rows: 3, maxLength: 240 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
+                    <p className="text-sm font-medium text-foreground">Pendiente fuera de Fase A</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Membresías, pagos, historial, rutinas, evaluaciones, avatar local y sincronización con reloj
+                      biométrico siguen fuera de este formulario por ahora.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+              <>
               {/* 3. MEMBRESÍA Y PAGOS */}
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
@@ -725,6 +767,8 @@ export function CustomerFormSheet({
                   )}
                 </div>
               </div>
+              </>
+              )}
             </form>
         </div>
         <div className="px-6 py-4 border-t flex justify-end gap-3 sticky bottom-0 bg-background/80 backdrop-blur-md z-10 font-sans">
