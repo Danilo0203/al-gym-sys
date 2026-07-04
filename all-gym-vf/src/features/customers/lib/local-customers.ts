@@ -11,6 +11,15 @@ export const customerListSortSchema = z.enum([
   "-updated_at",
 ]);
 
+export const customerMembershipSummarySchema = z.object({
+  plan_name: z.string().nullable(),
+  status: z.string().nullable(),
+  start_date: z.string().nullable(),
+  end_date: z.string().nullable(),
+  grace_days: z.number().nullable(),
+  access_until: z.string().nullable(),
+});
+
 export const customerListItemSchema = z.object({
   id: z.uuid(),
   email: z.string().email().nullable(),
@@ -22,7 +31,7 @@ export const customerListItemSchema = z.object({
   is_active: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
-  current_membership: z.unknown().nullable(),
+  current_membership: customerMembershipSummarySchema.nullable(),
 });
 
 export const customerDetailSchema = customerListItemSchema.extend({

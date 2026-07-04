@@ -1,5 +1,5 @@
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { serverGetCustomersList } from "@/features/customers/lib/customer-server-api";
 
 const DEFAULT_LIMIT = 12;
 const MAX_LIMIT = 40;
@@ -21,44 +21,44 @@ export async function GET(request: Request) {
   const query = url.searchParams.get("query")?.trim() ?? "";
   const offset = parsePositiveInteger(url.searchParams.get("offset"), 0);
   const limit = Math.min(parsePositiveInteger(url.searchParams.get("limit"), DEFAULT_LIMIT), MAX_LIMIT);
+  const page = Math.floor(offset / limit) + 1;
 
-  const adminClient = createAdminClient();
-  let queryBuilder = adminClient
-    .from("profiles")
-    .select("id, full_name, avatar_url", { count: "exact" })
-    .eq("role", "client")
-    .eq("is_active", true)
-    .order("full_name", { ascending: true, nullsFirst: false })
-    .range(offset, offset + limit);
+  try {
+    const result = await serverGetCustomersList({
+      page,
+      pageSize: limit,
+      search: query,
+      sort: "full_name",
+      isActive: true,
+    });
 
-  if (query) {
-    queryBuilder = queryBuilder.ilike("full_name", `%${query}%`);
-  }
+    const rows = result.data.map((row) => ({
+      id: row.id,
+      full_name: row.full_name,
+      avatar_url: row.avatar_url,
+    }));
 
-  const { data, error, count } = await queryBuilder;
+    const total = result.meta.total;
+    const hasMore = total > offset + rows.length;
 
-  if (error) {
-    return Response.json({ error: error.message || "clients_unavailable" }, { status: 500 });
-  }
-
-  const rows = (data ?? []).slice(0, limit).map((row) => ({
-    id: String(row.id),
-    full_name: typeof row.full_name === "string" ? row.full_name : "Sin nombre",
-    avatar_url: typeof row.avatar_url === "string" ? row.avatar_url : null,
-  }));
-
-  const hasMore = (count ?? rows.length) > offset + rows.length;
-
-  return Response.json(
-    {
-      data: rows,
-      nextOffset: hasMore ? offset + limit : null,
-      total: count ?? null,
-    },
-    {
-      headers: {
-        "Cache-Control": "no-store",
+    return Response.json(
+      {
+        data: rows,
+        nextOffset: hasMore ? offset + limit : null,
+        total,
       },
-    },
-  );
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        error: error instanceof Error ? error.message : "clients_unavailable",
+      },
+      { status: 500 },
+    );
+  }
 }

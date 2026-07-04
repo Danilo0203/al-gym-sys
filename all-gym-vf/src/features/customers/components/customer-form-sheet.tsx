@@ -251,12 +251,132 @@ export function CustomerFormSheet({
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
-                    <p className="text-sm font-medium text-foreground">Pendiente fuera de Fase A</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Membresías, pagos, historial, rutinas, evaluaciones, avatar local y sincronización con reloj
-                      biométrico siguen fuera de este formulario por ahora.
-                    </p>
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
+                        4
+                      </span>
+                      Membresía Básica
+                    </h4>
+                    <div className="space-y-4 pl-4">
+                      <FormSelect
+                        control={form.control}
+                        name="plan_id"
+                        label="Seleccionar Plan"
+                        placeholder="Sin membresía por ahora"
+                        options={plans.map((p) => ({
+                          label: `${p.name} - Q${p.price} (${p.duration_days} días)`,
+                          value: p.id.toString(),
+                        }))}
+                      />
+
+                      <FormRadioGroup
+                        control={form.control}
+                        name="date_mode"
+                        label="Modo de Fecha"
+                        orientation="horizontal"
+                        options={[
+                          { label: "Fecha automática", value: "automatic" },
+                          { label: "Fecha manual", value: "manual" },
+                        ]}
+                      />
+
+                      <Controller
+                        control={form.control}
+                        name="subscription_period"
+                        render={({ field, fieldState }) => {
+                          const from = field.value?.from;
+                          const to = field.value?.to;
+                          const daysDiff = from && to ? differenceInDays(to, from) : 0;
+                          const membershipEndMonth = new Date(new Date().getFullYear() + 10, 11);
+
+                          const handleStartChange = (date?: Date) => {
+                            const startDate = date || new Date();
+                            const dateMode = form.getValues("date_mode");
+                            const selectedPlanId = form.getValues("plan_id");
+                            const selectedPlan = plans.find((plan) => plan.id.toString() === selectedPlanId);
+
+                            form.setValue("subscription_period", {
+                              from: startDate,
+                              to:
+                                dateMode === "automatic" && selectedPlan
+                                  ? calculateSubscriptionEndDate(startDate, selectedPlan.duration_days)
+                                  : field.value?.to || startDate,
+                            });
+                          };
+
+                          const handleEndChange = (date?: Date) => {
+                            form.setValue("subscription_period", {
+                              from: field.value?.from || new Date(),
+                              to: date || new Date(),
+                            });
+                          };
+
+                          return (
+                            <Field className="flex flex-col" data-invalid={fieldState.invalid}>
+                              <FieldLabel>Vigencia de Suscripción</FieldLabel>
+                              <div className="grid grid-cols-[1fr_1fr_auto_80px] gap-2 items-center">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-xs text-muted-foreground">Inicio</span>
+                                  <FlexibleDatePickerInput
+                                    value={from}
+                                    onChange={handleStartChange}
+                                    endMonth={membershipEndMonth}
+                                  />
+                                </div>
+
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-xs text-muted-foreground">Fin</span>
+                                  <FlexibleDatePickerInput
+                                    value={to}
+                                    onChange={handleEndChange}
+                                    endMonth={membershipEndMonth}
+                                  />
+                                </div>
+
+                                <Popover modal={false}>
+                                  <PopoverTrigger asChild>
+                                    <Button type="button" variant="outline" size="icon" className="mt-5">
+                                      <IconCalendar className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-0" align="end">
+                                    <Calendar
+                                      autoFocus
+                                      mode="range"
+                                      defaultMonth={from}
+                                      selected={
+                                        subscriptionPeriod?.from
+                                          ? { from: subscriptionPeriod.from, to: subscriptionPeriod.to }
+                                          : undefined
+                                      }
+                                      onSelect={handleDateRangeChange}
+                                      numberOfMonths={2}
+                                      locale={es}
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+
+                                <div className="flex flex-col gap-1 mt-5">
+                                  <div className="h-9 flex items-center justify-center px-2 border rounded-md bg-muted text-muted-foreground font-medium text-sm">
+                                    {daysDiff} días
+                                  </div>
+                                </div>
+                              </div>
+                              <FieldError errors={[fieldState.error]} />
+                            </Field>
+                          );
+                        }}
+                      />
+
+                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
+                        <p className="text-sm font-medium text-foreground">Flujo local básico</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Esta fase asigna la membresía en backend local sin registrar pago ni caja. La vigencia se
+                          guarda por ciclos del plan y la prórroga local sigue fija en 3 días.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (

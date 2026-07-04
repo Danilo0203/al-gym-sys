@@ -2,7 +2,7 @@
 import { notFound } from 'next/navigation';
 import CustomerForm from './customer-form';
 import { Customer } from './customer-tables/columns';
-import { createClient } from '@/lib/supabase/server';
+import { serverGetCustomerById } from '@/features/customers/lib/customer-server-api';
 
 type TCustomerViewPageProps = {
   customerId: string;
@@ -15,19 +15,19 @@ export default async function CustomerViewPage({
   let pageTitle = 'Crear Nuevo Cliente';
 
   if (customerId !== 'new') {
-    const supabase = await createClient();
-    const { data: customerData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', customerId)
-        .single();
-    
-    customer = customerData as Customer;
+    try {
+      const detail = await serverGetCustomerById(customerId);
 
-    if (!customer) {
+      if (!detail) {
+        notFound();
+      }
+
+      customer = detail as unknown as Customer;
+      pageTitle = 'Editar Cliente';
+    } catch (error) {
+      console.error('Exception loading customer view page:', error);
       notFound();
     }
-    pageTitle = 'Editar Cliente';
   }
 
   return <CustomerForm initialData={customer} pageTitle={pageTitle} />;

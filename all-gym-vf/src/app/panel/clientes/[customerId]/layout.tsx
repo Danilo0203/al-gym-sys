@@ -1,6 +1,6 @@
 import { MasterDetailLayout } from "@/features/customers/components/customer-history/master-detail-layout";
-import { createClient } from "@/lib/supabase/server";
 import type { CustomerListItem } from "@/features/customers/components/customer-history/customer-list";
+import { serverGetCustomersList } from "@/features/customers/lib/customer-server-api";
 
 const INITIAL_CUSTOMERS_LIMIT = 24;
 
@@ -11,16 +11,20 @@ interface CustomerLayoutProps {
 
 export default async function CustomerDetailLayout({ children, params }: CustomerLayoutProps) {
   await params;
-  const supabase = await createClient();
+  const customersResponse = await serverGetCustomersList({
+    page: 1,
+    pageSize: INITIAL_CUSTOMERS_LIMIT,
+    sort: "full_name",
+  });
 
-  const { data: customers } = await supabase
-    .from("customer_overview")
-    .select(
-      "id, full_name, avatar_url, plan_name, subscription_status, is_active",
-    )
-    .eq("role", "client")
-    .order("full_name", { ascending: true })
-    .limit(INITIAL_CUSTOMERS_LIMIT);
+  const customers: CustomerListItem[] = customersResponse.data.map((customer) => ({
+    id: customer.id,
+    full_name: customer.full_name,
+    avatar_url: customer.avatar_url,
+    plan_name: customer.current_membership?.plan_name ?? null,
+    subscription_status: customer.current_membership?.status ?? null,
+    is_active: customer.is_active,
+  }));
 
-  return <MasterDetailLayout initialCustomers={(customers as CustomerListItem[]) || []}>{children}</MasterDetailLayout>;
+  return <MasterDetailLayout initialCustomers={customers}>{children}</MasterDetailLayout>;
 }
