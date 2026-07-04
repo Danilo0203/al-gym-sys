@@ -100,11 +100,18 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
         <ScrollArea className='h-[220px] pr-4'>
           <div className='space-y-3'>
             {data.map((sub) => (
-              <button
+              <div
                 key={sub.user_id}
-                type='button'
-                className='flex w-full items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-left transition-colors hover:bg-yellow-500/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-yellow-500/50'
+                role='button'
+                tabIndex={0}
+                className='flex w-full items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-left transition-colors hover:bg-yellow-500/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-yellow-500/50 cursor-pointer'
                 onClick={() => router.push(`/panel/clientes/${sub.user_id}/history`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    router.push(`/panel/clientes/${sub.user_id}/history`);
+                  }
+                }}
               >
                 <div className='flex items-center gap-3'>
                   <Avatar className='h-9 w-9'>
@@ -136,7 +143,7 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
                     </Link>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </ScrollArea>
