@@ -39,7 +39,7 @@ export function useUpdatePlan() {
   const router = useRouter();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpdatePlanData }) => updatePlan(id, data),
+    mutationFn: ({ id, data }: { id: string; data: UpdatePlanData }) => updatePlan(id, data),
     onSuccess: (result) => {
       if (result.success) {
         toast.success('Plan actualizado exitosamente');
@@ -61,7 +61,7 @@ export function useDeletePlan() {
   const router = useRouter();
 
   return useMutation({
-    mutationFn: (id: number) => deletePlan(id),
+    mutationFn: (id: string) => deletePlan(id),
     onSuccess: (result) => {
       if (result.success) {
         toast.success(result.message || 'Plan eliminado correctamente');

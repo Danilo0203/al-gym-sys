@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
 import { PlanTable } from "./plan-tables/plan-table";
 import { searchParamsCache } from "@/lib/searchparams";
+import { getPlansFromServer, Plan } from "@/features/customers/lib/local-memberships";
 
 export default async function PlanListingPage() {
   const page = searchParamsCache.get("page");
@@ -8,61 +8,54 @@ export default async function PlanListingPage() {
   const name = searchParamsCache.get("name");
   const is_active = searchParamsCache.get("is_active");
 
-  const supabase = await createClient();
-
-  // Query plans with filtering
-  let query = supabase.from("plans").select("*", { count: "exact" });
+  const allPlans = await getPlansFromServer();
+  let filteredPlans = [...allPlans];
 
   // Apply text filter
   if (name) {
-    query = query.ilike("name", `%${name}%`);
+    const lowerName = name.toLowerCase();
+    filteredPlans = filteredPlans.filter((p) => p.name.toLowerCase().includes(lowerName));
   }
 
   // Apply is_active filter (multi-select)
   if (is_active) {
     const activeStates = is_active.split(",").filter(Boolean);
     if (activeStates.length > 0) {
-      // Convert string values to booleans
-      const boolStates = activeStates.map((s) => s === "true");
-      query = query.in("is_active", boolStates);
+      const boolStates = new Set(activeStates.map((s) => s === "true"));
+      filteredPlans = filteredPlans.filter((p) => boolStates.has(p.is_active));
     }
   }
-
-  // Pagination
-  const from = (page - 1) * perPage;
-  const to = from + perPage - 1;
 
   // Sorting
   const sort = searchParamsCache.get("sort");
   const allowedSortColumns = new Set(["name", "price", "duration_days", "is_active", "id"]);
-  let hasAppliedSort = false;
   if (sort && sort.length > 0) {
-    sort.forEach((s) => {
-      if (allowedSortColumns.has(s.id)) {
-        query = query.order(s.id, { ascending: !s.desc, nullsFirst: false });
-        hasAppliedSort = true;
-      }
-    });
+    const s = sort[0]; // Apply primary sort
+    if (allowedSortColumns.has(s.id)) {
+      filteredPlans.sort((a, b) => {
+        const valA = a[s.id as keyof Plan];
+        const valB = b[s.id as keyof Plan];
+        
+        if (valA == null && valB == null) return 0;
+        if (valA == null) return s.desc ? -1 : 1;
+        if (valB == null) return s.desc ? 1 : -1;
+        
+        if (valA < valB) return s.desc ? 1 : -1;
+        if (valA > valB) return s.desc ? -1 : 1;
+        return 0;
+      });
+    }
+  } else {
+    // default sort by id asc
+    filteredPlans.sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  if (!hasAppliedSort) {
-    query = query.order("id", { ascending: true });
-  }
+  // Pagination
+  const from = (page - 1) * perPage;
+  const to = from + perPage;
+  
+  const count = filteredPlans.length;
+  const paginatedPlans = filteredPlans.slice(from, to);
 
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    console.error("Error fetching plans:", JSON.stringify(error, null, 2));
-    return (
-      <div className="p-4 border border-destructive/50 bg-destructive/10 rounded-lg text-destructive">
-        Error al cargar planes: {error.message}
-      </div>
-    );
-  }
-
-  const plans = data || [];
-
-  return <PlanTable data={plans} totalItems={count || 0} />;
+  return <PlanTable data={paginatedPlans} totalItems={count} />;
 }
