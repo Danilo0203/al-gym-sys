@@ -75,7 +75,7 @@ export async function generateRoutineFromTemplates(params: {
         rest_seconds: t.rest_seconds,
       };
     })
-    .filter(Boolean);
+    .filter(Boolean) as any[];
 
   if (detailRows.length > 0) {
     const { error: detailError } = await supabase.from("routine_details").insert(detailRows);
