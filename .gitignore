@@ -22,4 +22,5 @@ deploy/env/sync.env
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
+pnpm-debug.log*all-gym-vf/supabase/seed.sql
+/all-gym-vf/supabase/seed.sql
