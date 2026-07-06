@@ -100,11 +100,18 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
         <ScrollArea className='h-[220px] pr-4'>
           <div className='space-y-3'>
             {data.map((sub) => (
-              <button
+              <div
                 key={sub.user_id}
-                type='button'
+                role='button'
+                tabIndex={0}
                 className='flex w-full items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-left transition-colors hover:bg-yellow-500/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-yellow-500/50'
                 onClick={() => router.push(`/panel/clientes/${sub.user_id}/history`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    router.push(`/panel/clientes/${sub.user_id}/history`);
+                  }
+                }}
               >
                 <div className='flex items-center gap-3'>
                   <Avatar className='h-9 w-9'>
@@ -121,22 +128,23 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
                 <div className='flex items-center gap-2'>
                   {getDaysLeftBadge(sub.days_left)}
                   {sub.phone && getWhatsAppLink(sub.phone, sub.user_name) && (
-                    <Link
-                      href={getWhatsAppLink(sub.phone, sub.user_name)!}
-                      target='_blank'
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button 
+                    <Button
+                      asChild
                         size='sm' 
                         variant='outline'
                         className='h-8 w-8 p-0 border-emerald-500/50 hover:bg-emerald-500/10'
+                    >
+                      <Link
+                        href={getWhatsAppLink(sub.phone, sub.user_name)!}
+                        target='_blank'
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <IconBrandWhatsapp className='h-4 w-4 text-emerald-500' />
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </ScrollArea>
