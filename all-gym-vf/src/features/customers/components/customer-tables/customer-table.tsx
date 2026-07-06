@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { getColumns, Customer, PlanOption } from "./columns";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 const MIN_NAME_COLUMN_WIDTH = 180;
 const MAX_NAME_COLUMN_WIDTH = 280;
@@ -63,9 +63,16 @@ interface CustomerTableProps {
   totalItems: number;
   planOptions?: PlanOption[];
   canUpdate: boolean;
+  canPermanentlyDelete: boolean;
 }
 
-export function CustomerTable({ data, totalItems, planOptions = [], canUpdate }: CustomerTableProps) {
+export function CustomerTable({
+  data,
+  totalItems,
+  planOptions = [],
+  canUpdate,
+  canPermanentlyDelete,
+}: CustomerTableProps) {
   const router = useRouter();
   const [pageSize] = useQueryState("perPage", parseAsInteger.withDefault(10));
   const [liveData, setLiveData] = useState<Customer[]>(data);
@@ -85,7 +92,9 @@ export function CustomerTable({ data, totalItems, planOptions = [], canUpdate }:
   );
 
   useEffect(() => {
-    setLiveData(data);
+    startTransition(() => {
+      setLiveData(data);
+    });
   }, [data]);
 
   useEffect(() => {
@@ -153,8 +162,8 @@ export function CustomerTable({ data, totalItems, planOptions = [], canUpdate }:
 
   // Generar columnas con las opciones de planes (memoizado)
   const columns = useMemo(
-    () => getColumns(planOptions, { fullNameColumnSize, canUpdate }),
-    [canUpdate, fullNameColumnSize, planOptions]
+    () => getColumns(planOptions, { fullNameColumnSize, canUpdate, canPermanentlyDelete }),
+    [canPermanentlyDelete, canUpdate, fullNameColumnSize, planOptions]
   );
 
   const { table } = useDataTable({

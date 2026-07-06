@@ -80,6 +80,7 @@ export interface PlanOption {
 interface CustomerColumnsOptions {
   fullNameColumnSize?: number;
   canUpdate?: boolean;
+  canPermanentlyDelete?: boolean;
 }
 
 // Función factory para crear columnas con opciones dinámicas
@@ -89,6 +90,7 @@ export function getColumns(
 ): ColumnDef<Customer>[] {
   const fullNameColumnSize = options.fullNameColumnSize ?? 220;
   const canUpdate = options.canUpdate ?? false;
+  const canPermanentlyDelete = options.canPermanentlyDelete ?? false;
 
   return [
     {
@@ -403,7 +405,11 @@ export function getColumns(
         label: "Acciones",
       },
       cell: ({ row }) => (
-        <CellAction data={row.original} canUpdate={canUpdate} />
+        <CellAction
+          data={row.original}
+          canUpdate={canUpdate}
+          canPermanentlyDelete={canPermanentlyDelete}
+        />
       ),
     },
   ];

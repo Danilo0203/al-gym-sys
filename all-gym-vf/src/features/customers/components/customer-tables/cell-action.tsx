@@ -11,11 +11,11 @@ import { deleteCustomer, permanentlyDeleteCustomer, reactivateCustomer } from ".
 import { toast } from "sonner";
 import { useCustomer } from "../../hooks/use-customers";
 import { CustomerStatusActionSummary } from "../customer-status-action-summary";
-import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 
 interface CellActionProps {
   data: Customer;
   canUpdate: boolean;
+  canPermanentlyDelete: boolean;
 }
 
 type CustomerActionResult = {
@@ -29,15 +29,17 @@ type CustomerActionResult = {
   };
 };
 
-export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate }) => {
+export const CellAction: React.FC<CellActionProps> = ({
+  data,
+  canUpdate,
+  canPermanentlyDelete,
+}) => {
   const [disableLoading, setDisableLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const router = useRouter();
-  const { data: currentUser } = useCurrentUser();
-  const canPermanentlyDelete = Boolean(currentUser?.isOwner || currentUser?.role === "admin");
 
   // Fetch automático cuando se abre el modal
   const { data: customerDetails, isPending: isPendingDetails } = useCustomer(editOpen ? data.id : null);

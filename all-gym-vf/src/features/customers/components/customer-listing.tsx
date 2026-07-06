@@ -10,6 +10,7 @@ import { normalizeCustomerSearchText } from "@/lib/customers/search";
 export default async function CustomerListingPage() {
   const access = await getUserAccessContext();
   const canUpdate = hasPermission(access, "customers.update");
+  const canPermanentlyDelete = access.isOwner || access.role === "admin";
 
   const page = searchParamsCache.get("page");
   const pageLimit = searchParamsCache.get("perPage");
@@ -262,5 +263,13 @@ export default async function CustomerListingPage() {
     }
   }
 
-  return <CustomerTable data={enrichedCustomers} totalItems={totalitems} planOptions={planOptions} canUpdate={canUpdate} />;
+  return (
+    <CustomerTable
+      data={enrichedCustomers}
+      totalItems={totalitems}
+      planOptions={planOptions}
+      canUpdate={canUpdate}
+      canPermanentlyDelete={canPermanentlyDelete}
+    />
+  );
 }
