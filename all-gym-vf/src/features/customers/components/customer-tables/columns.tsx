@@ -8,7 +8,12 @@ import { es } from "date-fns/locale";
 import { IconBrandWhatsapp } from "@tabler/icons-react";
 import { SubscriptionStatusBadge } from "@/components/subscription-status-badge";
 import { DataTableColumnHeader } from "@/components/ui/table/data-table-column-header";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CustomerWhatsAppDialog } from "./customer-whatsapp-dialog";
 import { useState } from "react";
 
@@ -38,7 +43,11 @@ function WhatsAppCell({ customer }: { customer: Customer }) {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <CustomerWhatsAppDialog open={open} onOpenChange={setOpen} customer={customer} />
+      <CustomerWhatsAppDialog
+        open={open}
+        onOpenChange={setOpen}
+        customer={customer}
+      />
     </>
   );
 }
@@ -76,18 +85,40 @@ interface CustomerColumnsOptions {
 // Función factory para crear columnas con opciones dinámicas
 export function getColumns(
   planOptions: PlanOption[] = [],
-  options: CustomerColumnsOptions = {}
+  options: CustomerColumnsOptions = {},
 ): ColumnDef<Customer>[] {
   const fullNameColumnSize = options.fullNameColumnSize ?? 220;
   const canUpdate = options.canUpdate ?? false;
 
   return [
     {
+      accessorKey: "biometric_id",
+      size: 120,
+      minSize: 110,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="ID" />
+      ),
+      meta: {
+        label: "ID",
+      },
+      cell: ({ row }) => {
+        const biometricId = row.original.biometric_id;
+
+        return (
+          <span className="text-sm text-muted-foreground">
+            {biometricId ?? "—"}
+          </span>
+        );
+      },
+    },
+    {
       id: "full_name",
       accessorKey: "full_name",
       size: fullNameColumnSize,
       minSize: fullNameColumnSize,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="CLIENTE" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="CLIENTE" />
+      ),
       enableColumnFilter: true,
       meta: {
         label: "Cliente",
@@ -112,7 +143,10 @@ export function getColumns(
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate font-medium text-sm" title={full_name || ""}>
+              <span
+                className="truncate font-medium text-sm"
+                title={full_name || ""}
+              >
                 {full_name}
               </span>
               {phone && (
@@ -144,7 +178,9 @@ export function getColumns(
 
         return (
           <div className="flex flex-col">
-            <span className="text-sm text-muted-foreground">{format(parsedDate, "dd/MM/yyyy", { locale: es })}</span>
+            <span className="text-sm text-muted-foreground">
+              {format(parsedDate, "dd/MM/yyyy", { locale: es })}
+            </span>
             <span className="text-[10px] text-muted-foreground">
               {format(parsedDate, "HH:mm 'hs'", { locale: es })}
             </span>
@@ -152,11 +188,14 @@ export function getColumns(
         );
       },
     },
+
     {
       accessorKey: "is_active",
       size: 140,
       minSize: 130,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="ACTIVO" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="ACTIVO" />
+      ),
       enableColumnFilter: true,
       meta: {
         label: "Estado cliente",
@@ -171,7 +210,9 @@ export function getColumns(
         return (
           <span
             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+              isActive
+                ? "bg-green-100 text-green-800"
+                : "bg-gray-100 text-gray-800"
             }`}
           >
             {isActive ? "Activo" : "Inactivo"}
@@ -183,7 +224,9 @@ export function getColumns(
       accessorKey: "subscription_status",
       size: 170,
       minSize: 160,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="SUSCRIPCIÓN" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="SUSCRIPCIÓN" />
+      ),
       enableColumnFilter: true,
       meta: {
         label: "Estado suscripción",
@@ -210,20 +253,28 @@ export function getColumns(
       accessorKey: "plan_name",
       size: 210,
       minSize: 180,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="PLAN ACTUAL" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="PLAN ACTUAL" />
+      ),
       enableColumnFilter: true,
       meta: {
         label: "Plan actual",
         variant: "multiSelect" as const,
         options: planOptions,
       },
-      cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.plan_name || "-"}</span>,
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.plan_name || "-"}
+        </span>
+      ),
     },
     {
       accessorKey: "subscription_start_date",
       size: 150,
       minSize: 140,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="INICIO" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="INICIO" />
+      ),
       meta: {
         label: "Inicio",
       },
@@ -239,14 +290,20 @@ export function getColumns(
           parsedDate = new Date(date);
         }
 
-        return <span className="text-sm text-muted-foreground">{format(parsedDate, "dd/MM/yyyy")}</span>;
+        return (
+          <span className="text-sm text-muted-foreground">
+            {format(parsedDate, "dd/MM/yyyy")}
+          </span>
+        );
       },
     },
     {
       accessorKey: "subscription_end_date",
       size: 190,
       minSize: 180,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="VENCIMIENTO" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="VENCIMIENTO" />
+      ),
       meta: {
         label: "Vencimiento",
       },
@@ -270,12 +327,18 @@ export function getColumns(
 
         return (
           <div className="flex flex-col">
-            <span className={textClass}>{format(parsedDate, "dd/MM/yyyy")}</span>
+            <span className={textClass}>
+              {format(parsedDate, "dd/MM/yyyy")}
+            </span>
             {daysLeft >= 0 && daysLeft <= 30 && (
-              <span className="text-[10px] text-muted-foreground">En {daysLeft} días</span>
+              <span className="text-[10px] text-muted-foreground">
+                En {daysLeft} días
+              </span>
             )}
             {daysLeft < 0 && (
-              <span className="text-[10px] text-destructive">Venció hace {Math.abs(daysLeft)} días</span>
+              <span className="text-[10px] text-destructive">
+                Venció hace {Math.abs(daysLeft)} días
+              </span>
             )}
           </div>
         );
@@ -285,7 +348,9 @@ export function getColumns(
       accessorKey: "phone",
       size: 170,
       minSize: 160,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="TELÉFONO" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="TELÉFONO" />
+      ),
       meta: {
         label: "Teléfono",
         disableRowClick: true,
@@ -301,13 +366,16 @@ export function getColumns(
       accessorKey: "last_check_in",
       size: 170,
       minSize: 160,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="ÚLTIMO INGRESO" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="ÚLTIMO INGRESO" />
+      ),
       meta: {
         label: "Último ingreso",
       },
       cell: ({ row }) => {
         const date = row.original.last_check_in;
-        if (!date) return <span className="text-muted-foreground text-xs">Nunca</span>;
+        if (!date)
+          return <span className="text-muted-foreground text-xs">Nunca</span>;
 
         const parsedDate = new Date(date);
         if (Number.isNaN(parsedDate.getTime())) {
@@ -334,7 +402,9 @@ export function getColumns(
       meta: {
         label: "Acciones",
       },
-      cell: ({ row }) => <CellAction data={row.original} canUpdate={canUpdate} />,
+      cell: ({ row }) => (
+        <CellAction data={row.original} canUpdate={canUpdate} />
+      ),
     },
   ];
 }
