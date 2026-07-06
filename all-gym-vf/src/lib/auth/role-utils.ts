@@ -6,7 +6,7 @@ export const INTERNAL_USER_ROLES = ["owner", "admin", "trainer", "employee"] as 
   UserRole,
   "client"
 >[];
-export const DEFAULT_PANEL_ROUTE = "/panel/resumen";
+export const DEFAULT_PANEL_ROUTE = "/panel/clientes";
 export const DEFAULT_CLIENT_ROUTE = "/mi/rutina";
 
 export function parseUserRole(value: unknown): UserRole | null {

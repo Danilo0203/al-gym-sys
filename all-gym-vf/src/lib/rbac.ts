@@ -35,8 +35,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
 };
 
 const PANEL_ROUTE_PRIORITY = [
-  "/panel/resumen",
   "/panel/clientes",
+  "/panel/resumen",
   "/panel/pagos",
   "/panel/caja",
   "/panel/caja/historial",
