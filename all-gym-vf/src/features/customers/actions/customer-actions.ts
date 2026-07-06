@@ -134,6 +134,28 @@ function normalizeOptionalInteger(value: unknown) {
   return typeof normalized === "number" ? Math.trunc(normalized) : undefined;
 }
 
+function normalizeBiometricId(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const numericValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(numericValue) || numericValue <= 0) return null;
+  return numericValue;
+}
+
+async function reserveNextBiometricId(adminClient: AdminSupabaseClient) {
+  const { data: nextBiometricId, error: nextBiometricIdError } = await adminClient.rpc("next_biometric_id");
+
+  if (nextBiometricIdError) {
+    throw new Error(`No se pudo generar el ID biométrico: ${nextBiometricIdError.message}`);
+  }
+
+  const normalizedBiometricId = normalizeBiometricId(nextBiometricId);
+  if (normalizedBiometricId == null) {
+    throw new Error("No se pudo generar el ID biométrico");
+  }
+
+  return normalizedBiometricId;
+}
+
 function todayDateString() {
   return new Date().toISOString().split("T")[0];
 }
@@ -627,13 +649,14 @@ async function getCustomerDeviceProfile(adminClient: AdminSupabaseClient, custom
     full_name?: string | null;
     is_active?: boolean | null;
   } | null;
-  if (!typedProfile?.biometric_id) {
+  const normalizedBiometricId = normalizeBiometricId(typedProfile?.biometric_id);
+  if (normalizedBiometricId == null) {
     return { ok: false as const, reason: "missing_biometric_id" as const };
   }
 
   return {
     ok: true as const,
-    biometricId: typedProfile.biometric_id,
+    biometricId: normalizedBiometricId,
     fullName: typedProfile.full_name,
     isActive: typedProfile.is_active !== false,
   };
@@ -829,11 +852,26 @@ async function callGymSyncServer(pathname: string, body: Record<string, unknown>
   }
 }
 
-async function syncCustomerWithGymSyncServer(params: { customerId: string; deviceSn: string }) {
-  return callGymSyncServer("/api/device-users/register", {
+async function syncCustomerWithGymSyncServer(params: {
+  customerId: string;
+  deviceSn: string;
+  biometricId?: number;
+  fullName?: string | null;
+}) {
+  const body: Record<string, unknown> = {
     customer_id: params.customerId,
     device_id: params.deviceSn,
-  });
+  };
+
+  if (params.biometricId !== undefined) {
+    body.biometric_id = params.biometricId;
+  }
+
+  if (params.fullName) {
+    body.full_name = params.fullName;
+  }
+
+  return callGymSyncServer("/api/device-users/register", body);
 }
 
 async function disableCustomerOnGymSyncServer(params: { customerId: string; deviceSn: string }) {
@@ -877,6 +915,8 @@ async function syncCustomerDeviceAccess(params: {
     const syncResult = await syncCustomerWithGymSyncServer({
       customerId: params.customerId,
       deviceSn: params.deviceSn,
+      biometricId: profile.biometricId,
+      fullName: profile.fullName,
     });
 
     if (syncResult.synced === true) {
@@ -1317,6 +1357,7 @@ export async function createCustomer(data: CreateCustomerData) {
     const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const reservedBiometricId = await reserveNextBiometricId(adminClient);
 
     let createdUserId: string | null = null;
 
@@ -1362,6 +1403,7 @@ export async function createCustomer(data: CreateCustomerData) {
         phone: data.phone,
         birth_date: formatToLocalISO(data.birth_date) ?? null,
         gender: data.gender,
+        biometric_id: reservedBiometricId,
         injuries: normalizeNullableText(data.injuries),
         medical_notes: normalizeNullableText(data.medical_clearance_notes),
         role: "client",

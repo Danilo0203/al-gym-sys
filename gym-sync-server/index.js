@@ -114,6 +114,11 @@ function parseIntOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parsePositiveBiometricIdOrNull(value) {
+  const biometricId = parseIntOrNull(value);
+  return biometricId != null && biometricId > 0 ? biometricId : null;
+}
+
 function sanitizeText(value, max = 255) {
   if (value == null) return null;
   const trimmed = String(value).trim();
@@ -353,7 +358,7 @@ function getSkipReasonForCommand(command) {
 async function resolveDeviceSyncProfile(params) {
   const customerId = sanitizeText(params.customerId, 80);
   const fullName = sanitizeText(params.fullName, 120);
-  const biometricId = parseIntOrNull(params.biometricId);
+  const biometricId = parsePositiveBiometricIdOrNull(params.biometricId);
 
   if (customerId && (biometricId == null || !fullName)) {
     const { data: profile, error } = await supabase
@@ -366,7 +371,7 @@ async function resolveDeviceSyncProfile(params) {
       return { ok: false, status: 404, error: "profile_not_found", details: error.message };
     }
 
-    const resolvedBiometricId = parseIntOrNull(profile?.biometric_id);
+    const resolvedBiometricId = parsePositiveBiometricIdOrNull(profile?.biometric_id);
     const resolvedFullName = sanitizeText(profile?.full_name, 120);
 
     if (resolvedBiometricId == null) {
