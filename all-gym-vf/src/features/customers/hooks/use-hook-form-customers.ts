@@ -15,9 +15,20 @@ import type { ActivityLevel, BodyType, DietType } from "@/lib/fitness/types";
 import { combineSessionDuration, DEFAULT_EQUIPMENT_AVAILABLE, DEFAULT_TRAINING_LOCATION, splitSessionMinutes } from "@/lib/training/profile-defaults";
 import { usePlans } from "@/features/plans/hooks/use-plans";
 import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
-import { renewSubscription, type CreateCustomerData } from "../actions/customer-actions";
+import {
+  createCustomer as createLegacyCustomer,
+  renewSubscription,
+  type CreateCustomerData,
+  updateCustomer as updateLegacyCustomer,
+} from "../actions/customer-actions";
 import { useCreateCustomer, useReactivateCustomer, useUpdateCustomer } from "./use-customers";
 import { isValidAuthEmail } from "@/lib/auth/identifiers";
+import {
+  isValidCalendarDateString,
+  normalizeOptionalCustomerEmail,
+  type CreateCustomerInput,
+  type UpdateCustomerInput,
+} from "@/features/customers/lib/local-customers";
 
 const profileCustomerSchema = z.object({
   full_name: z.string().min(2, {
@@ -57,6 +68,13 @@ const graceDaysSchema = z.preprocess((value) => {
   const num = Number(value);
   return Number.isNaN(num) ? value : num;
 }, z.number({ message: "La prórroga es obligatoria" }).int({ message: "La prórroga debe ser un número entero" }).min(0, { message: "La prórroga no puede ser negativa" }));
+
+function normalizeTextFieldValue(
+  value: string | null | undefined,
+): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
 
 const dateModeValues = ["automatic", "manual"] as const;
 
@@ -236,10 +254,15 @@ const customerSheetSchema = z
     leg_right: optionalPositiveNumber,
     leg_left: optionalPositiveNumber,
     injuries: z.string().optional().or(z.literal("")),
+    medical_notes: z.string().optional().or(z.literal("")),
     body_type: z.enum(["ectomorph", "mesomorph", "endomorph"]).optional(),
   })
   .superRefine((value, ctx) => {
-    const sessionMinutes = combineSessionDuration(value.session_hours, value.session_minutes_extra);
+    const sessionMinutes = combineSessionDuration(
+      value.session_hours,
+      value.session_minutes_extra,
+    );
+
     if (sessionMinutes !== null && sessionMinutes > 480) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -248,7 +271,10 @@ const customerSheetSchema = z
       });
     }
 
-    if (value.parq_requires_attention === "yes" && !normalizeTextFieldValue(value.injuries_or_pain)) {
+    if (
+      value.parq_requires_attention === "yes" &&
+      !normalizeTextFieldValue(value.injuries_or_pain)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["injuries_or_pain"],
@@ -303,7 +329,11 @@ const renewSubscriptionSchema = z
     medical_clearance_notes: z.string().optional().or(z.literal("")),
   })
   .superRefine((value, ctx) => {
-    const sessionMinutes = combineSessionDuration(value.session_hours, value.session_minutes_extra);
+    const sessionMinutes = combineSessionDuration(
+      value.session_hours,
+      value.session_minutes_extra,
+    );
+
     if (sessionMinutes !== null && sessionMinutes > 480) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -312,7 +342,10 @@ const renewSubscriptionSchema = z
       });
     }
 
-    if (value.parq_requires_attention === "yes" && !normalizeTextFieldValue(value.injuries_or_pain)) {
+    if (
+      value.parq_requires_attention === "yes" &&
+      !normalizeTextFieldValue(value.injuries_or_pain)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["injuries_or_pain"],
@@ -349,19 +382,87 @@ function parseDatabaseDate(dateString: Date | string | null | undefined): Date |
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-function normalizeTextFieldValue(value?: string | null) {
-  if (typeof value !== "string") return "";
-  return value.trim();
+function normalizeOptionalCustomerTextareaToBackend(value?: string | null) {
+  return value?.trim() ?? "";
 }
 
 function hasMeaningfulText(value?: string | null) {
-  return normalizeTextFieldValue(value).length > 0;
+  return normalizeOptionalCustomerTextareaToBackend(value).length > 0;
 }
 
 function areSameNumber(a: number | null | undefined, b: number | null | undefined) {
   if (a == null && b == null) return true;
   if (a == null || b == null) return false;
   return Math.abs(a - b) < 0.0001;
+}
+
+function toIsoDateString(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildPhaseACreatePayload(values: CustomerSheetFormValues): CreateCustomerInput {
+  const birthDate = toIsoDateString(values.birth_date);
+
+  if (!isValidCalendarDateString(birthDate)) {
+    throw new Error("La fecha de nacimiento no es válida.");
+  }
+
+  return {
+    full_name: values.full_name.trim(),
+    phone: values.phone.trim(),
+    birth_date: birthDate,
+    gender: values.gender,
+    email: normalizeOptionalCustomerEmail(values.email),
+    injuries: normalizeOptionalCustomerTextareaToBackend(values.injuries),
+    medical_notes: normalizeOptionalCustomerTextareaToBackend(values.medical_notes),
+  };
+}
+
+function buildPhaseAUpdatePayload(
+  values: CustomerSheetFormValues,
+  customer: CustomerData,
+): UpdateCustomerInput | null {
+  const payload: UpdateCustomerInput = {};
+  const birthDate = toIsoDateString(values.birth_date);
+
+  if (!isValidCalendarDateString(birthDate)) {
+    throw new Error("La fecha de nacimiento no es válida.");
+  }
+
+  const fullName = values.full_name.trim();
+  if (fullName !== (customer.full_name || "").trim()) {
+    payload.full_name = fullName;
+  }
+
+  const phone = values.phone.trim();
+  if (phone !== (customer.phone || "").trim()) {
+    payload.phone = phone;
+  }
+
+  if (birthDate !== (customer.birth_date || "")) {
+    payload.birth_date = birthDate;
+  }
+
+  if (values.gender !== customer.gender) {
+    payload.gender = values.gender;
+  }
+
+  const injuries = normalizeOptionalCustomerTextareaToBackend(values.injuries);
+  const currentInjuries = normalizeOptionalCustomerTextareaToBackend(customer.injuries);
+  if (injuries !== currentInjuries) {
+    payload.injuries = injuries;
+  }
+
+  const medicalNotes = normalizeOptionalCustomerTextareaToBackend(values.medical_notes);
+  const currentMedicalNotes = normalizeOptionalCustomerTextareaToBackend(customer.medical_notes);
+  if (medicalNotes !== currentMedicalNotes) {
+    payload.medical_notes = medicalNotes;
+  }
+
+  return Object.keys(payload).length > 0 ? payload : null;
 }
 
 export interface ProfileFormData {
@@ -401,6 +502,7 @@ export interface CustomerData {
   weight_kg?: number | null;
   height_cm?: number | null;
   injuries?: string | null;
+  medical_notes?: string | null;
   body_type?: string | null;
   diet_type?: string | null;
   activity_level?: string | null;
@@ -487,7 +589,8 @@ export function useHookFormCustomerSheet({
   const { mutateAsync: createCustomerMutation, isPending: isCreating } = useCreateCustomer();
   const { mutateAsync: updateCustomerMutation, isPending: isUpdating } = useUpdateCustomer();
   const { mutateAsync: reactivateCustomerMutation } = useReactivateCustomer();
-  const isPending = isCreating || isUpdating;
+  const [isLegacySubmitting, setIsLegacySubmitting] = useState(false);
+  const isPending = isCreating || isUpdating || isLegacySubmitting;
   const isControlled = controlledOpen !== undefined;
   const requestedOpen = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange || setInternalOpen : setInternalOpen;
@@ -533,6 +636,7 @@ export function useHookFormCustomerSheet({
         injuries_or_pain: customer.injuries_or_pain || "",
         medical_clearance_notes: customer.medical_clearance_notes || "",
         injuries: customer.injuries || "",
+        medical_notes: customer.medical_notes || "",
         weight_lb: kilogramsToPounds(customer.weight_kg) ?? undefined,
         height_cm: customer.height_cm ?? undefined,
         body_type: (customer.body_type as "ectomorph" | "mesomorph" | "endomorph") || undefined,
@@ -585,6 +689,7 @@ export function useHookFormCustomerSheet({
       injuries_or_pain: "",
       medical_clearance_notes: "",
       injuries: "",
+      medical_notes: "",
       weight_lb: undefined,
       height_cm: undefined,
       diet_type: undefined,
@@ -778,21 +883,21 @@ export function useHookFormCustomerSheet({
 
   const calculationPreview =
     watchedWeightKg &&
-    watchedHeight &&
-    watchedBodyType &&
-    watchedDietType &&
-    watchedActivityLevel &&
-    watchedBirthDate &&
-    watchedGender
+      watchedHeight &&
+      watchedBodyType &&
+      watchedDietType &&
+      watchedActivityLevel &&
+      watchedBirthDate &&
+      watchedGender
       ? computeFitnessPlan({
-          birthDate: watchedBirthDate,
-          gender: watchedGender,
-          weightKg: watchedWeightKg,
-          heightCm: watchedHeight,
-          bodyType: watchedBodyType,
-          dietType: watchedDietType,
-          activityLevel: watchedActivityLevel,
-        })
+        birthDate: watchedBirthDate,
+        gender: watchedGender,
+        weightKg: watchedWeightKg,
+        heightCm: watchedHeight,
+        bodyType: watchedBodyType,
+        dietType: watchedDietType,
+        activityLevel: watchedActivityLevel,
+      })
       : null;
 
   const handleDateRangeChange = (range: DateRange | undefined) => {
@@ -813,6 +918,25 @@ export function useHookFormCustomerSheet({
 
   const onSubmit = async (values: CustomerSheetFormValues) => {
     try {
+      if (entrypoint === "customers") {
+        if (isEditing && customer?.id) {
+          const payload = buildPhaseAUpdatePayload(values, customer);
+
+          if (!payload) {
+            toast.info("No hay cambios básicos para guardar.");
+            return;
+          }
+
+          await updateCustomerMutation({ id: customer.id, data: payload });
+        } else {
+          await createCustomerMutation(buildPhaseACreatePayload(values));
+        }
+
+        setOpen(false);
+        return;
+      }
+
+      setIsLegacySubmitting(true);
       const payload: CreateCustomerData = {
         email: values.email || undefined,
         origin: entrypoint,
@@ -872,22 +996,22 @@ export function useHookFormCustomerSheet({
       };
 
       if (isEditing && customer?.id) {
-        await updateCustomerMutation({ id: customer.id, data: payload });
+        await updateLegacyCustomer(customer.id, payload);
       } else {
-        await createCustomerMutation(payload);
+        await createLegacyCustomer(payload);
       }
       setOpen(false);
     } catch (error) {
       console.error("Submit error:", error);
+    } finally {
+      setIsLegacySubmitting(false);
     }
   };
 
   const reactivateCustomer = async () => {
     if (!customer?.id) return;
-    const result = await reactivateCustomerMutation(customer.id);
-    if (result.success) {
-      setOpen(false);
-    }
+    await reactivateCustomerMutation(customer.id);
+    setOpen(false);
   };
 
   return {
@@ -1086,21 +1210,21 @@ export function useHookFormRenewSubscription({
 
   const calculationPreview =
     watchedWeightKg &&
-    watchedHeight &&
-    watchedBodyType &&
-    watchedDietType &&
-    watchedActivity &&
-    customerBirthDate &&
-    customerGender
+      watchedHeight &&
+      watchedBodyType &&
+      watchedDietType &&
+      watchedActivity &&
+      customerBirthDate &&
+      customerGender
       ? computeFitnessPlan({
-          birthDate: new Date(customerBirthDate),
-          gender: customerGender,
-          weightKg: watchedWeightKg,
-          heightCm: watchedHeight,
-          bodyType: watchedBodyType,
-          dietType: watchedDietType,
-          activityLevel: watchedActivity,
-        })
+        birthDate: new Date(customerBirthDate),
+        gender: customerGender,
+        weightKg: watchedWeightKg,
+        heightCm: watchedHeight,
+        bodyType: watchedBodyType,
+        dietType: watchedDietType,
+        activityLevel: watchedActivity,
+      })
       : null;
 
   useEffect(() => {

@@ -35,8 +35,6 @@ export function NavUser() {
     try {
       await signOutCurrentUser();
       toast.success("Sesión cerrada correctamente");
-      router.replace("/iniciar-sesion");
-      router.refresh();
     } catch (error) {
       toast.error("Error al cerrar sesión");
       console.error("Error signing out:", error);

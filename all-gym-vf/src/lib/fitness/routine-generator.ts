@@ -63,19 +63,18 @@ export async function generateRoutineFromTemplates(params: {
   const exerciseMap = new Map((exerciseRows || []).map((e) => [e.name, e.id]));
 
   const detailRows = (templates as TemplateRow[])
-    .map((t) => {
+    .flatMap((t) => {
       const exerciseId = exerciseMap.get(t.exercise_name);
-      if (!exerciseId) return null;
-      return {
+      if (!exerciseId) return [];
+      return [{
         routine_id: routine.id,
         day_of_week: t.day_index,
         exercise_id: exerciseId,
         sets: t.sets,
         reps: t.reps_range,
         rest_seconds: t.rest_seconds,
-      };
-    })
-    .filter(Boolean);
+      }];
+    });
 
   if (detailRows.length > 0) {
     const { error: detailError } = await supabase.from("routine_details").insert(detailRows);

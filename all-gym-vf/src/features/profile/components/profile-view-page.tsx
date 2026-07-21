@@ -10,6 +10,7 @@ import { IconMail, IconCalendar, IconShieldCheck } from "@tabler/icons-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import type { ProfileData } from "../actions/profile-actions";
+import { canEditOwnProfile } from "../lib/profile-permissions";
 
 interface ProfileViewPageProps {
   user: ProfileData;
@@ -29,7 +30,46 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
 
   const roleLabel = user.roleName || user.role || "Usuario";
   const userEmail = user.email || "Sin correo";
-  const canChangePassword = Boolean(user.isOwner || user.role === "admin");
+  const canEditProfile = canEditOwnProfile(user.permissions, user.isOwner);
+  const createdAtLabel = user.created_at
+    ? format(new Date(user.created_at), "d 'de' MMMM 'de' yyyy", { locale: es })
+    : "No disponible";
+  const memberSinceLabel = user.created_at
+    ? format(new Date(user.created_at), "MMMM 'de' yyyy", { locale: es })
+    : "No disponible";
+
+  const accountInfoCard = (
+    <Card className="py-4 gap-4">
+      <CardHeader className="px-4 py-0">
+        <CardTitle>Información de la Cuenta</CardTitle>
+        <CardDescription>Información de tu cuenta que no puede ser modificada directamente.</CardDescription>
+      </CardHeader>
+      <CardContent className="px-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">Correo electrónico</p>
+            <p className="font-medium text-sm">{userEmail}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">ID de Usuario</p>
+            <p className="font-mono text-xs">{user.id}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">Fecha de Registro</p>
+            <p className="font-medium text-sm">{createdAtLabel}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-muted-foreground">Última Actualización</p>
+            <p className="font-medium text-sm">
+              {user.updated_at
+                ? format(new Date(user.updated_at), "d 'de' MMMM 'de' yyyy", { locale: es })
+                : "Sin actualizaciones"}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-auto p-2 md:p-4">
@@ -62,7 +102,7 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
                 </span>
                 <span className="flex items-center gap-1">
                   <IconCalendar className="h-3.5 w-3.5" />
-                  Miembro desde {format(new Date(user.created_at), "MMMM 'de' yyyy", { locale: es })}
+                  Miembro desde {memberSinceLabel}
                 </span>
               </div>
             </div>
@@ -74,46 +114,12 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
 
       {/* Profile Forms */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Personal Information Form */}
-        <ProfileForm profile={user} />
-
-        {/* Password Change Form */}
-        {canChangePassword ? <PasswordForm /> : null}
+        <ProfileForm profile={user} canEditProfile={canEditProfile} />
+        <div className="space-y-4">
+          <PasswordForm />
+          {accountInfoCard}
+        </div>
       </div>
-
-      {/* Account Information (Read-only) */}
-      <Card className="py-4 gap-4">
-        <CardHeader className="px-4 py-0">
-          <CardTitle>Información de la Cuenta</CardTitle>
-          <CardDescription>Información de tu cuenta que no puede ser modificada directamente.</CardDescription>
-        </CardHeader>
-        <CardContent className="px-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Correo electrónico</p>
-              <p className="font-medium text-sm">{userEmail}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">ID de Usuario</p>
-              <p className="font-mono text-xs">{user.id}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Fecha de Registro</p>
-              <p className="font-medium text-sm">
-                {format(new Date(user.created_at), "d 'de' MMMM 'de' yyyy", { locale: es })}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Última Actualización</p>
-              <p className="font-medium text-sm">
-                {user.updated_at
-                  ? format(new Date(user.updated_at), "d 'de' MMMM 'de' yyyy", { locale: es })
-                  : "Sin actualizaciones"}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

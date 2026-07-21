@@ -1,5 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getServerAuthContext } from "@/lib/auth/server-auth";
 import { getCurrentUserRoutineWorkspace } from "@/features/customers/actions/customer-routine-actions";
 import type {
   ClientApiEnvelope,
@@ -20,20 +20,15 @@ function withMeta<T>(data: T): ClientApiEnvelope<T> {
 }
 
 async function requireAuthenticatedUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  const authContext = await getServerAuthContext();
 
-  if (error || !user) {
+  if (!authContext) {
     throw new Error("UNAUTHORIZED");
   }
 
   return {
-    supabase,
     adminClient: createAdminClient(),
-    user,
+    authContext,
   };
 }
 
@@ -64,14 +59,14 @@ async function getCurrentOverview(adminClient: ReturnType<typeof createAdminClie
 }
 
 export async function getCurrentClientProfileData(): Promise<ClientApiEnvelope<ClientProfilePayload>> {
-  const { user, adminClient } = await requireAuthenticatedUser();
+  const { authContext, adminClient } = await requireAuthenticatedUser();
   const [{ data: profile, error: profileError }, overview] = await Promise.all([
     adminClient
       .from("profiles")
       .select("full_name, phone, birth_date, gender, avatar_url, role, created_at, updated_at")
-      .eq("id", user.id)
+      .eq("id", authContext.user.id)
       .maybeSingle(),
-    getCurrentOverview(adminClient, user.id),
+    getCurrentOverview(adminClient, authContext.user.id),
   ]);
 
   if (profileError) {
@@ -79,34 +74,27 @@ export async function getCurrentClientProfileData(): Promise<ClientApiEnvelope<C
   }
 
   return withMeta({
-    id: user.id,
-    email: user.email || null,
+    id: authContext.user.id,
+    email: authContext.user.email || null,
     full_name:
       typeof profile?.full_name === "string"
         ? profile.full_name
-        : typeof user.user_metadata?.full_name === "string"
-          ? user.user_metadata.full_name
-          : null,
+        : authContext.user.profile.fullName,
     phone: typeof profile?.phone === "string" ? profile.phone : null,
     birth_date: typeof profile?.birth_date === "string" ? profile.birth_date : null,
     gender: typeof profile?.gender === "string" ? profile.gender : null,
-    avatar_url:
-      typeof profile?.avatar_url === "string"
-        ? profile.avatar_url
-        : typeof user.user_metadata?.avatar_url === "string"
-          ? user.user_metadata.avatar_url
-          : null,
-    role: typeof profile?.role === "string" ? profile.role : typeof user.user_metadata?.role === "string" ? user.user_metadata.role : null,
-    created_at: typeof profile?.created_at === "string" ? profile.created_at : user.created_at,
+    avatar_url: typeof profile?.avatar_url === "string" ? profile.avatar_url : null,
+    role: typeof profile?.role === "string" ? profile.role : authContext.authorization.roleSlug,
+    created_at: typeof profile?.created_at === "string" ? profile.created_at : null,
     updated_at: typeof profile?.updated_at === "string" ? profile.updated_at : null,
     overview,
   });
 }
 
 export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelope<ClientMembershipPayload>> {
-  const { user, adminClient } = await requireAuthenticatedUser();
+  const { authContext, adminClient } = await requireAuthenticatedUser();
   const [overview, subscriptionsResponse] = await Promise.all([
-    getCurrentOverview(adminClient, user.id),
+    getCurrentOverview(adminClient, authContext.user.id),
     adminClient
       .from("subscriptions")
       .select(
@@ -124,7 +112,7 @@ export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelop
         )
       `,
       )
-      .eq("user_id", user.id)
+      .eq("user_id", authContext.user.id)
       .order("created_at", { ascending: false })
       .limit(8),
   ]);
@@ -157,14 +145,14 @@ export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelop
 }
 
 export async function getCurrentClientRoutineData(): Promise<ClientApiEnvelope<ClientRoutinePayload>> {
-  const { user, adminClient } = await requireAuthenticatedUser();
+  const { authContext, adminClient } = await requireAuthenticatedUser();
   const [workspace, overview] = await Promise.all([
     getCurrentUserRoutineWorkspace(),
-    getCurrentOverview(adminClient, user.id),
+    getCurrentOverview(adminClient, authContext.user.id),
   ]);
 
   return withMeta({
-    customer_name: overview?.full_name || user.user_metadata?.full_name || "Cliente",
+    customer_name: overview?.full_name || authContext.user.profile.fullName || "Cliente",
     workspace,
   });
 }

@@ -1,13 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
+import { parseAsInteger, useQueryState } from "nuqs";
+import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/ui/table/data-table";
 import { DataTableToolbar } from "@/components/ui/table/data-table-toolbar";
 import { useDataTable } from "@/hooks/use-data-table";
-import { createClient } from "@/lib/supabase/client";
-import { parseAsInteger, useQueryState } from "nuqs";
-import { getColumns, Customer, PlanOption } from "./columns";
-import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { getColumns, type Customer } from "./columns";
 
 const MIN_NAME_COLUMN_WIDTH = 180;
 const MAX_NAME_COLUMN_WIDTH = 280;
@@ -33,157 +32,53 @@ function estimateCharacterWidth(character: string) {
 }
 
 function estimateTextWidth(text: string) {
-  return Array.from(text).reduce(
-    (width, character) => width + estimateCharacterWidth(character),
-    0
-  );
+  return Array.from(text).reduce((width, character) => width + estimateCharacterWidth(character), 0);
 }
 
 function estimateNameColumnWidth(data: Customer[]) {
   const widestNameWidth = data.reduce((maxWidth, customer) => {
-    const fullName = customer.full_name?.trim() ?? "";
-    return Math.max(maxWidth, estimateTextWidth(fullName));
+    return Math.max(maxWidth, estimateTextWidth(customer.full_name?.trim() ?? ""));
   }, 0);
 
-  const headerWidth =
-    estimateTextWidth("CLIENTE") + NAME_SORT_ICON_WIDTH + NAME_HEADER_PADDING;
+  const headerWidth = estimateTextWidth("CLIENTE") + NAME_SORT_ICON_WIDTH + NAME_HEADER_PADDING;
 
   return clampColumnWidth(
     Math.ceil(
-      Math.max(
-        headerWidth,
-        widestNameWidth + NAME_AVATAR_AND_GAP_WIDTH + NAME_CELL_PADDING + NAME_EXTRA_BUFFER
-      )
-    )
+      Math.max(headerWidth, widestNameWidth + NAME_AVATAR_AND_GAP_WIDTH + NAME_CELL_PADDING + NAME_EXTRA_BUFFER),
+    ),
   );
 }
 
 interface CustomerTableProps {
   data: Customer[];
   totalItems: number;
-  planOptions?: PlanOption[];
   canUpdate: boolean;
-  canPermanentlyDelete: boolean;
 }
 
-export function CustomerTable({
-  data,
-  totalItems,
-  planOptions = [],
-  canUpdate,
-  canPermanentlyDelete,
-}: CustomerTableProps) {
+export function CustomerTable({ data, totalItems, canUpdate }: CustomerTableProps) {
   const router = useRouter();
   const [pageSize] = useQueryState("perPage", parseAsInteger.withDefault(10));
-  const [liveData, setLiveData] = useState<Customer[]>(data);
-
-  const pageCount = Math.ceil(totalItems / pageSize);
-  const fullNameColumnSize = useMemo(() => estimateNameColumnWidth(liveData), [liveData]);
-  const biometricIdList = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          liveData
-            .map((customer) => customer.biometric_id)
-            .filter((value): value is number => Number.isInteger(value)),
-        ),
-      ),
-    [liveData],
-  );
-
-  useEffect(() => {
-    startTransition(() => {
-      setLiveData(data);
-    });
-  }, [data]);
-
-  useEffect(() => {
-    if (biometricIdList.length === 0) return;
-
-    const biometricIds = new Set(biometricIdList);
-
-    const supabase = createClient();
-    const channel = supabase
-      .channel("customers-last-check-in")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "attendance_logs" },
-        (payload) => {
-          const nextRow = payload.new as
-            | { biometric_id?: number | null; punch_time?: string | null; status1?: number | null }
-            | undefined;
-
-          const biometricId = nextRow?.biometric_id;
-          const punchTime = nextRow?.punch_time;
-          const status1 = nextRow?.status1;
-
-          if (!Number.isInteger(biometricId) || !punchTime) {
-            return;
-          }
-
-          const biometricIdNumber = biometricId as number;
-
-          if (!biometricIds.has(biometricIdNumber)) {
-            return;
-          }
-
-          // Solo reflejamos accesos autorizados para mantener consistente el "último ingreso".
-          if (status1 != null && status1 !== 0) {
-            return;
-          }
-
-          setLiveData((currentData) =>
-            currentData.map((customer) => {
-              if ((customer.biometric_id ?? null) !== biometricIdNumber) {
-                return customer;
-              }
-
-              const currentTime = customer.last_check_in ? new Date(customer.last_check_in).getTime() : 0;
-              const nextTime = new Date(punchTime).getTime();
-
-              if (!Number.isFinite(nextTime) || nextTime <= currentTime) {
-                return customer;
-              }
-
-              return {
-                ...customer,
-                last_check_in: punchTime,
-              };
-            }),
-          );
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [biometricIdList]);
-
-  // Generar columnas con las opciones de planes (memoizado)
+  const pageCount = Math.max(1, Math.ceil(totalItems / pageSize));
+  const fullNameColumnSize = useMemo(() => estimateNameColumnWidth(data), [data]);
   const columns = useMemo(
-    () => getColumns(planOptions, { fullNameColumnSize, canUpdate, canPermanentlyDelete }),
-    [canPermanentlyDelete, canUpdate, fullNameColumnSize, planOptions]
+    () => getColumns({ fullNameColumnSize, canUpdate }),
+    [canUpdate, fullNameColumnSize],
   );
 
   const { table } = useDataTable({
-    data: liveData,
+    data,
     columns,
-    pageCount: pageCount,
+    pageCount,
     shallow: false,
     debounceMs: 500,
     storageKey: "customers-table",
   });
 
-  const handleRowClick = (customer: Customer) => {
-    router.push(`/panel/clientes/${customer.id}/history`);
-  };
-
   return (
     <DataTable
       table={table}
-      onRowClick={handleRowClick}
-      getRowClassName={(row) => (!row.is_active ? "opacity-50 grayscale" : "")}
+      onRowClick={(customer) => router.push(`/panel/clientes/${customer.id}/history`)}
+      getRowClassName={(customer) => (!customer.is_active ? "opacity-50 grayscale" : "")}
     >
       <DataTableToolbar table={table} />
     </DataTable>

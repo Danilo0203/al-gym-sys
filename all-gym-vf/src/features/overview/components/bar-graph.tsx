@@ -213,8 +213,18 @@ export function BarGraph() {
                 <ChartTooltipContent
                   className="w-[150px]"
                   nameKey="views"
-                  labelFormatter={(value: string | number) => {
-                    return new Date(value).toLocaleDateString("en-US", {
+                  labelFormatter={(value) => {
+                    if (typeof value !== "string" && typeof value !== "number") {
+                      return null;
+                    }
+
+                    const date = new Date(value);
+
+                    if (Number.isNaN(date.getTime())) {
+                      return String(value);
+                    }
+
+                    return date.toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",

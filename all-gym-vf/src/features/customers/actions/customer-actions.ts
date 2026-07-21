@@ -268,14 +268,14 @@ async function getLatestMembershipSnapshot(client: AdminSupabaseClient, customer
     subscription,
     payment: typedPayment
       ? {
-          id: String(typedPayment.id),
-          amount_original: typeof typedPayment.amount_original === "number" ? typedPayment.amount_original : Number(typedPayment.amount_original ?? 0),
-          discount_amount:
-            typeof typedPayment.discount_amount === "number" ? typedPayment.discount_amount : Number(typedPayment.discount_amount ?? 0),
-          amount_paid: typeof typedPayment.amount_paid === "number" ? typedPayment.amount_paid : Number(typedPayment.amount_paid ?? 0),
-          method: typeof typedPayment.method === "string" ? typedPayment.method : null,
-          status: typeof typedPayment.status === "string" ? typedPayment.status : null,
-        }
+        id: String(typedPayment.id),
+        amount_original: typeof typedPayment.amount_original === "number" ? typedPayment.amount_original : Number(typedPayment.amount_original ?? 0),
+        discount_amount:
+          typeof typedPayment.discount_amount === "number" ? typedPayment.discount_amount : Number(typedPayment.discount_amount ?? 0),
+        amount_paid: typeof typedPayment.amount_paid === "number" ? typedPayment.amount_paid : Number(typedPayment.amount_paid ?? 0),
+        method: typeof typedPayment.method === "string" ? typedPayment.method : null,
+        status: typeof typedPayment.status === "string" ? typedPayment.status : null,
+      }
       : null,
   };
 }
@@ -650,6 +650,11 @@ async function getCustomerDeviceProfile(adminClient: AdminSupabaseClient, custom
     is_active?: boolean | null;
   } | null;
   const normalizedBiometricId = normalizeBiometricId(typedProfile?.biometric_id);
+
+  if (typedProfile == null) {
+    return { ok: false as const, reason: "profile_not_found" as const };
+  }
+
   if (normalizedBiometricId == null) {
     return { ok: false as const, reason: "missing_biometric_id" as const };
   }
@@ -819,7 +824,7 @@ async function callGymSyncServer(pathname: string, body: Record<string, unknown>
     let result: Record<string, unknown> | null = null;
     try {
       result = await response.json();
-    } catch {}
+    } catch { }
 
     if (!response.ok) {
       return {
@@ -1113,12 +1118,12 @@ function hasBodyAssessmentChanges(data: Partial<CreateCustomerData>) {
 function canComputeNutritionPlan(data: Partial<CreateCustomerData>) {
   return Boolean(
     data.birth_date &&
-      data.gender &&
-      typeof data.weight_kg === "number" &&
-      typeof data.height_cm === "number" &&
-      data.body_type &&
-      data.diet_type &&
-      data.activity_level,
+    data.gender &&
+    typeof data.weight_kg === "number" &&
+    typeof data.height_cm === "number" &&
+    data.body_type &&
+    data.diet_type &&
+    data.activity_level,
   );
 }
 
@@ -1154,10 +1159,10 @@ async function createSubscriptionAndPaymentLegacy(params: {
     params.endDate
       ? formatToLocalISO(params.endDate)
       : (() => {
-          const dt = new Date(subscriptionStartDate!);
-          dt.setDate(dt.getDate() + Number(planData.duration_days || 30));
-          return dt.toISOString().split("T")[0];
-        })();
+        const dt = new Date(subscriptionStartDate!);
+        dt.setDate(dt.getDate() + Number(planData.duration_days || 30));
+        return dt.toISOString().split("T")[0];
+      })();
 
   const { data: subscription, error: subscriptionError } = await adminClient
     .from("subscriptions")
@@ -1254,14 +1259,14 @@ async function createBodyAssessmentAndMaybeSnapshot(params: {
 
   const computed = canComputeNutritionPlan(metrics)
     ? computeFitnessPlan({
-        birthDate: metrics.birth_date!,
-        gender: metrics.gender!,
-        weightKg: metrics.weight_kg!,
-        heightCm: metrics.height_cm!,
-        bodyType: metrics.body_type!,
-        dietType: metrics.diet_type!,
-        activityLevel: metrics.activity_level!,
-      })
+      birthDate: metrics.birth_date!,
+      gender: metrics.gender!,
+      weightKg: metrics.weight_kg!,
+      heightCm: metrics.height_cm!,
+      bodyType: metrics.body_type!,
+      dietType: metrics.diet_type!,
+      activityLevel: metrics.activity_level!,
+    })
     : null;
 
   const assessmentPayload = {
@@ -1369,25 +1374,25 @@ export async function createCustomer(data: CreateCustomerData) {
 
       const authPayload = data.email
         ? {
-            email: data.email,
-            password: data.password || "Gym2026!",
-            email_confirm: true,
-            user_metadata: {
-              full_name: data.full_name,
-              role: "client",
-              phone: data.phone,
-            },
-          }
+          email: data.email,
+          password: data.password || "Gym2026!",
+          email_confirm: true,
+          user_metadata: {
+            full_name: data.full_name,
+            role: "client",
+            phone: data.phone,
+          },
+        }
         : {
-            phone: authPhone!,
-            password: data.password || "Gym2026!",
-            phone_confirm: true,
-            user_metadata: {
-              full_name: data.full_name,
-              role: "client",
-              phone: data.phone,
-            },
-          };
+          phone: authPhone!,
+          password: data.password || "Gym2026!",
+          phone_confirm: true,
+          user_metadata: {
+            full_name: data.full_name,
+            role: "client",
+            phone: data.phone,
+          },
+        };
 
       const { data: authData, error: authError } = await adminClient.auth.admin.createUser(authPayload);
 
@@ -2039,14 +2044,14 @@ export async function updateCustomer(id: string, data: Partial<CreateCustomerDat
           activity_level: mergedMetrics.activity_level,
         })
           ? computeFitnessPlan({
-              birthDate: data.birth_date ?? new Date(currentProfile!.birth_date),
-              gender: (data.gender ?? currentProfile!.gender) as "male" | "female" | "other",
-              weightKg: mergedMetrics.weight_kg!,
-              heightCm: mergedMetrics.height_cm!,
-              bodyType: mergedMetrics.body_type!,
-              dietType: mergedMetrics.diet_type!,
-              activityLevel: mergedMetrics.activity_level!,
-            })
+            birthDate: data.birth_date ?? new Date(currentProfile!.birth_date),
+            gender: (data.gender ?? currentProfile!.gender) as "male" | "female" | "other",
+            weightKg: mergedMetrics.weight_kg!,
+            heightCm: mergedMetrics.height_cm!,
+            bodyType: mergedMetrics.body_type!,
+            dietType: mergedMetrics.diet_type!,
+            activityLevel: mergedMetrics.activity_level!,
+          })
           : null;
 
         const assessmentData: Record<string, unknown> = {
@@ -2304,8 +2309,8 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
 
       const financialClient = SUPABASE_SERVICE_ROLE_KEY
         ? createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-            auth: { autoRefreshToken: false, persistSession: false },
-          })
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
         : supabase;
 
       const legacyResult = await renewSubscriptionWithPaymentLegacy({

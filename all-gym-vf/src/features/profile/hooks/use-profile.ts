@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getCurrentUser, updateProfile, updatePassword, ProfileData, UpdateProfileData } from '../actions/profile-actions';
+import { useRouter } from 'next/navigation';
+import { changePasswordWithLocalAuth, LocalAuthProxyError } from '@/lib/auth/client-auth';
+import { getCurrentUser, updateProfile, ProfileData, UpdateProfileData } from '../actions/profile-actions';
 import { toast } from 'sonner';
 
 // Query keys
@@ -33,6 +35,7 @@ export function useCurrentUser() {
  */
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   return useMutation({
     mutationFn: async (data: UpdateProfileData) => {
@@ -42,8 +45,12 @@ export function useUpdateProfile() {
       }
       return result;
     },
-    onSuccess: () => {
+    onSuccess: async (result) => {
+      if (result.data) {
+        queryClient.setQueryData(profileKeys.current(), result.data);
+      }
       queryClient.invalidateQueries({ queryKey: profileKeys.current() });
+      router.refresh();
       toast.success('Perfil actualizado correctamente');
     },
     onError: (error: Error) => {
@@ -58,16 +65,14 @@ export function useUpdateProfile() {
 export function useUpdatePassword() {
   return useMutation({
     mutationFn: async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
-      const result = await updatePassword(currentPassword, newPassword);
-      if (!result.success) {
-        throw new Error(result.error || 'Error al cambiar contraseña');
-      }
-      return result;
-    },
-    onSuccess: () => {
-      toast.success('Contraseña actualizada correctamente');
+      await changePasswordWithLocalAuth({ currentPassword, newPassword });
     },
     onError: (error: Error) => {
+      if (error instanceof LocalAuthProxyError && error.status === 401) {
+        window.location.replace('/iniciar-sesion');
+        return;
+      }
+
       toast.error(error.message);
     },
   });
