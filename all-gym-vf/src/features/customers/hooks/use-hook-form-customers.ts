@@ -23,12 +23,6 @@ import {
   type MembershipWriteInput,
 } from "@/features/customers/lib/local-memberships";
 import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
-import {
-  createCustomer as createLegacyCustomer,
-  renewSubscription,
-  type CreateCustomerData,
-  updateCustomer as updateLegacyCustomer,
-} from "../actions/customer-actions";
 import { useCreateCustomer, useReactivateCustomer, useUpdateCustomer } from "./use-customers";
 import { isValidAuthEmail } from "@/lib/auth/identifiers";
 import {
@@ -212,10 +206,11 @@ const optionalEmailSchema = z
     message: "Correo electrónico inválido",
   });
 
-const customerSheetSchema = z
+const customerSheetBaseSchema = z
   .object({
     email: optionalEmailSchema,
-    password: z.string().min(6, { message: "Mínimo 6 caracteres" }).optional().or(z.literal("")),
+    password: z.string(),
+    confirm_password: z.string(),
     full_name: z.string().min(2, { message: "El nombre es obligatorio" }),
     birth_date: z.date({ message: "La fecha de nacimiento es obligatoria" }),
     gender: z.enum(["male", "female", "other"], { message: "Selecciona el género" }),
@@ -264,8 +259,42 @@ const customerSheetSchema = z
     injuries: z.string().optional().or(z.literal("")),
     medical_notes: z.string().optional().or(z.literal("")),
     body_type: z.enum(["ectomorph", "mesomorph", "endomorph"]).optional(),
-  })
-  .superRefine((value, ctx) => {
+  });
+
+function createCustomerSheetSchema(localAccountValidation: boolean) {
+  return customerSheetBaseSchema.superRefine((value, ctx) => {
+    if (localAccountValidation) {
+      if (value.password && (value.password.length < 8 || value.password.length > 128)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["password"],
+          message: "La contraseña debe tener entre 8 y 128 caracteres",
+        });
+      }
+
+      if (value.password && !value.email) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["email"],
+          message: "La contraseña requiere correo",
+        });
+      }
+
+      if (value.password !== value.confirm_password) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["confirm_password"],
+          message: "La confirmación no coincide",
+        });
+      }
+    } else if (value.password && value.password.length < 6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["password"],
+        message: "Mínimo 6 caracteres",
+      });
+    }
+
     if (value.plan_id) {
       const startDate = value.subscription_period?.from;
       const endDate = value.subscription_period?.to;
@@ -302,6 +331,7 @@ const customerSheetSchema = z
       });
     }
   });
+}
 
 const renewSubscriptionSchema = z
   .object({
@@ -436,6 +466,7 @@ function buildPhaseACreatePayload(values: CustomerSheetFormValues): CreateCustom
     birth_date: birthDate,
     gender: values.gender,
     email: normalizeOptionalCustomerEmail(values.email),
+    ...(values.password ? { password: values.password } : {}),
     injuries: normalizeOptionalCustomerTextareaToBackend(values.injuries),
     medical_notes: normalizeOptionalCustomerTextareaToBackend(values.medical_notes),
   };
@@ -530,7 +561,7 @@ export interface ProfileFormData {
 }
 
 export type ProfileCustomerFormValues = z.infer<typeof profileCustomerSchema>;
-export type CustomerSheetFormValues = z.infer<typeof customerSheetSchema>;
+export type CustomerSheetFormValues = z.infer<ReturnType<typeof createCustomerSheetSchema>>;
 export type RenewSubscriptionFormValues = z.infer<typeof renewSubscriptionSchema>;
 
 export interface CustomerData {
@@ -604,8 +635,7 @@ export function useHookFormCustomerProfile({ initialData }: UseHookFormCustomerP
     },
   });
 
-  const onSubmit = (values: ProfileCustomerFormValues) => {
-    console.log(values);
+  const onSubmit = () => {
     router.push("/panel/clientes");
   };
 
@@ -622,6 +652,11 @@ interface UseHookFormCustomerSheetParams {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  legacySubmit?: (
+    customerId: string | null,
+    values: CustomerSheetFormValues,
+    context: { entrypoint: "cash"; suggestedBasePrice?: number },
+  ) => Promise<void>;
 }
 
 export function useHookFormCustomerSheet({
@@ -630,6 +665,7 @@ export function useHookFormCustomerSheet({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  legacySubmit,
 }: UseHookFormCustomerSheetParams) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -660,6 +696,7 @@ export function useHookFormCustomerSheet({
       return {
         email: customer.email || "",
         password: "",
+        confirm_password: "",
         full_name: customer.full_name || "",
         gender: (customer.gender as "male" | "female" | "other") || "male",
         phone: customer.phone || "",
@@ -717,6 +754,7 @@ export function useHookFormCustomerSheet({
     return {
       email: "",
       password: "",
+      confirm_password: "",
       full_name: "",
       gender: "male",
       phone: "",
@@ -767,7 +805,7 @@ export function useHookFormCustomerSheet({
   }, [isEditing, customer, localMembership]);
 
   const form = useForm<CustomerSheetFormValues>({
-    resolver: zodResolver(customerSheetSchema) as Resolver<CustomerSheetFormValues>,
+    resolver: zodResolver(createCustomerSheetSchema(entrypoint === "customers")) as Resolver<CustomerSheetFormValues>,
     defaultValues: getDefaultValues(),
   });
   const { reset, getValues, setValue, setError, clearErrors } = form;
@@ -1013,72 +1051,17 @@ export function useHookFormCustomerSheet({
       }
 
       setIsLegacySubmitting(true);
-      const payload: CreateCustomerData = {
-        email: values.email || undefined,
-        origin: entrypoint,
-        password: values.password || undefined,
-        full_name: values.full_name,
-        phone: values.phone,
-        birth_date: values.birth_date,
-        gender: values.gender,
-        payment_method: values.payment_method,
-        discount_amount: values.discount_amount,
-        amount_original:
-          values.final_price !== undefined
-            ? Math.max(0, values.final_price + (Number(values.discount_amount) || 0))
-            : membershipPricing?.suggestedBasePrice,
-        grace_days: values.grace_days,
-        plan_id: values.plan_id ? Number(values.plan_id) : undefined,
-        final_price: values.final_price,
-        start_date: values.subscription_period?.from,
-        end_date: values.subscription_period?.to,
-        primary_goal: values.primary_goal,
-        secondary_goal: values.secondary_goal,
-        focus_areas: values.focus_areas,
-        experience_level: values.experience_level,
-        days_per_week: values.days_per_week ? Number(values.days_per_week) : undefined,
-        session_minutes: combineSessionDuration(values.session_hours, values.session_minutes_extra) ?? undefined,
-        training_location: DEFAULT_TRAINING_LOCATION,
-        equipment_available: values.equipment_available,
-        cardio_preference: values.cardio_preference,
-        parq_requires_attention:
-          values.parq_requires_attention === "yes"
-            ? true
-            : values.parq_requires_attention === "no"
-              ? false
-              : undefined,
-        restricted_movements: values.restricted_movements,
-        exercise_preferences: normalizeTextFieldValue(values.exercise_preferences),
-        exercise_dislikes: normalizeTextFieldValue(values.exercise_dislikes),
-        injuries_or_pain:
-          values.parq_requires_attention === "yes" ? normalizeTextFieldValue(values.injuries_or_pain) : "",
-        medical_clearance_notes:
-          values.parq_requires_attention === "yes" ? normalizeTextFieldValue(values.medical_clearance_notes) : "",
-        weight_kg: poundsToKilograms(values.weight_lb) ?? undefined,
-        height_cm: values.height_cm,
-        diet_type: values.diet_type,
-        activity_level: values.activity_level,
-        body_fat_percentage: values.body_fat_percentage,
-        muscle_mass_kg: values.muscle_mass_kg,
-        chest: values.chest,
-        waist: values.waist,
-        hip: values.hip,
-        arm_right: values.arm_right,
-        arm_left: values.arm_left,
-        leg_right: values.leg_right,
-        leg_left: values.leg_left,
-        injuries: normalizeTextFieldValue(values.injuries),
-        body_type: values.body_type,
-      };
-
-      if (isEditing && customer?.id) {
-        await updateLegacyCustomer(customer.id, payload);
-      } else {
-        await createLegacyCustomer(payload);
+      if (!legacySubmit) {
+        throw new Error("La operación heredada de Caja no está disponible.");
       }
+
+      await legacySubmit(isEditing && customer?.id ? customer.id : null, values, {
+        entrypoint: "cash",
+        suggestedBasePrice: membershipPricing?.suggestedBasePrice,
+      });
       setOpen(false);
-    } catch (error) {
-      console.error("Submit error:", error);
+    } catch {
+      toast.error("No fue posible guardar el cliente.");
     } finally {
       setIsLegacySubmitting(false);
     }
@@ -1205,6 +1188,14 @@ interface UseHookFormRenewSubscriptionParams {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  legacyRenewSubscription?: (
+    customerId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean };
+  }>;
 }
 
 export function useHookFormRenewSubscription({
@@ -1218,6 +1209,7 @@ export function useHookFormRenewSubscription({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  legacyRenewSubscription,
 }: UseHookFormRenewSubscriptionParams) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1434,7 +1426,11 @@ export function useHookFormRenewSubscription({
   const onSubmit = async (values: RenewSubscriptionFormValues) => {
     try {
       setLoading(true);
-      const renewalPayload: Parameters<typeof renewSubscription>[1] = {
+      if (!legacyRenewSubscription) {
+        throw new Error("La renovación heredada de Caja no está disponible.");
+      }
+
+      const renewalPayload: Record<string, unknown> = {
         origin: entrypoint,
         plan_id: Number(values.plan_id),
         start_date: values.subscription_period.from,
@@ -1504,7 +1500,7 @@ export function useHookFormRenewSubscription({
         if (hasMeaningfulText(medicalClearanceNotes)) renewalPayload.medical_clearance_notes = medicalClearanceNotes;
       }
 
-      const result = await renewSubscription(customerId, renewalPayload);
+      const result = await legacyRenewSubscription(customerId, renewalPayload);
 
       if (result.success) {
         const deviceSync =

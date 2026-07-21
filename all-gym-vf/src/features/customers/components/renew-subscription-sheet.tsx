@@ -68,6 +68,14 @@ interface RenewSubscriptionSheetProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  legacyRenewSubscription?: (
+    customerId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean };
+  }>;
 }
 
 export function RenewSubscriptionSheet({
@@ -83,6 +91,7 @@ export function RenewSubscriptionSheet({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  legacyRenewSubscription,
 }: RenewSubscriptionSheetProps) {
   const {
     open,
@@ -109,6 +118,7 @@ export function RenewSubscriptionSheet({
       open: controlledOpen,
       onOpenChange: controlledOnOpenChange,
       entrypoint,
+      legacyRenewSubscription,
     });
 
   const showAttentionDetails = form.watch("parq_requires_attention") === "yes";

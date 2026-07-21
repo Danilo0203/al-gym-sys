@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
+import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
 import { closeCashSession, ensureDefaultCashRegister, type CashDashboardData, openCashSession } from "@/features/cash/actions/cash-actions";
 import { CashCustomerPaymentDialog } from "@/features/cash/components/cash-customer-payment-dialog";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
@@ -617,6 +618,7 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
             >
               <CustomerFormSheet
                 entrypoint="cash"
+                legacySubmit={submitLegacyCashCustomer}
                 trigger={
                   <Button className="w-full">
                     <IconUserPlus className="h-4 w-4" />

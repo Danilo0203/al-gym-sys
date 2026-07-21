@@ -9,12 +9,14 @@ import {
   getCustomerHistory,
   getCustomersList,
   updateCustomer,
+  updateCustomerAccount,
   updateCustomerStatus,
 } from "@/features/customers/lib/customer-api";
 import type {
   CreateCustomerInput,
   CustomerDetail,
   UpdateCustomerInput,
+  UpdateCustomerAccountInput,
 } from "@/features/customers/lib/local-customers";
 
 export const customersKeys = {
@@ -87,6 +89,24 @@ export function useUpdateCustomer() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Error al actualizar el cliente.");
+    },
+  });
+}
+
+export function useUpdateCustomerAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateCustomerAccountInput }) =>
+      updateCustomerAccount(id, data),
+    onSuccess: (customer) => {
+      queryClient.setQueryData(customersKeys.detail(customer.id), customer);
+      queryClient.invalidateQueries({ queryKey: customersKeys.detail(customer.id) });
+      queryClient.invalidateQueries({ queryKey: customersKeys.lists() });
+      toast.success("Cuenta actualizada correctamente.");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Error inesperado al actualizar la cuenta.");
     },
   });
 }

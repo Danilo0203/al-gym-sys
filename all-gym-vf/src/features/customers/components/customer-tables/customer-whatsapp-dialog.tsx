@@ -2,14 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query";
-import { IconAlertTriangle, IconBrandWhatsapp, IconFileText } from "@tabler/icons-react";
+import { IconAlertTriangle, IconBrandWhatsapp } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getMessageTemplates } from "@/features/messages/actions/message-actions";
 import { buildWhatsAppContext, interpolateMessage, buildWhatsAppUrl, type CustomerWhatsApp } from "@/features/messages/whatsapp-helper";
 
 const PLACEHOLDERS = [
@@ -29,39 +25,18 @@ interface CustomerWhatsAppDialogProps {
 
 export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: CustomerWhatsAppDialogProps) {
   const [messageText, setMessageText] = useState("");
-  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
   const ctx = buildWhatsAppContext(customer);
   const { text: interpolatedText, hasNoAttendanceData } = ctx
     ? interpolateMessage(messageText, ctx)
     : { text: messageText, hasNoAttendanceData: false };
 
-  const templatesQuery = useQuery({
-    queryKey: ["message-templates", "active"],
-    queryFn: async () => {
-      const result = await getMessageTemplates({ includeInactive: false });
-      if (!result.success || !result.data) throw new Error(result.error || "Error");
-      return result.data;
-    },
-    enabled: open,
-    staleTime: 30 * 1000,
-  });
-
   useEffect(() => {
     if (!open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessageText("");
-      setActiveTemplateId(null);
     }
   }, [open]);
-
-  const handleSelectTemplate = (templateId: string) => {
-    const template = templatesQuery.data?.find((t) => t.id === templateId);
-    if (template) {
-      setMessageText(template.content);
-      setActiveTemplateId(templateId);
-    }
-  };
 
   const insertToken = (token: string) => {
     const textarea = document.getElementById("wa-message-textarea") as HTMLTextAreaElement | null;
@@ -99,9 +74,6 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
 
   if (!ctx) return null;
 
-  const templates = templatesQuery.data ?? [];
-  const isLoadingTemplates = templatesQuery.isLoading;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -111,58 +83,17 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
             Enviar mensaje a {customer.full_name || "Cliente"}
           </DialogTitle>
           <DialogDescription>
-            Selecciona una plantilla o escribe un mensaje personalizado para enviar por WhatsApp.
+            Escribe un mensaje personalizado para enviar por WhatsApp.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {(isLoadingTemplates || templates.length > 0) && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Mensajes guardados</label>
-              {isLoadingTemplates ? (
-                <div className="space-y-1 rounded-md border p-2">
-                  {[1].map((i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <Select
-                  value={activeTemplateId ?? ""}
-                  onValueChange={(value) => {
-                    if (!value) {
-                      setActiveTemplateId(null);
-                      return;
-                    }
-                    handleSelectTemplate(value);
-                  }}
-                >
-                  <SelectTrigger className="w-full justify-between">
-                    <SelectValue placeholder="Selecciona una plantilla" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="flex items-center gap-2 truncate">
-                          <IconFileText className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate font-medium">{t.name}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          )}
-
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Mensaje</label>
             <Textarea
               id="wa-message-textarea"
               value={messageText}
-              onChange={(e) => {
-                setMessageText(e.target.value);
-                setActiveTemplateId(null);
-              }}
+              onChange={(e) => setMessageText(e.target.value)}
               placeholder="Escribe tu mensaje..."
               className="min-h-[120px] resize-y text-sm"
             />

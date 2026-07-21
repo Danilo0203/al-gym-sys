@@ -13,6 +13,7 @@ import {
   IconFileCertificate,
   IconFingerprint,
   IconMail,
+  IconKey,
   IconMinus,
   IconPhone,
   IconRun,
@@ -36,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CustomerStatusActionSummary } from "@/features/customers/components/customer-status-action-summary";
+import { CustomerAccountDialog } from "@/features/customers/components/customer-account-dialog";
 import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customers";
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import { AccessHistoryTab } from "./tabs/access-history-tab";
@@ -110,6 +112,7 @@ export function CustomerHistoryClient({
 }: CustomerHistoryClientProps) {
   const [activeSection, setActiveSection] = useState<(typeof sectionIds)[number]>("overview");
   const [statusOpen, setStatusOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const statusMutation = useUpdateCustomerStatus();
   const initials = profile.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -119,6 +122,17 @@ export function CustomerHistoryClient({
     ? formatDistanceToNow(new Date(history.kpis.member_since), { addSuffix: true, locale: es })
     : "sin fecha registrada";
   const canUpdateCustomer = profile.capabilities.update_customer;
+  const canManageAccount = profile.capabilities.manage_account;
+  const accountStatus = profile.account.login_enabled
+    ? "Acceso configurado"
+    : "Acceso pendiente";
+  const credentialsStatus = profile.account.login_enabled
+    ? "Correo y contraseña configurados"
+    : profile.account.email && !profile.account.has_password
+      ? "Tiene correo y no tiene contraseña"
+      : !profile.account.email
+        ? "No tiene correo configurado"
+        : "Contraseña registrada; acceso pendiente";
 
   const handleStatusChange = async () => {
     try {
@@ -188,6 +202,13 @@ export function CustomerHistoryClient({
         confirmVariant={profile.is_active ? "destructive" : "default"}
         contentClassName="sm:max-w-2xl"
       />
+      {canManageAccount ? (
+        <CustomerAccountDialog
+          customer={profile}
+          open={accountOpen}
+          onOpenChange={setAccountOpen}
+        />
+      ) : null}
 
       <header className="z-10 shrink-0 border-b bg-gradient-to-b from-background via-background to-muted/20 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col gap-4 p-4 sm:p-5 lg:p-6">
@@ -250,7 +271,7 @@ export function CustomerHistoryClient({
                   Regresar
                 </Button>
               </Link>
-              {canUpdateCustomer ? (
+              {canUpdateCustomer || canManageAccount ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -267,7 +288,17 @@ export function CustomerHistoryClient({
                       Gestión de Cliente
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
+                    {canManageAccount ? (
+                      <DropdownMenuItem
+                        className="cursor-pointer gap-2 py-2"
+                        onClick={() => setAccountOpen(true)}
+                      >
+                        <IconKey className="h-4 w-4" />
+                        <span className="text-xs font-medium">Editar cuenta</span>
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canManageAccount && canUpdateCustomer ? <DropdownMenuSeparator /> : null}
+                    {canUpdateCustomer ? <DropdownMenuItem
                       className={cn(
                         "cursor-pointer gap-2 py-2",
                         profile.is_active
@@ -281,7 +312,7 @@ export function CustomerHistoryClient({
                       <span className="text-xs font-medium">
                         {profile.is_active ? "Suspender Cliente" : "Reactivar Cliente"}
                       </span>
-                    </DropdownMenuItem>
+                    </DropdownMenuItem> : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
@@ -326,10 +357,10 @@ export function CustomerHistoryClient({
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
               <OverviewCard title="Perfil y cuenta" icon={<IconActivity />}>
-                <Row label="Correo" value={profile.account.email ?? "Sin correo"} />
+                <Row label="Correo" value={profile.account.email ?? "Sin correo configurado"} />
                 <Row label="Teléfono" value={profile.phone || "Sin teléfono"} />
-                <Row label="Cuenta" value={profile.account.login_enabled ? "Acceso habilitado" : "Acceso deshabilitado"} />
-                <Row label="Credenciales" value={profile.account.has_password ? "Configuradas" : "No configuradas"} />
+                <Row label="Cuenta" value={accountStatus} />
+                <Row label="Credenciales" value={credentialsStatus} />
                 <Row label="Miembro desde" value={formatCalendarDate(history.kpis.member_since)} />
                 <Row label="Último ingreso" value={formatDateTime(profile.last_check_in)} />
               </OverviewCard>
