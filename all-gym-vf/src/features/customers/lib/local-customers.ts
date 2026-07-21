@@ -49,6 +49,11 @@ export const createCustomerInputSchema = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
   injuries: z.string().trim().nullable().optional(),
   medical_notes: z.string().trim().nullable().optional(),
+  membership: z.object({
+    plan_id: z.number().int().positive(),
+    cycles: z.number().int().min(1),
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  }).strict().optional(),
 });
 
 export const updateCustomerInputSchema = z

@@ -97,7 +97,7 @@ export function CustomerFormSheet({
   );
   const parqRequiresAttention = form.watch("parq_requires_attention");
   const showAttentionDetails = parqRequiresAttention === "yes";
-  const isPhaseAForm = entrypoint === "customers";
+  const isLocalCustomerForm = entrypoint === "customers";
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -113,12 +113,12 @@ export function CustomerFormSheet({
           </SheetTitle>
           <SheetDescription>
             {isEditing
-              ? isPhaseAForm
-                ? "Edita únicamente la ficha básica del cliente en esta Fase A."
+              ? isLocalCustomerForm
+                ? "Edita la ficha del cliente y administra su membresía por el backend local."
                 : "Modifica perfil, membresía, métricas y entrenamiento desde una sola ficha."
               : entrypoint === "cash"
                 ? "Registra la ficha del cliente, asigna el plan y cobra dentro del turno actual."
-                : "Completa la ficha básica. Membresías y pagos se configurarán en fases posteriores."}
+                : "Completa la ficha y, si corresponde, asigna un plan. Pagos y caja se registran por separado."}
           </SheetDescription>
         </SheetHeader>
 
@@ -153,16 +153,16 @@ export function CustomerFormSheet({
                     label="Correo electrónico"
                     placeholder="user@gym.com (opcional)"
                     type="email"
-                    disabled={isPhaseAForm && isEditing}
+                    disabled={isLocalCustomerForm && isEditing}
                     icon={<IconMail className="h-4 w-4" />}
                   />
                   <FormInputGroup
                     control={form.control}
                     name="password"
                     label={isEditing ? "Nueva Contraseña" : "Contraseña"}
-                    placeholder={isPhaseAForm ? "No se configura en Fase A" : isEditing ? "(Dejar vacío para no cambiar)" : "(Opcional)"}
+                    placeholder={isLocalCustomerForm ? "No se configura en el alta local" : isEditing ? "(Dejar vacío para no cambiar)" : "(Opcional)"}
                     type="password"
-                    disabled={isPhaseAForm}
+                    disabled={isLocalCustomerForm}
                     icon={<IconLock className="h-4 w-4" />}
                   />
                 </div>
@@ -224,7 +224,7 @@ export function CustomerFormSheet({
 
               <Separator />
 
-              {isPhaseAForm ? (
+              {isLocalCustomerForm ? (
                 <div className="space-y-6">
                   <div className="space-y-4">
                     <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
@@ -251,12 +251,102 @@ export function CustomerFormSheet({
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
-                    <p className="text-sm font-medium text-foreground">Pendiente fuera de Fase A</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Membresías, pagos, historial, rutinas, evaluaciones, avatar local y sincronización con reloj
-                      biométrico siguen fuera de este formulario por ahora.
-                    </p>
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
+                        4
+                      </span>
+                      Membresía
+                    </h4>
+                    <div className="space-y-4 pl-4">
+                      <FormSelect
+                        control={form.control}
+                        name="plan_id"
+                        label="Plan inicial"
+                        placeholder="Sin membresía por ahora"
+                        options={plans.filter((plan) => plan.is_active).map((plan) => ({
+                          label: `${plan.name} - Q${plan.price} (${plan.duration_days} días)`,
+                          value: plan.id.toString(),
+                        }))}
+                      />
+
+                      {form.watch("plan_id") ? (
+                        <>
+                          <FormRadioGroup
+                            control={form.control}
+                            name="date_mode"
+                            label="Vigencia"
+                            orientation="horizontal"
+                            options={[
+                              { label: "Según el plan", value: "automatic" },
+                              { label: "Rango manual", value: "manual" },
+                            ]}
+                          />
+
+                          <Controller
+                            control={form.control}
+                            name="subscription_period"
+                            render={({ field, fieldState }) => {
+                              const from = field.value?.from;
+                              const to = field.value?.to;
+                              const days = from && to ? differenceInDays(to, from) : 0;
+                              const endMonth = new Date(new Date().getFullYear() + 10, 11);
+
+                              return (
+                                <Field className="flex flex-col" data-invalid={fieldState.invalid}>
+                                  <FieldLabel>Período de membresía</FieldLabel>
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_90px] sm:items-end">
+                                    <div className="space-y-1">
+                                      <span className="text-xs text-muted-foreground">Inicio</span>
+                                      <FlexibleDatePickerInput
+                                        value={from}
+                                        onChange={(date) => {
+                                          const start = date ?? new Date();
+                                          const selectedPlan = plans.find(
+                                            (plan) => plan.id.toString() === form.getValues("plan_id"),
+                                          );
+                                          form.setValue("subscription_period", {
+                                            from: start,
+                                            to:
+                                              form.getValues("date_mode") === "automatic" && selectedPlan
+                                                ? calculateSubscriptionEndDate(start, selectedPlan.duration_days)
+                                                : field.value?.to ?? start,
+                                          });
+                                        }}
+                                        endMonth={endMonth}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="text-xs text-muted-foreground">Fin</span>
+                                      <FlexibleDatePickerInput
+                                        value={to}
+                                        onChange={(date) => form.setValue("subscription_period", {
+                                          from: from ?? new Date(),
+                                          to: date ?? from ?? new Date(),
+                                        })}
+                                        endMonth={endMonth}
+                                      />
+                                    </div>
+                                    <div className="h-9 flex items-center justify-center rounded-md border bg-muted px-2 text-sm font-medium text-muted-foreground">
+                                      {days} días
+                                    </div>
+                                  </div>
+                                  <FieldError errors={[fieldState.error]} />
+                                </Field>
+                              );
+                            }}
+                          />
+                        </>
+                      ) : null}
+
+                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
+                        <p className="text-sm font-medium text-foreground">Responsabilidad separada</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          El alta guarda cliente y membresía de forma atómica. Pago y caja se registran en su flujo
+                          correspondiente; esta pantalla no crea movimientos financieros.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (

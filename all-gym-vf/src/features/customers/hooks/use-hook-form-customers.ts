@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import * as z from "zod";
 import { addDays, addMonths, differenceInDays, endOfMonth } from "date-fns";
 import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
@@ -13,7 +14,14 @@ import { computeFitnessPlan } from "@/lib/fitness/excel-calculator";
 import { kilogramsToPounds, poundsToKilograms } from "@/lib/fitness/measurements";
 import type { ActivityLevel, BodyType, DietType } from "@/lib/fitness/types";
 import { combineSessionDuration, DEFAULT_EQUIPMENT_AVAILABLE, DEFAULT_TRAINING_LOCATION, splitSessionMinutes } from "@/lib/training/profile-defaults";
+import { useLocalMembership, useLocalPlans } from "@/features/customers/hooks/use-local-memberships";
 import { usePlans } from "@/features/plans/hooks/use-plans";
+import {
+  createMembershipForCustomer,
+  renewMembershipForCustomer,
+  type Membership,
+  type MembershipWriteInput,
+} from "@/features/customers/lib/local-memberships";
 import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
 import {
   createCustomer as createLegacyCustomer,
@@ -258,6 +266,18 @@ const customerSheetSchema = z
     body_type: z.enum(["ectomorph", "mesomorph", "endomorph"]).optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.plan_id) {
+      const startDate = value.subscription_period?.from;
+      const endDate = value.subscription_period?.to;
+      if (!startDate || !endDate || differenceInDays(endDate, startDate) <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["subscription_period"],
+          message: "La membresía debe terminar después de la fecha de inicio.",
+        });
+      }
+    }
+
     const sessionMinutes = combineSessionDuration(
       value.session_hours,
       value.session_minutes_extra,
@@ -421,6 +441,38 @@ function buildPhaseACreatePayload(values: CustomerSheetFormValues): CreateCustom
   };
 }
 
+function buildBasicMembershipPayload(
+  values: CustomerSheetFormValues,
+  suggestedCycles: number | null | undefined,
+): MembershipWriteInput | null {
+  if (!values.plan_id) return null;
+
+  const startDate = values.subscription_period?.from ?? new Date();
+  const startDateIso = toIsoDateString(startDate);
+  if (!isValidCalendarDateString(startDateIso)) {
+    throw new Error("La fecha de inicio de la membresía no es válida.");
+  }
+
+  return {
+    plan_id: Number(values.plan_id),
+    cycles: Math.max(1, suggestedCycles ?? 1),
+    start_date: startDateIso,
+  };
+}
+
+function isSameBasicMembership(
+  current: Membership | null | undefined,
+  target: MembershipWriteInput | null,
+): boolean {
+  return Boolean(
+    current &&
+      target &&
+      current.plan_id === target.plan_id &&
+      current.cycles === target.cycles &&
+      current.start_date === target.start_date,
+  );
+}
+
 function buildPhaseAUpdatePayload(
   values: CustomerSheetFormValues,
   customer: CustomerData,
@@ -579,13 +631,16 @@ export function useHookFormCustomerSheet({
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
 }: UseHookFormCustomerSheetParams) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [internalOpen, setInternalOpen] = useState(false);
   const previousDateStateRef = useRef<{ dateMode?: CustomerSheetFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
     dateMode: "automatic",
     planId: null,
     startTime: null,
   });
-  const { data: plans = [] } = usePlans(true);
+  const { data: plans = [] } = useLocalPlans();
+  const { data: localMembership } = useLocalMembership(customer?.id);
   const { mutateAsync: createCustomerMutation, isPending: isCreating } = useCreateCustomer();
   const { mutateAsync: updateCustomerMutation, isPending: isUpdating } = useUpdateCustomer();
   const { mutateAsync: reactivateCustomerMutation } = useReactivateCustomer();
@@ -609,8 +664,8 @@ export function useHookFormCustomerSheet({
         gender: (customer.gender as "male" | "female" | "other") || "male",
         phone: customer.phone || "",
         birth_date: parseDatabaseDate(customer.birth_date) || new Date(),
-        plan_id: customer.plan_id?.toString() || "",
-        final_price: customer.final_price ?? undefined,
+        plan_id: localMembership?.plan_id.toString() || customer.plan_id?.toString() || "",
+        final_price: localMembership?.price ?? customer.final_price ?? undefined,
         discount_amount: customer.discount_amount ?? 0,
         grace_days: normalizeGraceDays(customer.subscription_grace_days),
         date_mode: "automatic",
@@ -654,8 +709,8 @@ export function useHookFormCustomerSheet({
         leg_right: customer.leg_right ?? undefined,
         leg_left: customer.leg_left ?? undefined,
         subscription_period: {
-          from: parseDatabaseDate(customer.subscription_start_date) || new Date(),
-          to: parseDatabaseDate(customer.subscription_end_date) || new Date(),
+          from: parseDatabaseDate(localMembership?.start_date || customer.subscription_start_date) || new Date(),
+          to: parseDatabaseDate(localMembership?.end_date || customer.subscription_end_date) || new Date(),
         },
       };
     }
@@ -709,7 +764,7 @@ export function useHookFormCustomerSheet({
         to: new Date(),
       },
     };
-  }, [isEditing, customer]);
+  }, [isEditing, customer, localMembership]);
 
   const form = useForm<CustomerSheetFormValues>({
     resolver: zodResolver(customerSheetSchema) as Resolver<CustomerSheetFormValues>,
@@ -733,7 +788,7 @@ export function useHookFormCustomerSheet({
       planId: values.plan_id || null,
       startTime: values.subscription_period?.from?.getTime() ?? null,
     };
-  }, [open, customer, getDefaultValues, reset]);
+  }, [open, customer, localMembership, getDefaultValues, reset]);
 
   const watchedPlanId = useWatch({ control: form.control, name: "plan_id" });
   const watchedDateMode = useWatch({ control: form.control, name: "date_mode" });
@@ -919,17 +974,38 @@ export function useHookFormCustomerSheet({
   const onSubmit = async (values: CustomerSheetFormValues) => {
     try {
       if (entrypoint === "customers") {
+        const membershipPayload = buildBasicMembershipPayload(
+          values,
+          membershipPricing?.suggestedCycles,
+        );
+
         if (isEditing && customer?.id) {
           const payload = buildPhaseAUpdatePayload(values, customer);
 
-          if (!payload) {
+          if (!payload && (!membershipPayload || isSameBasicMembership(localMembership, membershipPayload))) {
             toast.info("No hay cambios básicos para guardar.");
             return;
           }
 
-          await updateCustomerMutation({ id: customer.id, data: payload });
+          if (payload) {
+            await updateCustomerMutation({ id: customer.id, data: payload });
+          }
+
+          if (membershipPayload && !isSameBasicMembership(localMembership, membershipPayload)) {
+            if (localMembership) {
+              await renewMembershipForCustomer(customer.id, membershipPayload);
+            } else {
+              await createMembershipForCustomer(customer.id, membershipPayload);
+            }
+            await queryClient.invalidateQueries({ queryKey: ["memberships", "membership", customer.id] });
+            await queryClient.invalidateQueries({ queryKey: ["customers", "detail", customer.id] });
+            await queryClient.invalidateQueries({ queryKey: ["customers", "list"] });
+            router.refresh();
+          }
         } else {
-          await createCustomerMutation(buildPhaseACreatePayload(values));
+          const payload = buildPhaseACreatePayload(values);
+          if (membershipPayload) payload.membership = membershipPayload;
+          await createCustomerMutation(payload);
         }
 
         setOpen(false);
