@@ -47,6 +47,14 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
 
   const customer = customerQuery.data;
   const membership = customer.current_membership;
+  const accountStatus = customer.account.login_enabled ? "Acceso configurado" : "Acceso pendiente";
+  const credentialsStatus = customer.account.login_enabled
+    ? "Correo y contraseña configurados"
+    : customer.account.email && !customer.account.has_password
+      ? "Tiene correo y no tiene contraseña"
+      : !customer.account.email
+        ? "No tiene correo configurado"
+        : "Contraseña registrada; acceso pendiente";
   const initials = customer.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -97,9 +105,9 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
         <Card>
           <CardHeader><CardTitle>Cuenta</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="Correo de acceso" value={customer.account.email ?? "Sin correo"} />
-            <Row label="Contraseña configurada" value={customer.account.has_password ? "Sí" : "No"} />
-            <Row label="Inicio de sesión" value={customer.account.login_enabled ? "Habilitado" : "Deshabilitado"} />
+            <Row label="Correo de acceso" value={customer.account.email ?? "Sin correo configurado"} />
+            <Row label="Estado" value={accountStatus} />
+            <Row label="Credenciales" value={credentialsStatus} />
           </CardContent>
         </Card>
 
@@ -117,6 +125,7 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
           <CardHeader><CardTitle>Capacidades</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Capability enabled={customer.capabilities.update_customer} label="Editar cliente" />
+            <Capability enabled={customer.capabilities.manage_account} label="Administrar cuenta" />
             <Capability enabled={customer.capabilities.manage_membership} label="Gestionar membresía" />
             <Capability enabled={customer.capabilities.view_payments} label="Ver pagos" />
           </CardContent>

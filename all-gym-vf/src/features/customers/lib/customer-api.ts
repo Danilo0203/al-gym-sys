@@ -9,6 +9,7 @@ import {
   customerSidebarResponseSchema,
   parseCustomerApiResponse,
   updateCustomerInputSchema,
+  updateCustomerAccountInputSchema,
   updateCustomerStatusInputSchema,
   type CreateCustomerInput,
   type CustomerDetail,
@@ -16,6 +17,7 @@ import {
   type CustomerListResponse,
   type CustomerSidebarResponse,
   type UpdateCustomerInput,
+  type UpdateCustomerAccountInput,
 } from "./local-customers";
 
 async function fetchCustomersApi(pathname: string, init: RequestInit): Promise<Response> {
@@ -96,6 +98,19 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
 export async function updateCustomer(id: string, input: UpdateCustomerInput): Promise<CustomerDetail> {
   const payload = updateCustomerInputSchema.parse(input);
   const response = await fetchCustomersApi(`/api/customers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+  return parseCustomerApiResponse(response, (parsed) => customerDetailSchema.parse(parsed));
+}
+
+export async function updateCustomerAccount(
+  id: string,
+  input: UpdateCustomerAccountInput,
+): Promise<CustomerDetail> {
+  const payload = updateCustomerAccountInputSchema.parse(input);
+  const response = await fetchCustomersApi(`/api/customers/${id}/account`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

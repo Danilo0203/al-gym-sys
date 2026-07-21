@@ -44,7 +44,7 @@ import {
   PRIMARY_GOAL_OPTIONS,
   RESTRICTED_MOVEMENT_OPTIONS,
 } from "@/lib/training/options";
-import { CustomerData, calculateSubscriptionEndDate, useHookFormCustomerSheet } from "../hooks/use-hook-form-customers";
+import { CustomerData, calculateSubscriptionEndDate, useHookFormCustomerSheet, type CustomerSheetFormValues } from "../hooks/use-hook-form-customers";
 export type { CustomerData } from "../hooks/use-hook-form-customers";
 
 interface CustomerFormSheetProps {
@@ -54,6 +54,11 @@ interface CustomerFormSheetProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  legacySubmit?: (
+    customerId: string | null,
+    values: CustomerSheetFormValues,
+    context: { entrypoint: "cash"; suggestedBasePrice?: number },
+  ) => Promise<void>;
 }
 
 export function CustomerFormSheet({
@@ -63,6 +68,7 @@ export function CustomerFormSheet({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  legacySubmit,
 }: CustomerFormSheetProps) {
   const {
     open,
@@ -87,6 +93,7 @@ export function CustomerFormSheet({
     open: controlledOpen,
     onOpenChange: controlledOnOpenChange,
     entrypoint,
+    legacySubmit,
   });
 
   // Trigger por defecto para modo crear
@@ -146,7 +153,7 @@ export function CustomerFormSheet({
                   </span>
                   Cuenta
                 </h4>
-                <div className="grid grid-cols-2 gap-4 pl-4">
+                <div className="grid grid-cols-1 gap-4 pl-4 sm:grid-cols-2">
                   <FormInputGroup
                     control={form.control}
                     name="email"
@@ -160,11 +167,23 @@ export function CustomerFormSheet({
                     control={form.control}
                     name="password"
                     label={isEditing ? "Nueva Contraseña" : "Contraseña"}
-                    placeholder={isLocalCustomerForm ? "No se configura en el alta local" : isEditing ? "(Dejar vacío para no cambiar)" : "(Opcional)"}
+                    placeholder={isEditing ? "Usa la acción Editar cuenta" : isLocalCustomerForm ? "Opcional (8 a 128 caracteres)" : "Opcional"}
                     type="password"
-                    disabled={isLocalCustomerForm}
+                    disabled={isLocalCustomerForm && isEditing}
+                    autoComplete="new-password"
                     icon={<IconLock className="h-4 w-4" />}
                   />
+                  {isLocalCustomerForm && !isEditing ? (
+                    <FormInputGroup
+                      control={form.control}
+                      name="confirm_password"
+                      label="Confirmar contraseña"
+                      placeholder="Repite la contraseña"
+                      type="password"
+                      autoComplete="new-password"
+                      icon={<IconLock className="h-4 w-4" />}
+                    />
+                  ) : null}
                 </div>
               </div>
 

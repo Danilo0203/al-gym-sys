@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { RenewSubscriptionSheet } from "@/features/customers/components/renew-subscription-sheet";
+import { renewLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
 import {
   getCashCustomerSummary,
   searchCashCustomers,
@@ -347,6 +348,7 @@ export function CashCustomerPaymentDialog({
 
       {selectedCustomer ? (
         <RenewSubscriptionSheet
+          legacyRenewSubscription={renewLegacyCashCustomer}
           trigger={null}
           open={renewOpen}
           onOpenChange={setRenewOpen}

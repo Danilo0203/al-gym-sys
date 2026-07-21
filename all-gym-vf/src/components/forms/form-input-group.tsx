@@ -17,6 +17,7 @@ interface FormInputGroupProps<
   maxLength?: number;
   pattern?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  autoComplete?: React.InputHTMLAttributes<HTMLInputElement>['autoComplete'];
   icon?: React.ReactNode;
   iconPosition?: 'start' | 'end';
   addonText?: string;
@@ -40,6 +41,7 @@ function FormInputGroup<
   maxLength,
   pattern,
   inputMode,
+  autoComplete,
   disabled,
   className,
   icon,
@@ -76,6 +78,7 @@ function FormInputGroup<
               maxLength={maxLength}
               pattern={pattern}
               inputMode={inputMode}
+              autoComplete={autoComplete}
               disabled={disabled}
               aria-invalid={fieldState.invalid}
               {...field}

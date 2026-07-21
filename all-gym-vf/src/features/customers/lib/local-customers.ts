@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getAuthErrorMessage, parseJsonText } from "@/lib/auth/contracts";
+import { parseJsonText } from "@/lib/auth/contracts";
 
 export const customerGenderSchema = z.enum(["male", "female", "other"]);
 export const customerListSortSchema = z.enum([
@@ -60,13 +60,14 @@ export const customerDetailSchema = customerListItemSchema.extend({
     email: z.string().email().nullable(),
     has_password: z.boolean(),
     login_enabled: z.boolean(),
-  }),
+  }).strict(),
   capabilities: z.object({
     update_customer: z.boolean(),
+    manage_account: z.boolean(),
     manage_membership: z.boolean(),
     view_payments: z.boolean(),
-  }),
-});
+  }).strict(),
+}).strict();
 
 export const customerListResponseSchema = z.object({
   data: z.array(customerListItemSchema),
@@ -189,6 +190,7 @@ export const createCustomerInputSchema = z.object({
   birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gender: customerGenderSchema,
   email: z.string().trim().email().optional().or(z.literal("")),
+  password: z.string().min(8).max(128).optional(),
   injuries: z.string().trim().nullable().optional(),
   medical_notes: z.string().trim().nullable().optional(),
   membership: z.object({
@@ -196,7 +198,23 @@ export const createCustomerInputSchema = z.object({
     cycles: z.number().int().min(1),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }).strict().optional(),
-});
+}).strict().refine(
+  (value) => value.password === undefined || Boolean(value.email?.trim()),
+  {
+    message: "PASSWORD_REQUIRES_EMAIL",
+    path: ["password"],
+  },
+);
+
+export const updateCustomerAccountInputSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().max(320).email().optional(),
+    new_password: z.string().min(8).max(128).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "EMPTY_ACCOUNT_UPDATE",
+  });
 
 export const updateCustomerInputSchema = z
   .object({
@@ -221,6 +239,7 @@ export type CustomerListResponse = z.infer<typeof customerListResponseSchema>;
 export type CustomerSidebarResponse = z.infer<typeof customerSidebarResponseSchema>;
 export type CustomerHistoryResponse = z.infer<typeof customerHistoryResponseSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerInputSchema>;
+export type UpdateCustomerAccountInput = z.infer<typeof updateCustomerAccountInputSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerInputSchema>;
 export type UpdateCustomerStatusInput = z.infer<typeof updateCustomerStatusInputSchema>;
 export type CustomerListSort = z.infer<typeof customerListSortSchema>;
@@ -326,6 +345,13 @@ export function mapCustomerListQuery(params: {
   return searchParams;
 }
 
+const customerErrorResponseSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string().optional(),
+  }).passthrough(),
+}).passthrough();
+
 function getCustomerErrorMessage(status: number, responseText: string): string {
   if (!responseText.trim()) {
     if (status === 401) return "Tu sesión expiró. Vuelve a iniciar sesión.";
@@ -337,31 +363,32 @@ function getCustomerErrorMessage(status: number, responseText: string): string {
 
   try {
     const payload = parseJsonText(responseText, "Customers API");
-    const backendMessage = getAuthErrorMessage(payload);
-    if (backendMessage) {
-      return backendMessage;
-    }
+    const parsedError = customerErrorResponseSchema.safeParse(payload);
+    const code = parsedError.success ? parsedError.data.error.code : null;
 
-    if (payload && typeof payload === "object") {
-      const maybeError = "error" in payload ? payload.error : null;
-      if (typeof maybeError === "string" && maybeError.trim()) {
-        return maybeError;
-      }
-      if (maybeError && typeof maybeError === "object" && "message" in maybeError && typeof maybeError.message === "string") {
-        return maybeError.message;
-      }
-      if ("message" in payload && typeof payload.message === "string" && payload.message.trim()) {
-        return payload.message;
-      }
+    switch (code) {
+      case "EMAIL_ALREADY_EXISTS":
+        return "El correo ya está utilizado por otra cuenta.";
+      case "PASSWORD_REQUIRES_EMAIL":
+        return "La contraseña requiere un correo configurado.";
+      case "VALIDATION_ERROR":
+        return "Revisa los datos ingresados.";
+      case "UNAUTHORIZED":
+      case "INVALID_SESSION":
+        return "Tu sesión expiró. Vuelve a iniciar sesión.";
+      case "FORBIDDEN":
+        return "No tienes autorización para administrar esta cuenta.";
+      case "CUSTOMER_NOT_FOUND":
+        return "Cliente no encontrado.";
     }
   } catch {
     return status >= 500 ? "No fue posible completar la operación." : "No fue posible procesar la respuesta del servidor.";
   }
 
   if (status === 401) return "Tu sesión expiró. Vuelve a iniciar sesión.";
-  if (status === 403) return "No tienes permisos para gestionar clientes.";
+  if (status === 403) return "No tienes autorización para administrar esta cuenta.";
   if (status === 404) return "Cliente no encontrado.";
-  if (status === 409) return "Ya existe un cliente o usuario con ese correo.";
+  if (status === 409) return "El correo ya está utilizado por otra cuenta.";
   if (status >= 500) return "No fue posible completar la operación.";
 
   return "No fue posible completar la operación.";
