@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   IconActivity,
   IconArrowLeft,
+  IconBarbell,
   IconCalendarStats,
   IconChartLine,
   IconCoin,
@@ -18,14 +19,32 @@ import {
   IconScale,
   IconTrendingDown,
   IconTrendingUp,
+  IconUserCheck,
+  IconUserOff,
 } from "@tabler/icons-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AlertModal } from "@/components/modal/alert-modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CustomerStatusActionSummary } from "@/features/customers/components/customer-status-action-summary";
+import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customers";
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
+import { AccessHistoryTab } from "./tabs/access-history-tab";
+import { BodyAssessmentTab } from "./tabs/body-assessment-tab";
+import { PaymentHistoryTab } from "./tabs/payment-history-tab";
+import { SubscriptionHistoryTab } from "./tabs/subscription-history-tab";
 import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface CustomerHistoryClientProps {
   profile: CustomerDetail;
@@ -39,7 +58,7 @@ interface CustomerHistoryClientProps {
   isRefreshing: boolean;
 }
 
-const sectionIds = ["overview", "profile", "memberships", "payments", "attendance", "assessments"] as const;
+const sectionIds = ["overview", "routine", "memberships", "payments", "attendance", "assessments"] as const;
 
 const dateTimeFormatter = new Intl.DateTimeFormat("es-GT", {
   timeZone: "America/Guatemala",
@@ -90,10 +109,24 @@ export function CustomerHistoryClient({
   isRefreshing,
 }: CustomerHistoryClientProps) {
   const [activeSection, setActiveSection] = useState<(typeof sectionIds)[number]>("overview");
+  const [statusOpen, setStatusOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const statusMutation = useUpdateCustomerStatus();
   const initials = profile.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const membership = profile.current_membership;
   const membershipMeta = membershipHeaderMeta(profile.membership_status);
+  const memberSince = history.kpis.member_since
+    ? formatDistanceToNow(new Date(history.kpis.member_since), { addSuffix: true, locale: es })
+    : "sin fecha registrada";
+  const canUpdateCustomer = profile.capabilities.update_customer;
+
+  const handleStatusChange = async () => {
+    try {
+      await statusMutation.mutateAsync({ id: profile.id, isActive: !profile.is_active });
+    } finally {
+      setStatusOpen(false);
+    }
+  };
 
   useEffect(() => {
     const breadcrumbPage = document.querySelector<HTMLElement>("[data-slot='breadcrumb-page']");
@@ -138,6 +171,24 @@ export function CustomerHistoryClient({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background/50">
+      <AlertModal
+        isOpen={statusOpen}
+        onClose={() => setStatusOpen(false)}
+        onConfirm={handleStatusChange}
+        loading={statusMutation.isPending}
+        title={profile.is_active ? "¿Suspender cliente?" : "¿Reactivar cliente?"}
+        description={
+          <CustomerStatusActionSummary
+            customerName={profile.full_name}
+            isActive={profile.is_active}
+            phone={profile.phone}
+          />
+        }
+        confirmText={profile.is_active ? "Suspender" : "Reactivar"}
+        confirmVariant={profile.is_active ? "destructive" : "default"}
+        contentClassName="sm:max-w-2xl"
+      />
+
       <header className="z-10 shrink-0 border-b bg-gradient-to-b from-background via-background to-muted/20 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col gap-4 p-4 sm:p-5 lg:p-6">
           <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -181,13 +232,13 @@ export function CustomerHistoryClient({
                   </div>
                   <HeaderInlineMeta
                     icon={<IconCalendarStats />}
-                    label={`Último ingreso: ${formatDateTime(profile.last_check_in)}`}
+                    label={`Miembro ${memberSince}`}
                   />
                 </div>
               </div>
             </div>
 
-            <div className="flex w-full shrink-0 items-center gap-2 xl:w-auto xl:justify-end">
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
               {isRefreshing ? <span className="text-xs text-muted-foreground">Actualizando…</span> : null}
               <Link href="/panel/clientes" className="flex-1 sm:flex-none">
                 <Button
@@ -199,17 +250,57 @@ export function CustomerHistoryClient({
                   Regresar
                 </Button>
               </Link>
+              {canUpdateCustomer ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      data-testid="customer-actions-menu"
+                      size="sm"
+                      className="h-8 flex-1 gap-2 px-3 text-[10px] font-bold uppercase tracking-tighter shadow-lg shadow-primary/20 sm:flex-none"
+                    >
+                      <IconActivity className="h-3.5 w-3.5" />
+                      Acciones
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 p-2">
+                    <DropdownMenuLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Gestión de Cliente
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className={cn(
+                        "cursor-pointer gap-2 py-2",
+                        profile.is_active
+                          ? "text-amber-500 focus:bg-amber-500/10 focus:text-amber-600"
+                          : "text-emerald-500 focus:bg-emerald-500/10 focus:text-emerald-600",
+                      )}
+                      onClick={() => setStatusOpen(true)}
+                      disabled={statusMutation.isPending}
+                    >
+                      {profile.is_active ? <IconUserOff className="h-4 w-4" /> : <IconUserCheck className="h-4 w-4" />}
+                      <span className="text-xs font-medium">
+                        {profile.is_active ? "Suspender Cliente" : "Reactivar Cliente"}
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button size="sm" disabled className="h-8 flex-1 gap-2 px-3 text-[10px] font-bold uppercase tracking-tighter sm:flex-none" title="Sin acciones disponibles para tus permisos">
+                  <IconActivity className="h-3.5 w-3.5" />
+                  Acciones
+                </Button>
+              )}
             </div>
           </div>
         </div>
 
         <nav className="flex max-w-full items-center gap-1 overflow-x-auto px-4 pb-0 sm:px-5 lg:px-6" aria-label="Secciones del historial">
           <NavTab active={activeSection === "overview"} onClick={() => scrollToSection("overview")} label="Resumen" icon={<IconChartLine />} />
-          <NavTab active={activeSection === "profile"} onClick={() => scrollToSection("profile")} label="Perfil" icon={<IconActivity />} />
+          <NavTab active={activeSection === "routine"} onClick={() => scrollToSection("routine")} label="Rutina" icon={<IconBarbell />} />
           <NavTab active={activeSection === "memberships"} onClick={() => scrollToSection("memberships")} label="Membresías" icon={<IconFileCertificate />} />
           {history.payments ? <NavTab active={activeSection === "payments"} onClick={() => scrollToSection("payments")} label="Finanzas" icon={<IconCoin />} /> : null}
           <NavTab active={activeSection === "attendance"} onClick={() => scrollToSection("attendance")} label="Accesos" icon={<IconRun />} />
-          <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evaluaciones" icon={<IconScale />} />
+          <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evolution" icon={<IconScale />} />
         </nav>
       </header>
 
@@ -219,7 +310,7 @@ export function CustomerHistoryClient({
         data-testid="customer-history-scroll-panel"
       >
         <div className="mx-auto w-full min-w-0 max-w-7xl space-y-16 px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10">
-          <section id="overview" className="min-w-0 scroll-mt-4">
+          <section id="overview" className="min-w-0 scroll-mt-4 space-y-8">
             <div className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard title="Total Gastado (LTV)" value={money(history.kpis.total_spent)} icon={<IconCoin />} description="Valor acumulado histórico" trend="Finanzas" variant="emerald" />
               <KpiCard title="Total de Visitas" value={String(history.kpis.total_visits)} icon={<IconCalendarStats />} description="Ingresos registrados" trend="Actividad" variant="blue" />
@@ -233,10 +324,6 @@ export function CustomerHistoryClient({
                 variant={history.kpis.weight_change && history.kpis.weight_change > 0 ? "orange" : "emerald"}
               />
             </div>
-          </section>
-
-          <section id="profile" className="min-w-0 scroll-mt-4 space-y-6">
-            <SectionHeader icon={<IconActivity />} title="Perfil y cuenta" />
             <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
               <OverviewCard title="Perfil y cuenta" icon={<IconActivity />}>
                 <Row label="Correo" value={profile.account.email ?? "Sin correo"} />
@@ -244,6 +331,7 @@ export function CustomerHistoryClient({
                 <Row label="Cuenta" value={profile.account.login_enabled ? "Acceso habilitado" : "Acceso deshabilitado"} />
                 <Row label="Credenciales" value={profile.account.has_password ? "Configuradas" : "No configuradas"} />
                 <Row label="Miembro desde" value={formatCalendarDate(history.kpis.member_since)} />
+                <Row label="Último ingreso" value={formatDateTime(profile.last_check_in)} />
               </OverviewCard>
               <OverviewCard title="Membresía actual" icon={<IconFileCertificate />}>
                 <Row label="Plan" value={membership?.plan_name ?? "Sin plan"} />
@@ -255,49 +343,56 @@ export function CustomerHistoryClient({
             </div>
           </section>
 
+          <section id="routine" className="min-w-0 scroll-mt-4 space-y-6">
+            <SectionHeader icon={<IconBarbell />} title="Rutina Personalizada" />
+            <Card className="min-w-0 overflow-hidden border-dashed border-primary/20 bg-card/60 shadow-sm">
+              <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+                <div className="rounded-2xl bg-primary/10 p-4 text-primary">
+                  <IconBarbell className="h-10 w-10" />
+                </div>
+                <div className="max-w-lg space-y-2">
+                  <h3 className="text-lg font-black tracking-tight">Rutina local pendiente de integración</h3>
+                  <p className="text-sm text-muted-foreground">
+                    La lectura de Rutinas todavía no forma parte de este contrato local. Esta sección permanece visible para conservar la navegación de Clientes.
+                  </p>
+                </div>
+                <Badge variant="outline" className="border-primary/10 bg-muted/30 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  No disponible en esta fase
+                </Badge>
+              </CardContent>
+            </Card>
+          </section>
+
           <section id="memberships" className="min-w-0 scroll-mt-4 space-y-6">
             <SectionHeader icon={<IconFileCertificate />} title="Membresías y Planes" />
-            <HistoryCard title="Historial de membresías" description="Seguimiento de planes y períodos de vigencia">
-              <MembershipsTable history={history} />
-            </HistoryCard>
+            <SubscriptionHistoryTab subscriptionHistory={history.memberships.data} />
             <Pagination meta={history.memberships.meta} page={membershipsPage} onChange={onMembershipsPageChange} />
           </section>
 
           {history.payments ? (
             <section id="payments" className="min-w-0 scroll-mt-4 space-y-6">
               <SectionHeader icon={<IconCreditCard />} title="Historial Financiero" />
-              <HistoryCard title="Pagos publicados" description="Transacciones disponibles según tus permisos">
-                <PaymentsTable history={history} />
-              </HistoryCard>
+              <PaymentHistoryTab
+                paymentHistory={history.payments.data}
+                totalPayments={history.payments.meta.total}
+                totalPaid={history.kpis.total_spent}
+              />
               <Pagination meta={history.payments.meta} page={paymentsPage} onChange={onPaymentsPageChange} />
             </section>
           ) : null}
 
           <section id="attendance" className="min-w-0 scroll-mt-4 space-y-6">
             <SectionHeader icon={<IconRun />} title="Control de Asistencia" />
-            <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-              <Card className="min-w-0 overflow-hidden border-primary/10 bg-card/80 shadow-sm">
-                <CardHeader className="border-b border-primary/5 bg-muted/30">
-                  <CardTitle className="text-base">Últimos ingresos ({history.attendance.data.length}/{history.attendance.total})</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 p-5">
-                  {history.attendance.data.length === 0 ? <Empty label="Sin asistencias" /> : history.attendance.data.map((entry) => (
-                    <div key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b py-2 last:border-0">
-                      <span className="min-w-0 text-sm">{formatDateTime(entry.check_in_time)}</span>
-                      <Badge variant={entry.status === "authorized" ? "success" : "destructive"}>{entry.status === "authorized" ? "Autorizado" : "Denegado"}</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-              <Heatmap history={history} />
-            </div>
+            <AccessHistoryTab
+              accessHistory={history.attendance.data}
+              heatmapData={Object.fromEntries(history.heatmap.data.map((entry) => [entry.date, entry.count]))}
+            />
           </section>
 
           <section id="assessments" className="min-w-0 scroll-mt-4 space-y-6">
-            <SectionHeader icon={<IconScale />} title="Progreso Somatométrico" />
-            <HistoryCard title="Evaluaciones" description="Historial de mediciones existentes">
-              <AssessmentsTable history={history} />
-            </HistoryCard>
+            <SectionHeader icon={<IconActivity />} title="Progreso Somatométrico" />
+            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Datos físicos</h4>
+            <BodyAssessmentTab bodyAssessments={history.assessments.data} />
             <Pagination meta={history.assessments.meta} page={assessmentsPage} onChange={onAssessmentsPageChange} />
           </section>
         </div>
@@ -342,44 +437,8 @@ function OverviewCard({ title, icon, children }: { title: string; icon: React.Re
   return <Card className="min-w-0 overflow-hidden border-primary/10 bg-card/80 shadow-sm"><CardHeader className="border-b border-primary/5 bg-muted/30"><CardTitle className="flex items-center gap-3 text-base"><span className="rounded-lg bg-primary/10 p-2 text-primary [&>svg]:h-4 [&>svg]:w-4">{icon}</span>{title}</CardTitle></CardHeader><CardContent className="space-y-1 p-5 text-sm">{children}</CardContent></Card>;
 }
 
-function HistoryCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <Card className="min-w-0 overflow-hidden border-primary/10 bg-card/80 shadow-sm"><CardHeader className="border-b border-primary/5 bg-muted/30"><CardTitle>{title}</CardTitle><p className="text-sm text-muted-foreground">{description}</p></CardHeader><CardContent className="min-w-0 p-0"><div className="w-full min-w-0 overflow-x-auto">{children}</div></CardContent></Card>;
-}
-
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex min-w-0 flex-col justify-between gap-1 border-b py-2 last:border-0 sm:flex-row sm:gap-4"><span className="text-muted-foreground">{label}</span><span className="min-w-0 break-words font-medium sm:text-right">{value}</span></div>;
-}
-
-function Empty({ label }: { label: string }) {
-  return <p className="min-w-[240px] py-12 text-center text-sm text-muted-foreground">{label}</p>;
-}
-
-function MembershipsTable({ history }: { history: CustomerHistoryResponse }) {
-  if (history.memberships.data.length === 0) return <Empty label="Sin membresías" />;
-  return <Table className="min-w-[720px]"><TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Vigencia</TableHead><TableHead>Acceso hasta</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Importe</TableHead></TableRow></TableHeader><TableBody>{history.memberships.data.map((entry) => <TableRow key={entry.id}><TableCell className="font-medium">{entry.plan_name ?? `Plan #${entry.plan_id}`}</TableCell><TableCell className="whitespace-nowrap">{formatCalendarDate(entry.start_date)} – {formatCalendarDate(entry.end_date)}</TableCell><TableCell className="whitespace-nowrap">{formatCalendarDate(entry.access_until)}</TableCell><TableCell><Badge variant="outline">{entry.status}</Badge></TableCell><TableCell className="whitespace-nowrap text-right font-medium">{money(entry.price - entry.discount_amount)}</TableCell></TableRow>)}</TableBody></Table>;
-}
-
-function PaymentsTable({ history }: { history: CustomerHistoryResponse }) {
-  if (!history.payments || history.payments.data.length === 0) return <Empty label="Sin pagos publicados" />;
-  return <Table className="min-w-[820px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Plan</TableHead><TableHead>Método</TableHead><TableHead className="text-right">Original</TableHead><TableHead className="text-right">Descuento</TableHead><TableHead className="text-right">Pagado</TableHead></TableRow></TableHeader><TableBody>{history.payments.data.map((entry) => <TableRow key={entry.id}><TableCell className="whitespace-nowrap">{formatDateTime(entry.payment_date)}</TableCell><TableCell>{entry.plan_name ?? "Sin plan relacionado"}</TableCell><TableCell>{entry.method ?? "Sin método"}</TableCell><TableCell className="whitespace-nowrap text-right">{money(entry.amount_original)}</TableCell><TableCell className="whitespace-nowrap text-right">{money(entry.discount_amount)}</TableCell><TableCell className="whitespace-nowrap text-right font-black text-emerald-600">{money(entry.amount_paid)}</TableCell></TableRow>)}</TableBody></Table>;
-}
-
-function AssessmentsTable({ history }: { history: CustomerHistoryResponse }) {
-  if (history.assessments.data.length === 0) return <Empty label="Sin evaluaciones" />;
-  return <Table className="min-w-[760px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Peso</TableHead><TableHead>Estatura</TableHead><TableHead>Grasa</TableHead><TableHead>Músculo</TableHead><TableHead>Cintura</TableHead></TableRow></TableHeader><TableBody>{history.assessments.data.map((entry) => <TableRow key={entry.id}><TableCell className="whitespace-nowrap">{formatCalendarDate(entry.assessment_date)}</TableCell><TableCell>{entry.weight_kg ?? "—"} kg</TableCell><TableCell>{entry.height_cm ?? "—"} cm</TableCell><TableCell>{entry.body_fat_percentage ?? "—"}%</TableCell><TableCell>{entry.muscle_mass_kg ?? "—"} kg</TableCell><TableCell>{entry.waist ?? "—"} cm</TableCell></TableRow>)}</TableBody></Table>;
-}
-
-function Heatmap({ history }: { history: CustomerHistoryResponse }) {
-  const counts = new Map(history.heatmap.data.map((entry) => [entry.date, entry.count]));
-  const start = new Date(`${history.heatmap.from}T12:00:00`);
-  const days = Array.from({ length: history.heatmap.days }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    return { key, count: counts.get(key) ?? 0 };
-  });
-
-  return <Card className="min-w-0 overflow-hidden border-primary/10 bg-card/80 shadow-sm"><CardHeader className="border-b border-primary/5 bg-muted/30"><CardTitle className="text-base">Mapa de actividad</CardTitle><p className="text-xs text-muted-foreground">Zona horaria: {history.heatmap.timezone}</p></CardHeader><CardContent className="min-w-0 p-5"><div className="w-full min-w-0 overflow-x-auto pb-2"><div className="grid w-max grid-flow-col grid-rows-7 gap-1" aria-label={`Asistencias del ${history.heatmap.from} al ${history.heatmap.to}`}>{days.map(({ key, count }) => <span key={key} title={`${key}: ${count}`} className={cn("h-3 w-3 rounded-sm", count === 0 ? "bg-muted" : count === 1 ? "bg-emerald-300" : count <= 3 ? "bg-emerald-500" : "bg-emerald-700")} />)}</div></div><p className="mt-3 text-xs text-muted-foreground">{formatCalendarDate(history.heatmap.from)} – {formatCalendarDate(history.heatmap.to)} · fechas locales de Guatemala</p></CardContent></Card>;
 }
 
 function Pagination({ meta, page, onChange }: { meta: { total: number; total_pages: number }; page: number; onChange: (page: number) => void }) {

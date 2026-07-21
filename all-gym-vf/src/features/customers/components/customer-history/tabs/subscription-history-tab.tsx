@@ -13,58 +13,24 @@ import {
   IconPremiumRights,
   IconDiscount2,
 } from "@tabler/icons-react";
-import type { SubscriptionEntry } from "../../../actions/customer-history-actions";
+import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import { cn } from "@/lib/utils";
-import { RenewSubscriptionSheet } from "../../renew-subscription-sheet";
-import type { TrainingProfileRecord } from "@/lib/training/types";
 
 interface SubscriptionHistoryTabProps {
-  subscriptionHistory: SubscriptionEntry[];
-  customerId: string;
-  customerName: string;
-  customerGender?: "male" | "female" | "other" | null;
-  customerBirthDate?: string | null;
-  lastAssessment?: {
-    weight_kg: number;
-    height_cm: number;
-    body_type: string;
-    diet_type?: string;
-    activity_level?: string;
-    body_fat_percentage?: number | null;
-    muscle_mass?: number | null;
-    chest_cm?: number | null;
-    waist_cm?: number | null;
-    hip_cm?: number | null;
-    arm_right_cm?: number | null;
-    arm_left_cm?: number | null;
-    leg_right_cm?: number | null;
-    leg_left_cm?: number | null;
-    injuries?: string;
-  } | null;
-  trainingProfile?: TrainingProfileRecord | null;
+  subscriptionHistory: CustomerHistoryResponse["memberships"]["data"];
 }
 
-export function SubscriptionHistoryTab({
-  subscriptionHistory,
-  customerId,
-  customerName,
-  customerGender,
-  customerBirthDate,
-  lastAssessment,
-  trainingProfile,
-}: SubscriptionHistoryTabProps) {
+export function SubscriptionHistoryTab({ subscriptionHistory }: SubscriptionHistoryTabProps) {
   const statusConfig: Record<string, { label: string; style: string }> = {
     active: { label: "Activa", style: "bg-green-500/10 text-green-600 border-green-500/20" },
     expired: { label: "Vencida", style: "bg-muted text-muted-foreground border-muted-foreground/20" },
     cancelled: { label: "Cancelada", style: "bg-red-500/10 text-red-600 border-red-500/20" },
   };
-  const previousSubscription = subscriptionHistory.find((subscription) => subscription.status === "active") ?? subscriptionHistory[0] ?? null;
-
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <Card className="border-primary/10 shadow-sm overflow-hidden backdrop-blur-sm bg-card/80">
         <CardHeader className="bg-muted/30 border-b border-primary/5 py-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
                 <IconTimeline className="h-5 w-5 text-primary" />
@@ -74,16 +40,9 @@ export function SubscriptionHistoryTab({
                 <CardDescription>Seguimiento de planes y membresías activadas</CardDescription>
               </div>
             </div>
-            <RenewSubscriptionSheet
-              customerId={customerId}
-              customerName={customerName}
-              customerGender={customerGender}
-              customerBirthDate={customerBirthDate}
-              previousSubscriptionStartDate={previousSubscription?.start_date ?? null}
-              previousSubscriptionEndDate={previousSubscription?.end_date ?? null}
-              lastAssessment={lastAssessment}
-              trainingProfile={trainingProfile}
-            />
+            <Badge variant="outline" className="border-primary/10 bg-background/70 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Solo lectura
+            </Badge>
           </div>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">

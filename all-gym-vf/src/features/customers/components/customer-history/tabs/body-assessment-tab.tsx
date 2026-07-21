@@ -15,16 +15,23 @@ import {
   IconFlame,
   IconClipboardHeart,
 } from "@tabler/icons-react";
-import type { BodyAssessmentEntry } from "../../../actions/customer-history-actions";
+import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import { WeightChart } from "./weight-chart";
 import { cn } from "@/lib/utils";
 import { kilogramsToPounds } from "@/lib/fitness/measurements";
 
 interface BodyAssessmentTabProps {
-  bodyAssessments: BodyAssessmentEntry[];
+  bodyAssessments: CustomerHistoryResponse["assessments"]["data"];
 }
 
-export function BodyAssessmentTab({ bodyAssessments }: BodyAssessmentTabProps) {
+export function BodyAssessmentTab({ bodyAssessments: localAssessments }: BodyAssessmentTabProps) {
+  const bodyAssessments = localAssessments.map((assessment) => ({
+    ...assessment,
+    muscle_mass: assessment.muscle_mass_kg,
+    chest_cm: assessment.chest,
+    waist_cm: assessment.waist,
+    arm_cm: assessment.arm_right,
+  }));
   const bodyTypeLabels: Record<string, string> = {
     ectomorph: "Ectomorfo",
     mesomorph: "Mesomorfo",
