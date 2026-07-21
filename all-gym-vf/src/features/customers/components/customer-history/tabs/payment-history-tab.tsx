@@ -13,7 +13,7 @@ import {
   IconArrowsExchange,
   IconTag,
 } from "@tabler/icons-react";
-import type { PaymentEntry } from "../../../actions/customer-history-actions";
+import type { PaymentEntry } from "../../../lib/local-customer-history";
 import { cn } from "@/lib/utils";
 
 interface PaymentHistoryTabProps {

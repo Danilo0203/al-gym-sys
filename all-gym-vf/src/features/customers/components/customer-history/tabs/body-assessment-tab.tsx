@@ -15,7 +15,7 @@ import {
   IconFlame,
   IconClipboardHeart,
 } from "@tabler/icons-react";
-import type { BodyAssessmentEntry } from "../../../actions/customer-history-actions";
+import type { BodyAssessmentEntry } from "../../../lib/local-customer-history";
 import { WeightChart } from "./weight-chart";
 import { cn } from "@/lib/utils";
 import { kilogramsToPounds } from "@/lib/fitness/measurements";

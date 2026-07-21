@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { IconCalendarStats, IconHistory, IconCheck, IconX } from "@tabler/icons-react";
-import type { AccessLogEntry } from "../../../actions/customer-history-actions";
+import type { AccessLogEntry } from "../../../lib/local-customer-history";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 

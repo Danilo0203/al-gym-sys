@@ -14,7 +14,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { BodyAssessmentEntry } from "../../../actions/customer-history-actions";
+import type { BodyAssessmentEntry } from "../../../lib/local-customer-history";
 import { kilogramsToPounds } from "@/lib/fitness/measurements";
 
 export const description = "Gráfico interactivo de peso";

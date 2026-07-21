@@ -30,15 +30,16 @@ import type {
   RoutineReplacementContext,
 } from "@/lib/training/types";
 import {
-  approveRoutineDraft,
   generateRoutineProposal,
   getRoutineExerciseReplacementOptions,
   importExerciseFromProvider,
-  replaceRoutineExercise,
   searchExerciseCatalog,
   searchExerciseProvider,
-  updateRoutineDetail,
 } from "@/features/customers/actions/customer-routine-actions";
+import {
+  updateCustomerRoutine,
+  updateRoutineDetail,
+} from "@/features/customers/lib/customer-routine-api";
 import {
   buildEditorState,
   getRoutineDayCount,
@@ -121,11 +122,11 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
 
   const handleSaveDetail = async (detailId: number) => {
     const editor = editors[detailId];
-    if (!editor) return;
+    if (!editor || !workspace.draftRoutine) return;
 
     try {
       setBusyDetailId(detailId);
-      await updateRoutineDetail(detailId, {
+      await updateRoutineDetail(customerId, workspace.draftRoutine.id, detailId, {
         sets: toNullableInt(editor.sets),
         reps: editor.reps.trim() || null,
         rest_seconds: toNullableInt(editor.rest_seconds),
@@ -147,7 +148,10 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
 
     try {
       setIsApproving(true);
-      await approveRoutineDraft(workspace.draftRoutine.id);
+      await updateCustomerRoutine(customerId, workspace.draftRoutine.id, {
+        status: "active",
+        source: "admin",
+      });
       toast.success("Rutina aprobada y activada.");
       router.push(`/panel/clientes/${customerId}/rutina/activa`);
       router.refresh();
@@ -271,11 +275,13 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
   };
 
   const handleReplaceWithLocal = async (exerciseId: number) => {
-    if (!replaceTarget) return;
+    if (!replaceTarget || !workspace.draftRoutine) return;
 
     try {
       setBusyDetailId(replaceTarget.id);
-      await replaceRoutineExercise(replaceTarget.id, exerciseId);
+      await updateRoutineDetail(customerId, workspace.draftRoutine.id, replaceTarget.id, {
+        exercise_id: exerciseId,
+      });
       toast.success("Ejercicio reemplazado en el borrador.");
       closeReplaceDialog();
       router.refresh();
@@ -287,12 +293,14 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
   };
 
   const handleReplaceWithProvider = async (exercise: ProviderExerciseSummary) => {
-    if (!replaceTarget) return;
+    if (!replaceTarget || !workspace.draftRoutine) return;
 
     try {
       setIsImportingProvider(true);
       const imported = await importExerciseFromProvider(exercise as unknown as Record<string, unknown>);
-      await replaceRoutineExercise(replaceTarget.id, imported.data.id);
+      await updateRoutineDetail(customerId, workspace.draftRoutine.id, replaceTarget.id, {
+        exercise_id: imported.data.id,
+      });
       toast.success("Ejercicio importado desde ExerciseDB y asignado.");
       closeReplaceDialog();
       router.refresh();

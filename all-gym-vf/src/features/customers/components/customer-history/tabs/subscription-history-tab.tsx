@@ -13,7 +13,7 @@ import {
   IconPremiumRights,
   IconDiscount2,
 } from "@tabler/icons-react";
-import type { SubscriptionEntry } from "../../../actions/customer-history-actions";
+import type { SubscriptionEntry } from "../../../lib/local-customer-history";
 import { cn } from "@/lib/utils";
 import { RenewSubscriptionSheet } from "../../renew-subscription-sheet";
 import type { TrainingProfileRecord } from "@/lib/training/types";

@@ -20,7 +20,6 @@ import {
   IconActivity,
   IconChartLine,
   IconEdit,
-  IconTrash,
   IconUserOff,
   IconUserCheck,
   IconMail,
@@ -38,7 +37,7 @@ import type {
   PaymentEntry,
   SubscriptionEntry,
   BodyAssessmentEntry,
-} from "../../actions/customer-history-actions";
+} from "../../lib/local-customer-history";
 
 // Import sub-components
 import {
@@ -65,9 +64,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
-import {
-  permanentlyDeleteCustomer,
-} from "@/features/customers/actions/customer-actions";
 import { useCustomer } from "@/features/customers/hooks/use-customers";
 import type { TrainingProfileRecord } from "@/lib/training/types";
 import { updateCustomerStatus } from "@/features/customers/lib/customer-api";
@@ -147,14 +143,11 @@ export function CustomerHistoryClient({
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [isDeactivating, setIsDeactivating] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
   const isScrollingRef = useRef(false);
   const { data: customerDetails } = useCustomer(editOpen ? profile.id : null);
   const { data: currentUser } = useCurrentUser();
   const canUpdateCustomer = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("customers.update"));
-  const canPermanentlyDeleteCustomer = Boolean(currentUser?.isOwner || currentUser?.role === "admin");
 
   // ScrollSpy Implementation
   useEffect(() => {
@@ -334,28 +327,6 @@ export function CustomerHistoryClient({
     }
   };
 
-  const handlePermanentDeleteCustomer = async () => {
-    if (isDeleting) return;
-
-    try {
-      setIsDeleting(true);
-      const result = await permanentlyDeleteCustomer(profile.id);
-      if (!result.success) {
-        toast.error(result.error || "No se pudo eliminar completamente el cliente");
-        return;
-      }
-
-      toast.success("Cliente eliminado del sistema. El reloj puede tardar unos segundos en reflejarlo.");
-      router.refresh();
-      router.push("/panel/clientes");
-    } catch {
-      toast.error("Error inesperado al eliminar completamente el cliente");
-    } finally {
-      setIsDeleting(false);
-      setDeleteOpen(false);
-    }
-  };
-
   const scrollToSection = (id: string) => {
     // Buscar específicamente el viewport dentro de nuestro contenedor de historial
     const container = document.getElementById("customer-content-scroll");
@@ -439,30 +410,6 @@ export function CustomerHistoryClient({
         confirmText={profile.is_active ? "Suspender" : "Reactivar"}
         confirmVariant={profile.is_active ? "destructive" : "default"}
         contentClassName="sm:max-w-2xl"
-      />
-
-      <AlertModal
-        isOpen={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={handlePermanentDeleteCustomer}
-        loading={isDeleting}
-        title="¿Eliminar cliente completamente?"
-        description={
-          <div className="space-y-2 mt-2">
-            <p>
-              El cliente <span className="font-semibold text-foreground">{profile.full_name}</span> se eliminará del
-              sistema y del reloj.
-            </p>
-            <p className="text-sm text-destructive">
-              Esta acción intenta borrar también sus huellas del dispositivo y no se puede deshacer.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              El reloj procesa la eliminación por cola ADMS, así que puede tardar unos segundos en desaparecer de la
-              pantalla del equipo.
-            </p>
-          </div>
-        }
-        confirmText="Eliminar completamente"
       />
 
       {/* Fixed Header Section */}
@@ -581,16 +528,6 @@ export function CustomerHistoryClient({
                     <span className="text-xs font-medium">
                       {profile.is_active ? "Desactivar Cliente" : "Reactivar Cliente"}
                     </span>
-                  </DropdownMenuItem>
-                  )}
-                  {canPermanentlyDeleteCustomer && (
-                  <DropdownMenuItem
-                    className="gap-2 py-2 cursor-pointer text-red-500 hover:text-red-600 hover:bg-red-500/10 focus:text-red-600 focus:bg-red-500/10"
-                    onClick={() => setDeleteOpen(true)}
-                    disabled={isDeleting}
-                  >
-                    <IconTrash className="h-4 w-4" />
-                    <span className="text-xs font-medium">Eliminar Completamente</span>
                   </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

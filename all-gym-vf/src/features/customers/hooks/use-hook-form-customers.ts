@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import * as z from "zod";
 import { addDays, addMonths, differenceInDays, endOfMonth } from "date-fns";
 import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
@@ -13,13 +14,17 @@ import { computeFitnessPlan } from "@/lib/fitness/excel-calculator";
 import { kilogramsToPounds, poundsToKilograms } from "@/lib/fitness/measurements";
 import type { ActivityLevel, BodyType, DietType } from "@/lib/fitness/types";
 import { combineSessionDuration, DEFAULT_EQUIPMENT_AVAILABLE, DEFAULT_TRAINING_LOCATION, splitSessionMinutes } from "@/lib/training/profile-defaults";
-import { usePlans } from "@/features/plans/hooks/use-plans";
-import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
+import { useLocalMembership, useLocalPlans } from "@/features/customers/hooks/use-local-memberships";
 import {
-  createCustomer as createLegacyCustomer,
-  renewSubscription,
-  type CreateCustomerData,
-  updateCustomer as updateLegacyCustomer,
+  createMembershipForCustomer,
+  renewMembershipForCustomer,
+  type Membership,
+  type MembershipWriteInput,
+} from "@/features/customers/lib/local-memberships";
+import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement, TrainingProfileInput, TrainingProfileStatus } from "@/lib/training/types";
+import type {
+  CreateCustomerData,
+  RenewSubscriptionData,
 } from "../actions/customer-actions";
 import { useCreateCustomer, useReactivateCustomer, useUpdateCustomer } from "./use-customers";
 import { isValidAuthEmail } from "@/lib/auth/identifiers";
@@ -421,6 +426,43 @@ function buildPhaseACreatePayload(values: CustomerSheetFormValues): CreateCustom
   };
 }
 
+function buildBasicMembershipPayload(
+  values: Pick<CustomerSheetFormValues, "plan_id" | "subscription_period">,
+  suggestedCycles?: number | null,
+): MembershipWriteInput | null {
+  if (!values.plan_id) {
+    return null;
+  }
+
+  const startDate = values.subscription_period?.from ?? new Date();
+  const startDateIso = toIsoDateString(startDate);
+
+  if (!isValidCalendarDateString(startDateIso)) {
+    throw new Error("La fecha de inicio de la membresía no es válida.");
+  }
+
+  return {
+    plan_id: Number(values.plan_id),
+    cycles: Math.max(1, suggestedCycles ?? 1),
+    start_date: startDateIso,
+  };
+}
+
+function isSameBasicMembership(
+  currentMembership: Membership | null | undefined,
+  targetMembership: MembershipWriteInput | null,
+) {
+  if (!currentMembership || !targetMembership) {
+    return false;
+  }
+
+  return (
+    currentMembership.plan_id === targetMembership.plan_id &&
+    currentMembership.cycles === targetMembership.cycles &&
+    currentMembership.start_date === targetMembership.start_date
+  );
+}
+
 function buildPhaseAUpdatePayload(
   values: CustomerSheetFormValues,
   customer: CustomerData,
@@ -579,18 +621,34 @@ export function useHookFormCustomerSheet({
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
 }: UseHookFormCustomerSheetParams) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [internalOpen, setInternalOpen] = useState(false);
   const previousDateStateRef = useRef<{ dateMode?: CustomerSheetFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
     dateMode: "automatic",
     planId: null,
     startTime: null,
   });
-  const { data: plans = [] } = usePlans(true);
+  const {
+    data: plans = [],
+    error: plansError,
+    isPending: arePlansPending,
+  } = useLocalPlans();
+  const {
+    data: localMembership,
+    error: membershipError,
+    isPending: isMembershipPending,
+  } = useLocalMembership(customer?.id);
   const { mutateAsync: createCustomerMutation, isPending: isCreating } = useCreateCustomer();
   const { mutateAsync: updateCustomerMutation, isPending: isUpdating } = useUpdateCustomer();
   const { mutateAsync: reactivateCustomerMutation } = useReactivateCustomer();
   const [isLegacySubmitting, setIsLegacySubmitting] = useState(false);
-  const isPending = isCreating || isUpdating || isLegacySubmitting;
+  const isPending =
+    isCreating ||
+    isUpdating ||
+    isLegacySubmitting ||
+    arePlansPending ||
+    (Boolean(customer?.id) && isMembershipPending);
   const isControlled = controlledOpen !== undefined;
   const requestedOpen = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange || setInternalOpen : setInternalOpen;
@@ -609,8 +667,8 @@ export function useHookFormCustomerSheet({
         gender: (customer.gender as "male" | "female" | "other") || "male",
         phone: customer.phone || "",
         birth_date: parseDatabaseDate(customer.birth_date) || new Date(),
-        plan_id: customer.plan_id?.toString() || "",
-        final_price: customer.final_price ?? undefined,
+        plan_id: localMembership?.plan_id.toString() || customer.plan_id?.toString() || "",
+        final_price: localMembership?.price ?? customer.final_price ?? undefined,
         discount_amount: customer.discount_amount ?? 0,
         grace_days: normalizeGraceDays(customer.subscription_grace_days),
         date_mode: "automatic",
@@ -709,7 +767,7 @@ export function useHookFormCustomerSheet({
         to: new Date(),
       },
     };
-  }, [isEditing, customer]);
+  }, [isEditing, customer, localMembership]);
 
   const form = useForm<CustomerSheetFormValues>({
     resolver: zodResolver(customerSheetSchema) as Resolver<CustomerSheetFormValues>,
@@ -919,17 +977,50 @@ export function useHookFormCustomerSheet({
   const onSubmit = async (values: CustomerSheetFormValues) => {
     try {
       if (entrypoint === "customers") {
+        if (plansError || membershipError) {
+          throw new Error("No se pudo cargar el estado local de planes y membresías.");
+        }
+
+        const membershipPayload = buildBasicMembershipPayload(
+          values,
+          membershipPricing?.suggestedCycles,
+        );
+
         if (isEditing && customer?.id) {
           const payload = buildPhaseAUpdatePayload(values, customer);
 
-          if (!payload) {
+          if (!payload && (!membershipPayload || isSameBasicMembership(localMembership, membershipPayload))) {
             toast.info("No hay cambios básicos para guardar.");
             return;
           }
 
-          await updateCustomerMutation({ id: customer.id, data: payload });
+          if (payload) {
+            await updateCustomerMutation({ id: customer.id, data: payload });
+          }
+
+          if (membershipPayload && !isSameBasicMembership(localMembership, membershipPayload)) {
+            if (localMembership) {
+              await renewMembershipForCustomer(customer.id, membershipPayload);
+              toast.success("Membresía renovada correctamente.");
+            } else {
+              await createMembershipForCustomer(customer.id, membershipPayload);
+              toast.success("Membresía asignada correctamente.");
+            }
+
+            await queryClient.invalidateQueries({ queryKey: ["memberships"] });
+            await queryClient.invalidateQueries({ queryKey: ["customers"] });
+            router.refresh();
+          }
         } else {
-          await createCustomerMutation(buildPhaseACreatePayload(values));
+          const createdCustomer = await createCustomerMutation(buildPhaseACreatePayload(values));
+
+          if (membershipPayload) {
+            await createMembershipForCustomer(createdCustomer.id, membershipPayload);
+            toast.success("Cliente y membresía guardados correctamente.");
+            await queryClient.invalidateQueries({ queryKey: ["memberships"] });
+            await queryClient.invalidateQueries({ queryKey: ["customers"] });
+            router.refresh();
+          }
         }
 
         setOpen(false);
@@ -995,6 +1086,10 @@ export function useHookFormCustomerSheet({
         body_type: values.body_type,
       };
 
+      const { createCustomer: createLegacyCustomer, updateCustomer: updateLegacyCustomer } = await import(
+        "../actions/customer-actions"
+      );
+
       if (isEditing && customer?.id) {
         await updateLegacyCustomer(customer.id, payload);
       } else {
@@ -1003,6 +1098,7 @@ export function useHookFormCustomerSheet({
       setOpen(false);
     } catch (error) {
       console.error("Submit error:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar el cliente.");
     } finally {
       setIsLegacySubmitting(false);
     }
@@ -1143,6 +1239,8 @@ export function useHookFormRenewSubscription({
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
 }: UseHookFormRenewSubscriptionParams) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   void _previousSubscriptionEndDate;
@@ -1154,7 +1252,7 @@ export function useHookFormRenewSubscription({
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange ?? setInternalOpen : setInternalOpen;
-  const { data: plans = [] } = usePlans(true);
+  const { data: plans = [], error: plansError } = useLocalPlans();
 
   const form = useForm<RenewSubscriptionFormValues>({
     resolver: zodResolver(renewSubscriptionSchema) as Resolver<RenewSubscriptionFormValues>,
@@ -1358,7 +1456,31 @@ export function useHookFormRenewSubscription({
   const onSubmit = async (values: RenewSubscriptionFormValues) => {
     try {
       setLoading(true);
-      const renewalPayload: Parameters<typeof renewSubscription>[1] = {
+
+      if (entrypoint === "customers") {
+        if (plansError) {
+          throw new Error("No se pudieron cargar los planes locales.");
+        }
+
+        const membershipPayload = buildBasicMembershipPayload(
+          values,
+          membershipPricing?.suggestedCycles,
+        );
+
+        if (!membershipPayload) {
+          throw new Error("Selecciona un plan para continuar.");
+        }
+
+        await renewMembershipForCustomer(customerId, membershipPayload);
+        await queryClient.invalidateQueries({ queryKey: ["memberships"] });
+        await queryClient.invalidateQueries({ queryKey: ["customers"] });
+        router.refresh();
+        toast.success("Membresía renovada correctamente.");
+        setOpen(false);
+        return;
+      }
+
+      const renewalPayload: RenewSubscriptionData = {
         origin: entrypoint,
         plan_id: Number(values.plan_id),
         start_date: values.subscription_period.from,
@@ -1428,6 +1550,7 @@ export function useHookFormRenewSubscription({
         if (hasMeaningfulText(medicalClearanceNotes)) renewalPayload.medical_clearance_notes = medicalClearanceNotes;
       }
 
+      const { renewSubscription } = await import("../actions/customer-actions");
       const result = await renewSubscription(customerId, renewalPayload);
 
       if (result.success) {
@@ -1448,7 +1571,7 @@ export function useHookFormRenewSubscription({
       }
     } catch (error) {
       console.error(error);
-      toast.error("Error inesperado");
+      toast.error(error instanceof Error ? error.message : "Error inesperado");
     } finally {
       setLoading(false);
     }

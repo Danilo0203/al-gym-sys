@@ -94,17 +94,6 @@ function buildZkUserDisableCommand(params: { biometricId: number | string }) {
   return `DATA DELETE userauthorize Pin=${params.biometricId}`;
 }
 
-function buildZkUserDeleteCommands(params: { biometricId: number | string }) {
-  const commands = [buildZkUserDisableCommand(params)];
-
-  for (let fingerId = 0; fingerId <= 9; fingerId += 1) {
-    commands.push(`DATA DELETE templatev10 Pin=${params.biometricId}\tFingerID=${fingerId}`);
-  }
-
-  commands.push(`DATA DELETE user Pin=${params.biometricId}`);
-  return commands;
-}
-
 function normalizeDeviceSyncMethod(value: unknown): DeviceSyncMethod {
   return value === "direct" || value === "queue" || value === "none" ? value : "none";
 }
@@ -881,13 +870,6 @@ async function syncCustomerWithGymSyncServer(params: {
 
 async function disableCustomerOnGymSyncServer(params: { customerId: string; deviceSn: string }) {
   return callGymSyncServer("/api/device-users/disable", {
-    customer_id: params.customerId,
-    device_id: params.deviceSn,
-  });
-}
-
-async function deleteCustomerFromGymSyncServer(params: { customerId: string; deviceSn: string }) {
-  return callGymSyncServer("/api/device-users/delete", {
     customer_id: params.customerId,
     device_id: params.deviceSn,
   });
@@ -2430,23 +2412,6 @@ export async function renewSubscription(customerId: string, data: RenewSubscript
   }
 }
 
-async function deleteRowsIfPossible(
-  adminClient: AdminSupabaseClient,
-  table: string,
-  column: string,
-  value: string | number,
-) {
-  const { error } = await adminClient.from(table).delete().eq(column, value);
-  if (!error) return;
-
-  const message = String(error.message || "");
-  if (message.includes("does not exist") || message.includes("Could not find the table")) {
-    return;
-  }
-
-  throw error;
-}
-
 export async function deleteCustomer(id: string) {
   const access = await getUserAccessContext();
   if (!access.isAuthenticated || !access.userId || !hasPermission(access, "customers.update")) {
@@ -2526,91 +2491,5 @@ export async function reactivateCustomer(id: string) {
   } catch (error) {
     console.error("Exception in reactivateCustomer:", error);
     return { success: false, error: "Error inesperado al reactivar" };
-  }
-}
-
-export async function permanentlyDeleteCustomer(id: string) {
-  const access = await getUserAccessContext();
-  if (!access.isAuthenticated || !access.userId || !(access.isOwner || access.role === "admin")) {
-    return { success: false, error: "No autorizado para eliminar clientes permanentemente" };
-  }
-
-  const adminClient = createClientAdmin(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-
-  try {
-    let deviceSync: DeviceSyncResult | undefined;
-
-    if (DEFAULT_ZK_DEVICE_SN) {
-      deviceSync = {
-        ...(await deleteCustomerFromGymSyncServer({
-          customerId: id,
-          deviceSn: DEFAULT_ZK_DEVICE_SN,
-        })),
-        action: "delete",
-      };
-
-      if (deviceSync?.synced !== true && SUPABASE_SERVICE_ROLE_KEY) {
-        const queueResult = await queueZkCommands({
-          adminClient,
-          customerId: id,
-          deviceSn: DEFAULT_ZK_DEVICE_SN,
-          buildCommands: (profile) => buildZkUserDeleteCommands({ biometricId: profile.biometricId }),
-        });
-
-        deviceSync = {
-          attempted: true,
-          action: "delete",
-          synced: queueResult.queued,
-          queued: queueResult.queued,
-          method: queueResult.queued ? "queue" : "none",
-          reason: queueResult.queued ? undefined : queueResult.reason,
-          error: queueResult.queued ? undefined : queueResult.error,
-        };
-      }
-    }
-
-    if (deviceSync?.attempted && deviceSync.synced === false) {
-      return {
-        success: false,
-        error: deviceSync.error || "No se pudo sincronizar la eliminación en el reloj",
-      };
-    }
-
-    const profile = await getCustomerDeviceProfile(adminClient, id);
-    const biometricId = profile.ok ? profile.biometricId : null;
-
-    await deleteRowsIfPossible(adminClient, "payments", "user_id", id);
-    await deleteRowsIfPossible(adminClient, "subscriptions", "user_id", id);
-    await deleteRowsIfPossible(adminClient, "routines", "user_id", id);
-    await deleteRowsIfPossible(adminClient, "body_assessments", "user_id", id);
-    await deleteRowsIfPossible(adminClient, "training_nutrition_snapshots", "user_id", id);
-
-    if (biometricId != null) {
-      await deleteRowsIfPossible(adminClient, "attendance_logs", "biometric_id", biometricId);
-    }
-
-    const { error: profileDeleteError } = await adminClient.from("profiles").delete().eq("id", id);
-    if (profileDeleteError) {
-      console.error("Error deleting profile:", profileDeleteError);
-      return { success: false, error: "Error al eliminar el perfil del cliente" };
-    }
-
-    const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(id);
-    if (authDeleteError && !String(authDeleteError.message || "").toLowerCase().includes("user not found")) {
-      console.error("Error deleting auth user:", authDeleteError);
-      return { success: false, error: "Se eliminó el perfil, pero falló la eliminación del usuario autenticado" };
-    }
-
-    revalidatePath("/panel/clientes");
-    revalidatePath("/panel/resumen");
-    return { success: true, deviceSync };
-  } catch (error) {
-    console.error("Exception in permanentlyDeleteCustomer:", error);
-    return { success: false, error: "Error inesperado al eliminar completamente" };
   }
 }

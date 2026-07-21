@@ -251,12 +251,90 @@ export function CustomerFormSheet({
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
-                    <p className="text-sm font-medium text-foreground">Pendiente fuera de Fase A</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Membresías, pagos, historial, rutinas, evaluaciones, avatar local y sincronización con reloj
-                      biométrico siguen fuera de este formulario por ahora.
-                    </p>
+                  <div className="space-y-4">
+                    <h4 className="flex items-center gap-2 text-sm font-semibold text-primary">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                        4
+                      </span>
+                      Membresía local
+                    </h4>
+                    <div className="space-y-4 pl-4">
+                      <FormSelect
+                        control={form.control}
+                        name="plan_id"
+                        label="Plan"
+                        placeholder="Sin membresía por ahora"
+                        options={plans
+                          .filter((plan) => plan.is_active)
+                          .map((plan) => ({
+                            label: `${plan.name} - Q${plan.price.toFixed(2)} (${plan.duration_days} días)`,
+                            value: plan.id.toString(),
+                          }))}
+                      />
+
+                      <FormRadioGroup
+                        control={form.control}
+                        name="date_mode"
+                        label="Fecha de inicio"
+                        orientation="horizontal"
+                        options={[
+                          { label: "Automática", value: "automatic" },
+                          { label: "Manual", value: "manual" },
+                        ]}
+                      />
+
+                      <Controller
+                        control={form.control}
+                        name="subscription_period"
+                        render={({ field, fieldState }) => {
+                          const from = field.value?.from;
+                          const to = field.value?.to;
+                          const selectedPlan = plans.find(
+                            (plan) => plan.id.toString() === form.getValues("plan_id"),
+                          );
+
+                          const handleStartChange = (date?: Date) => {
+                            const startDate = date ?? new Date();
+                            const nextEndDate =
+                              form.getValues("date_mode") === "automatic" && selectedPlan
+                                ? calculateSubscriptionEndDate(startDate, selectedPlan.duration_days)
+                                : field.value?.to ?? startDate;
+
+                            form.setValue("subscription_period", {
+                              from: startDate,
+                              to: nextEndDate,
+                            });
+                          };
+
+                          return (
+                            <Field className="flex flex-col" data-invalid={fieldState.invalid}>
+                              <FieldLabel>Vigencia</FieldLabel>
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                  <span className="text-xs text-muted-foreground">Inicio</span>
+                                  <FlexibleDatePickerInput value={from} onChange={handleStartChange} />
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-xs text-muted-foreground">Fin calculado</span>
+                                  <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
+                                    {to ? to.toLocaleDateString("es-GT") : "Selecciona un plan y una fecha"}
+                                  </div>
+                                </div>
+                              </div>
+                              <FieldError errors={[fieldState.error]} />
+                            </Field>
+                          );
+                        }}
+                      />
+
+                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
+                        <p className="text-sm font-medium text-foreground">Fase B sin movimientos financieros</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          La membresía se guarda por ciclos en PostgreSQL local, con 3 días de prórroga. No registra
+                          pagos, caja ni sincronización biométrica.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (

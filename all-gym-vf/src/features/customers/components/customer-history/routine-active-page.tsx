@@ -8,7 +8,7 @@ import { IconArrowLeft, IconBarbell, IconChecklist, IconClockHour4, IconSparkles
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { updateRoutineDetail } from "@/features/customers/actions/customer-routine-actions";
+import { updateRoutineDetail } from "@/features/customers/lib/customer-routine-api";
 import type { CustomerRoutineWorkspace } from "@/lib/training/types";
 import {
   buildEditorState,
@@ -72,11 +72,11 @@ export function RoutineActivePage({ customerId, customerName, workspace }: Routi
 
   const handleSaveDetail = async (detailId: number) => {
     const editor = editors[detailId];
-    if (!editor) return;
+    if (!editor || !activeRoutine) return;
 
     try {
       setBusyDetailId(detailId);
-      await updateRoutineDetail(detailId, {
+      await updateRoutineDetail(customerId, activeRoutine.id, detailId, {
         sets: toNullableInt(editor.sets),
         reps: editor.reps.trim() || null,
         rest_seconds: toNullableInt(editor.rest_seconds),
