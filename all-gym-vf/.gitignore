@@ -45,3 +45,4 @@ supabase/.temp/
 supabase/.branches/
 supabase/migrations_backup_local/
 supabase/migrations_remote_backup/
+supabase/seed.sql

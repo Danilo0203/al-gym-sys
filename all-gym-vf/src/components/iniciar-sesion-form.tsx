@@ -8,13 +8,12 @@ import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/f
 import { Input } from "@/components/ui/input";
 import { PASSWORD_RECOVERY_ENABLED, OAUTH_LOGIN_ENABLED } from "@/lib/auth/feature-flags";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
-import { resolvePasswordSignInCredentials } from "@/lib/auth/identifiers";
-import { createBrowserClient } from "@supabase/ssr";
+import { loginWithLocalAuth } from "@/lib/auth/client-auth";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  const [identifier, setIdentifier] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -23,125 +22,25 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setIsLoading(true);
 
     try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
+      const context = await loginWithLocalAuth({
+        email,
+        password,
+      });
+
+      toast.success(`¡Bienvenido de nuevo ${context.user.profile.fullName || "usuario"}!`);
+
+      window.location.assign(
+        resolvePostLoginRoute({
+          role: parseUserRole(context.authorization.roleSlug),
+          roleScope: context.authorization.scope,
+          permissions: context.authorization.permissions,
+          isOwner: context.authorization.isOwner,
+        }),
       );
-
-      const credentials = resolvePasswordSignInCredentials(identifier, password);
-      if (!credentials) {
-        toast.error("Ingresa un correo o teléfono válido");
-        return;
-      }
-
-      const { error, data } = await supabase.auth.signInWithPassword(credentials);
-
-      if (error) {
-        toast.error(error.message === "Invalid login credentials" ? "Credenciales incorrectas" : error.message);
-      } else if (data.user) {
-        const displayName =
-          typeof data.user.user_metadata?.full_name === "string" && data.user.user_metadata.full_name.trim().length > 0
-            ? data.user.user_metadata.full_name.trim()
-            : "usuario";
-
-        let roleSlug = typeof data.user.user_metadata?.role === "string" ? data.user.user_metadata.role : null;
-        let role = parseUserRole(roleSlug);
-        let roleScope: string | null = null;
-        let permissions: string[] = [];
-
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (!sessionData.session) {
-          throw new Error("No fue posible guardar la sesión del usuario.");
-        }
-
-        try {
-          const { data: profile, error: profileError } = await supabase
-            .from("profiles")
-            .select("role, full_name")
-            .eq("id", data.user.id)
-            .maybeSingle();
-
-          if (profileError) {
-            console.error("[login] profile lookup failed", profileError);
-          } else {
-            if (typeof profile?.role === "string" && profile.role.trim().length > 0) {
-              roleSlug = profile.role;
-            }
-            role = parseUserRole(roleSlug) ?? role;
-
-            if (roleSlug) {
-              const [{ data: roleData, error: roleError }, { data: perms, error: permissionsError }] = await Promise.all([
-                supabase.from("roles").select("scope").eq("slug", roleSlug).maybeSingle(),
-                supabase.rpc("get_current_permissions"),
-              ]);
-
-              if (roleError) {
-                console.error("[login] role scope lookup failed", roleError);
-              } else {
-                roleScope = roleData?.scope ?? null;
-              }
-
-              if (permissionsError) {
-                console.error("[login] permissions lookup failed", permissionsError);
-              } else {
-                permissions = (perms as string[] | null) || [];
-              }
-            }
-          }
-
-          toast.success(`¡Bienvenido de nuevo ${profile?.full_name || displayName}!`);
-        } catch (profileLookupError) {
-          console.error("[login] unexpected profile lookup error", profileLookupError);
-          toast.success(`¡Bienvenido de nuevo ${displayName}!`);
-        }
-
-        window.location.assign(
-          resolvePostLoginRoute({
-            role,
-            roleScope,
-            permissions,
-            isOwner: roleSlug === "owner",
-          }),
-        );
-      }
     } catch (error) {
       console.error("[login] sign-in failure", error);
       toast.error(error instanceof Error ? error.message : "Error al iniciar sesión");
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    if (!OAUTH_LOGIN_ENABLED) {
-      toast.error("El acceso con Google está deshabilitado en este despliegue.");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
-      );
-
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) {
-        toast.error("Error con Google: " + error.message);
-        setIsLoading(false);
-      }
-    } catch {
-      toast.error("Error al iniciar sesión con Google");
       setIsLoading(false);
     }
   };
@@ -162,7 +61,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     <Button
                       variant="outline"
                       type="button"
-                      onClick={handleGoogleLogin}
+                      onClick={() => toast.error("El acceso con Google está deshabilitado en esta versión.")}
                       disabled={isLoading}
                       className="w-full"
                     >
@@ -181,14 +80,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                 </>
               ) : null}
               <Field>
-                <FieldLabel htmlFor="identifier">Correo o teléfono</FieldLabel>
+                <FieldLabel htmlFor="email">Correo electrónico</FieldLabel>
                 <Input
-                  id="identifier"
-                  type="text"
-                  placeholder="tu@email.com o 12345678"
+                  id="email"
+                  type="email"
+                  placeholder="tu@email.com"
                   required
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
                 />
               </Field>

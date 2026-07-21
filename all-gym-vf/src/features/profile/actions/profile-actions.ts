@@ -1,10 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { normalizeGuatemalaPhoneForAuth } from '@/lib/auth/identifiers';
-import { getUserAccessContext } from '@/lib/auth/authorization';
+import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
+import { getServerAuthContext } from '@/lib/auth/server-auth';
+import { canEditOwnProfile, PROFILE_EDIT_PERMISSION_KEYS } from '../lib/profile-permissions';
+import { LocalProfileHttpError, getLocalProfile, updateLocalProfile } from '../server/local-profile';
 
 export interface ProfileData {
   id: string;
@@ -18,15 +18,42 @@ export interface ProfileData {
   roleName: string | null;
   permissions: string[];
   isOwner: boolean;
-  created_at: string;
+  created_at: string | null;
   updated_at: string | null;
 }
 
 export interface UpdateProfileData {
   full_name?: string;
   phone?: string;
-  birth_date?: string | null;
+  birth_date?: string;
   gender?: 'male' | 'female' | 'other';
+}
+
+function mapProfileBackendError(error: unknown): string {
+  if (error instanceof LocalProfileHttpError) {
+    switch (error.status) {
+      case 400:
+        return error.message || 'Datos inválidos para actualizar el perfil.';
+      case 401:
+        return 'Sesión inválida. Inicia sesión nuevamente.';
+      case 403:
+        return 'No tienes permiso para editar este perfil.';
+      case 404:
+        return 'Perfil no encontrado.';
+      default:
+        return error.message || `Error del backend local (${error.status}).`;
+    }
+  }
+
+  if (error instanceof Error && error.message.startsWith('Could not reach local profile backend:')) {
+    return 'No fue posible conectar con el backend local del perfil.';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Error inesperado al procesar el perfil.';
 }
 
 /**
@@ -34,144 +61,95 @@ export interface UpdateProfileData {
  */
 export async function getCurrentUser(): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
-    const supabase = await createClient();
-    
-    // Get the authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    const authContext = await getServerAuthContext();
+
+    if (!authContext) {
       return { success: false, error: 'Usuario no autenticado' };
     }
 
-    const fallbackProfile: ProfileData = {
-      id: user.id,
-      email: user.email || null,
-      full_name: user.user_metadata?.full_name || null,
-      phone: null,
-      birth_date: null,
-      gender: null,
-      avatar_url: user.user_metadata?.avatar_url || null,
-      role: (user.user_metadata?.role as string | null) || user.role || 'authenticated',
-      roleName: null,
-      permissions: [],
-      isOwner: false,
-      created_at: user.created_at,
-      updated_at: null,
-    };
-
-    // Get profile data from profiles table
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    if (profileError && profileError.code !== 'PGRST116') {
-      console.error('Error fetching profile:', profileError);
-      return {
-        success: true,
-        data: fallbackProfile,
-      };
-    }
-
-    if (!profile) {
-      return {
-        success: true,
-        data: fallbackProfile,
-      };
-    }
-
-    // Fetch permissions
-    let permissions: string[] = [];
-    const { data: perms } = await supabase.rpc("get_current_permissions");
-    if (perms) {
-      permissions = perms as string[];
-    }
-
-    const roleSlug = (profile.role as string) || user.role || 'authenticated';
-
-    let roleName: string | null = null;
-    const adminClient = createAdminClient();
-    const { data: roleRow } = await adminClient
-      .from('roles')
-      .select('name')
-      .eq('slug', roleSlug)
-      .maybeSingle();
-    if (roleRow) {
-      roleName = roleRow.name;
-    }
+    const profile = await getLocalProfile();
 
     return {
       success: true,
       data: {
-        id: user.id,
-        email: user.email || null,
+        id: profile.id,
+        email: profile.email,
         full_name: profile.full_name,
         phone: profile.phone,
-        birth_date: profile.birth_date,
+        birth_date: profile.birth_date || null,
         gender: profile.gender,
-        avatar_url: profile.avatar_url || user.user_metadata?.avatar_url || null,
-        role: roleSlug,
-        roleName,
-        permissions,
-        isOwner: profile.role === 'owner',
-        created_at: user.created_at,
+        avatar_url: profile.avatar_url,
+        role: profile.role ?? authContext.authorization.roleSlug,
+        roleName: null,
+        permissions: authContext.authorization.permissions,
+        isOwner: authContext.authorization.isOwner,
+        created_at: profile.created_at,
         updated_at: profile.updated_at,
       }
     };
   } catch (error) {
     console.error('Error in getCurrentUser:', error);
-    return { success: false, error: 'Error al obtener datos del usuario' };
+    return { success: false, error: mapProfileBackendError(error) };
   }
 }
 
 /**
  * Update the currently authenticated user's profile
  */
-export async function updateProfile(data: UpdateProfileData): Promise<{ success: boolean; error?: string }> {
+export async function updateProfile(
+  data: UpdateProfileData,
+): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
-    const supabase = await createClient();
-    
-    // Get the authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
+    const access = await getUserAccessContext();
+    if (!access.isAuthenticated) {
+      return { success: false, error: 'Usuario no autenticado' };
+    }
+    if (
+      !canEditOwnProfile(access.permissions, access.isOwner) &&
+      !PROFILE_EDIT_PERMISSION_KEYS.some((permission) => hasPermission(access, permission))
+    ) {
+      return { success: false, error: 'No autorizado para editar perfil' };
+    }
+
+    if (!access.userId) {
       return { success: false, error: 'Usuario no autenticado' };
     }
 
-    // Prepare update data
-    const updateData: Record<string, string | null> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (data.full_name !== undefined) updateData.full_name = data.full_name;
-    if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.birth_date !== undefined) updateData.birth_date = data.birth_date;
-    if (data.gender !== undefined) updateData.gender = data.gender;
-
-    // Update profile
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', user.id);
-
-    if (updateError) {
-      console.error('Error updating profile:', updateError);
-      return { success: false, error: `Error al actualizar: ${updateError.message}` };
+    if (Object.keys(data).length === 0) {
+      return { success: false, error: 'No hay cambios para actualizar.' };
     }
 
-    // Also update auth user metadata for full_name
-    if (data.full_name) {
-      await supabase.auth.updateUser({
-        data: { full_name: data.full_name }
-      });
+    const authContext = await getServerAuthContext();
+    if (!authContext) {
+      return { success: false, error: 'Usuario no autenticado' };
     }
+
+    const updatedProfile = await updateLocalProfile(data);
 
     revalidatePath('/panel/perfil');
-    return { success: true };
+    revalidatePath('/panel/perfil/[[...profile]]');
+
+    return {
+      success: true,
+      data: {
+        id: updatedProfile.id,
+        email: updatedProfile.email,
+        full_name: updatedProfile.full_name,
+        phone: updatedProfile.phone,
+        birth_date: updatedProfile.birth_date || null,
+        gender: updatedProfile.gender,
+        avatar_url: updatedProfile.avatar_url,
+        role: updatedProfile.role ?? authContext.authorization.roleSlug,
+        roleName: null,
+        permissions: authContext.authorization.permissions,
+        isOwner: authContext.authorization.isOwner,
+        created_at: updatedProfile.created_at,
+        updated_at: updatedProfile.updated_at,
+      },
+    };
   } catch (error) {
     console.error('Error in updateProfile:', error);
-    return { success: false, error: 'Error inesperado al actualizar perfil' };
+    return { success: false, error: mapProfileBackendError(error) };
   }
 }
 
@@ -179,57 +157,14 @@ export async function updateProfile(data: UpdateProfileData): Promise<{ success:
  * Update the user's password
  */
 export async function updatePassword(
-  currentPassword: string,
-  newPassword: string
+  _currentPassword: string,
+  _newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
-    if (!(access.isOwner || access.role === 'admin')) {
-      return { success: false, error: 'No autorizado para cambiar contraseña' };
-    }
+  void _currentPassword;
+  void _newPassword;
 
-    const supabase = await createClient();
-    
-    // Get the authenticated user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
-
-    const authCredentials = user.email
-      ? { email: user.email, password: currentPassword }
-      : user.phone
-        ? { phone: normalizeGuatemalaPhoneForAuth(user.phone) || user.phone, password: currentPassword }
-        : null;
-
-    if (!authCredentials) {
-      return { success: false, error: 'Tu cuenta no tiene un correo o teléfono configurado para validar la contraseña actual' };
-    }
-
-    // First verify current password by attempting to sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword(authCredentials);
-
-    if (signInError) {
-      return { success: false, error: 'La contraseña actual es incorrecta' };
-    }
-
-    // Update to new password
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-
-    if (updateError) {
-      console.error('Error updating password:', updateError);
-      return { success: false, error: `Error al cambiar contraseña: ${updateError.message}` };
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error in updatePassword:', error);
-    return { success: false, error: 'Error inesperado al cambiar contraseña' };
-  }
+  return {
+    success: false,
+    error: 'El cambio de contraseña quedó deshabilitado mientras la autenticación use el backend local.',
+  };
 }

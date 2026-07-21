@@ -213,7 +213,6 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
         await queryClient.invalidateQueries({ queryKey: profileKeys.current() });
         router.refresh();
         onSuccess();
-        onOpenChange(false);
       }
     } catch {
       toast.error("Error inesperado");

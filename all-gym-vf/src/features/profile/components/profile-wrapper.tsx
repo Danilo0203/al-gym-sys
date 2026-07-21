@@ -3,10 +3,14 @@ import { getCurrentUser } from "../actions/profile-actions";
 import { redirect } from "next/navigation";
 
 export default async function ProfileWrapper() {
-  const { data: user, success } = await getCurrentUser();
+  const { data: user, success, error } = await getCurrentUser();
+
+  if (!success && error === "Usuario no autenticado") {
+    redirect("/iniciar-sesion");
+  }
 
   if (!success || !user) {
-    redirect("/iniciar-sesion");
+    throw new Error(error || "No fue posible cargar el perfil.");
   }
 
   return <ProfileViewPage user={user} />;

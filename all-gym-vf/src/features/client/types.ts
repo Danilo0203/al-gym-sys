@@ -34,7 +34,7 @@ export interface ClientProfilePayload {
   gender: string | null;
   avatar_url: string | null;
   role: string | null;
-  created_at: string;
+  created_at: string | null;
   updated_at: string | null;
   overview: ClientOverviewSummary | null;
 }

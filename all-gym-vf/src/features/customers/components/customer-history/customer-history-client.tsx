@@ -66,12 +66,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import {
-  deleteCustomer,
   permanentlyDeleteCustomer,
-  reactivateCustomer,
 } from "@/features/customers/actions/customer-actions";
 import { useCustomer } from "@/features/customers/hooks/use-customers";
 import type { TrainingProfileRecord } from "@/lib/training/types";
+import { updateCustomerStatus } from "@/features/customers/lib/customer-api";
 
 function toCustomerGender(value: string | null): "male" | "female" | "other" | null {
   if (value === "male" || value === "female" || value === "other") return value;
@@ -315,33 +314,20 @@ export function CustomerHistoryClient({
 
     try {
       setIsDeactivating(true);
-      const result = profile.is_active ? await deleteCustomer(profile.id) : await reactivateCustomer(profile.id);
-      if (!result.success) {
-        toast.error(result.error || `No se pudo ${profile.is_active ? "desactivar" : "reactivar"} el cliente`);
-        return;
-      }
-
-      const deviceSync =
-        typeof result === "object" && result !== null && "deviceSync" in result ? result.deviceSync : undefined;
-      const deviceSynced = deviceSync?.attempted ? deviceSync?.synced === true || deviceSync?.queued === true : null;
-
-      if (profile.is_active) {
-        if (deviceSynced === false) {
-          toast.warning("Cliente desactivado en el sistema, pero falló el envío al reloj.");
-        } else {
-          toast.success("Cliente desactivado y bloqueado en el reloj.");
-        }
-      } else if (deviceSynced === false) {
-        toast.warning("Cliente reactivado en el sistema, pero falló el envío al reloj.");
-      } else if (deviceSync?.action === "disable") {
-        toast.success("Cliente reactivado, pero se mantuvo bloqueado en el reloj porque no tiene una suscripción activa.");
-      } else {
-        toast.success("Cliente reactivado y habilitado en el reloj.");
-      }
-
+      const nextIsActive = !profile.is_active;
+      await updateCustomerStatus(profile.id, nextIsActive);
+      toast.success(
+        nextIsActive
+          ? "Cliente reactivado correctamente. Esta acción todavía no sincroniza con reloj biométrico en Fase A."
+          : "Cliente suspendido correctamente. Esta acción todavía no sincroniza con reloj biométrico en Fase A.",
+      );
       router.refresh();
-    } catch {
-      toast.error(`Error inesperado al ${profile.is_active ? "desactivar" : "reactivar"} el cliente`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : `Error inesperado al ${profile.is_active ? "suspender" : "reactivar"} el cliente`,
+      );
     } finally {
       setIsDeactivating(false);
       setDeactivateOpen(false);
@@ -442,20 +428,15 @@ export function CustomerHistoryClient({
         onClose={() => setDeactivateOpen(false)}
         onConfirm={handleToggleCustomerStatus}
         loading={isDeactivating}
-        title={profile.is_active ? "¿Desactivar cliente?" : "¿Reactivar cliente?"}
+        title={profile.is_active ? "¿Suspender cliente?" : "¿Reactivar cliente?"}
         description={
           <CustomerStatusActionSummary
             customerName={profile.full_name}
             isActive={profile.is_active === true}
             phone={profile.phone}
-            planName={currentSubscription?.plan_name ?? null}
-            subscriptionStatus={profile.subscription_status}
-            subscriptionEndDate={profile.subscription_end_date}
-            subscriptionGraceDays={profile.subscription_grace_days}
-            subscriptionAccessUntil={profile.subscription_access_until}
           />
         }
-        confirmText={profile.is_active ? "Desactivar" : "Reactivar"}
+        confirmText={profile.is_active ? "Suspender" : "Reactivar"}
         confirmVariant={profile.is_active ? "destructive" : "default"}
         contentClassName="sm:max-w-2xl"
       />
