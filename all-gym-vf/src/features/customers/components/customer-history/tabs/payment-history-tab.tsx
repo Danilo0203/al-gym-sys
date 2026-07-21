@@ -13,26 +13,16 @@ import {
   IconArrowsExchange,
   IconTag,
 } from "@tabler/icons-react";
-import type { PaymentEntry } from "../../../actions/customer-history-actions";
-import { cn } from "@/lib/utils";
+import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 
 interface PaymentHistoryTabProps {
-  paymentHistory: PaymentEntry[];
+  paymentHistory: NonNullable<CustomerHistoryResponse["payments"]>["data"];
+  totalPayments: number;
+  totalPaid: number | null;
 }
 
-export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
-  const totalPaid = paymentHistory.reduce((sum, p) => sum + p.amount_paid, 0);
-  const totalDiscount = paymentHistory.reduce((sum, p) => sum + p.discount_applied, 0);
-
-  // Fix: Parse YYYY-MM-DD manually
-  const parseDate = (dateStr: string | Date | undefined | null) => {
-    if (!dateStr) return null;
-    if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-      const [year, month, day] = dateStr.split("T")[0].split("-").map(Number);
-      return new Date(year, month - 1, day);
-    }
-    return new Date(dateStr);
-  };
+export function PaymentHistoryTab({ paymentHistory, totalPayments, totalPaid }: PaymentHistoryTabProps) {
+  const totalDiscount = paymentHistory.reduce((sum, p) => sum + p.discount_amount, 0);
 
   const paymentMethodIcons: Record<string, React.ReactNode> = {
     cash: <IconCash className="h-4 w-4" />,
@@ -44,18 +34,6 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
     cash: "Efectivo",
     card: "Tarjeta",
     transfer: "Transferencia",
-  };
-
-  const statusLabels: Record<string, string> = {
-    active: "Activa",
-    expired: "Vencida",
-    cancelled: "Cancelada",
-  };
-
-  const statusStyles: Record<string, string> = {
-    active: "bg-green-500/10 text-green-600 border-green-500/20",
-    expired: "bg-muted text-muted-foreground border-muted-foreground/20 text-[10px]",
-    cancelled: "bg-red-500/10 text-red-600 border-red-500/20",
   };
 
   return (
@@ -75,7 +53,7 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="relative z-10">
-            <p className="text-4xl font-black text-foreground">{paymentHistory.length}</p>
+            <p className="text-4xl font-black text-foreground">{totalPayments}</p>
           </CardContent>
         </Card>
 
@@ -91,7 +69,7 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
           </CardHeader>
           <CardContent className="relative z-10">
             <p className="text-4xl font-black text-emerald-600">
-              Q{totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              {totalPaid === null ? "N/D" : `Q${totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
             </p>
           </CardContent>
         </Card>
@@ -103,7 +81,7 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
           <CardHeader className="pb-2 relative z-10">
             <CardTitle className="text-[11px] font-black uppercase tracking-widest text-orange-600/80 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-              Ahorro en Descuentos
+              Descuentos visibles
             </CardTitle>
           </CardHeader>
           <CardContent className="relative z-10">
@@ -144,8 +122,6 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
                   <TableHead className="font-bold text-xs uppercase tracking-wider text-center">
                     Forma de Pago
                   </TableHead>
-                  <TableHead className="font-bold text-xs uppercase tracking-wider">Vigencia</TableHead>
-                  <TableHead className="font-bold text-xs uppercase tracking-wider pr-6 text-right">Estado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -168,12 +144,12 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
                       Q{payment.amount_original.toFixed(2)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {payment.discount_applied > 0 ? (
+                      {payment.discount_amount > 0 ? (
                         <Badge
                           variant="outline"
                           className="bg-orange-500/10 text-orange-600 border-none font-bold text-[10px]"
                         >
-                          -Q{payment.discount_applied.toFixed(2)}
+                          -Q{payment.discount_amount.toFixed(2)}
                         </Badge>
                       ) : (
                         <span className="text-muted-foreground text-xs pr-2">-</span>
@@ -188,43 +164,10 @@ export function PaymentHistoryTab({ paymentHistory }: PaymentHistoryTabProps) {
                           variant="outline"
                           className="px-2 font-medium capitalize flex items-center gap-1.5 border-primary/10"
                         >
-                          {paymentMethodIcons[payment.payment_method] || <IconReceipt2 className="h-3.5 w-3.5" />}
-                          {paymentMethodLabels[payment.payment_method] || payment.payment_method}
+                          {paymentMethodIcons[payment.method ?? ""] || <IconReceipt2 className="h-3.5 w-3.5" />}
+                          {paymentMethodLabels[payment.method ?? ""] || payment.method || "Sin método"}
                         </Badge>
                       </div>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {payment.subscription_start && payment.subscription_end ? (
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="text-muted-foreground">del</span>
-                          <span className="font-bold">
-                            {(() => {
-                              const start = parseDate(payment.subscription_start);
-                              return start ? format(start, "dd/MM/yy") : "N/A";
-                            })()}
-                          </span>
-                          <span className="text-muted-foreground">al</span>
-                          <span className="font-bold">
-                            {(() => {
-                              const end = parseDate(payment.subscription_end);
-                              return end ? format(end, "dd/MM/yy") : "N/A";
-                            })()}
-                          </span>
-                        </div>
-                      ) : (
-                        "N/A"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right pr-6">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "px-2.5 py-0.5 rounded-full font-bold uppercase tracking-tighter text-[10px] border-none ml-auto w-fit block",
-                          statusStyles[payment.subscription_status] || "bg-muted",
-                        )}
-                      >
-                        {statusLabels[payment.subscription_status] || payment.subscription_status}
-                      </Badge>
                     </TableCell>
                   </TableRow>
                 ))}

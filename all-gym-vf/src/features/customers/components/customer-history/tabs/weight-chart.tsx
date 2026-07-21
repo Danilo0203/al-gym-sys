@@ -14,7 +14,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { BodyAssessmentEntry } from "../../../actions/customer-history-actions";
+import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import { kilogramsToPounds } from "@/lib/fitness/measurements";
 
 export const description = "Gráfico interactivo de peso";
@@ -27,7 +27,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 interface WeightChartProps {
-  data: BodyAssessmentEntry[];
+  data: CustomerHistoryResponse["assessments"]["data"];
 }
 
 export function WeightChart({ data }: WeightChartProps) {

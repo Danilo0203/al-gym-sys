@@ -6,12 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { IconCalendarStats, IconHistory, IconCheck, IconX } from "@tabler/icons-react";
-import type { AccessLogEntry } from "../../../actions/customer-history-actions";
+import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AccessHistoryTabProps {
-  accessHistory: AccessLogEntry[];
+  accessHistory: CustomerHistoryResponse["attendance"]["data"];
   heatmapData: Record<string, number>;
 }
 
@@ -160,7 +160,9 @@ export function AccessHistoryTab({ accessHistory, heatmapData }: AccessHistoryTa
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs font-semibold capitalize">{log.day_of_week}</span>
+                      <span className="text-xs font-semibold capitalize">
+                        {format(new Date(log.check_in_time), "EEEE", { locale: es })}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right pr-6">
                       <Badge
