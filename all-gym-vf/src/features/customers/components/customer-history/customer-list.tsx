@@ -54,8 +54,8 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
   }, [deferredSearchTerm, retryKey]);
 
   return (
-    <div className="flex h-full w-full min-w-[300px] max-w-sm flex-col border-r bg-muted/10">
-      <div className="space-y-4 border-b p-4">
+    <div className="flex h-full min-h-0 w-full min-w-[300px] max-w-sm flex-col overflow-hidden border-r bg-muted/10">
+      <div className="shrink-0 space-y-4 border-b p-4">
         <h2 className="px-2 text-lg font-semibold">Clientes</h2>
         <div className="relative">
           <IconSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -71,8 +71,8 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
           />
         </div>
       </div>
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-1 p-2">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
+        <div className="flex min-w-0 flex-col gap-1 p-2">
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground">
               <IconLoader2 className="h-4 w-4 animate-spin" />
@@ -101,11 +101,11 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
                 key={customer.id}
                 href={`/panel/clientes/${customer.id}/history`}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50",
+                  "flex min-w-0 items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50",
                   isSelected && "bg-muted shadow-sm",
                 )}
               >
-                <Avatar className="h-10 w-10 border">
+                <Avatar className="h-10 w-10 shrink-0 border">
                   <AvatarImage src={customer.avatar_url ?? ""} alt={customer.full_name} />
                   <AvatarFallback>{initials || "??"}</AvatarFallback>
                 </Avatar>
@@ -115,7 +115,7 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
                 </div>
                 <span
                   className={cn(
-                    "h-2 w-2 rounded-full",
+                    "h-2 w-2 shrink-0 rounded-full",
                     customer.membership_status === "active" ? "bg-emerald-500" : "bg-muted-foreground/40",
                   )}
                   title={customer.membership_status}
