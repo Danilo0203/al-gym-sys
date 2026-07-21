@@ -9,7 +9,31 @@ export const customerListSortSchema = z.enum([
   "-created_at",
   "updated_at",
   "-updated_at",
+  "last_check_in",
+  "-last_check_in",
+  "membership_status",
+  "-membership_status",
 ]);
+
+export const customerMembershipStatusSchema = z.enum([
+  "active",
+  "expiring",
+  "grace",
+  "expired",
+  "cancelled",
+  "none",
+]);
+
+export const customerMembershipSummarySchema = z.object({
+  plan_id: z.number().int().nullable(),
+  plan_name: z.string().nullable(),
+  status: z.string().nullable(),
+  display_status: customerMembershipStatusSchema,
+  start_date: z.string().nullable(),
+  end_date: z.string().nullable(),
+  grace_days: z.number().int().nullable(),
+  access_until: z.string().nullable(),
+});
 
 export const customerListItemSchema = z.object({
   id: z.uuid(),
@@ -19,16 +43,29 @@ export const customerListItemSchema = z.object({
   avatar_url: z.string().nullable(),
   birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gender: customerGenderSchema,
+  biometric_id: z.number().int(),
   is_active: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  current_membership: z.unknown().nullable(),
+  membership_status: customerMembershipStatusSchema,
+  last_check_in: z.string().nullable(),
+  created_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
+  current_membership: customerMembershipSummarySchema.nullable(),
 });
 
 export const customerDetailSchema = customerListItemSchema.extend({
   role: z.literal("client"),
   injuries: z.string().nullable(),
   medical_notes: z.string().nullable(),
+  account: z.object({
+    email: z.string().email().nullable(),
+    has_password: z.boolean(),
+    login_enabled: z.boolean(),
+  }),
+  capabilities: z.object({
+    update_customer: z.boolean(),
+    manage_membership: z.boolean(),
+    view_payments: z.boolean(),
+  }),
 });
 
 export const customerListResponseSchema = z.object({
@@ -38,6 +75,111 @@ export const customerListResponseSchema = z.object({
     page_size: z.number().int().positive(),
     total: z.number().int().nonnegative(),
     total_pages: z.number().int().nonnegative(),
+  }),
+});
+
+export const customerSidebarResponseSchema = z.object({
+  data: z.array(z.object({
+    id: z.uuid(),
+    full_name: z.string(),
+    avatar_url: z.string().nullable(),
+    biometric_id: z.number().int(),
+    is_active: z.boolean(),
+    membership_status: customerMembershipStatusSchema,
+    plan_name: z.string().nullable(),
+  })),
+});
+
+const paginationMetaSchema = z.object({
+  page: z.number().int().positive(),
+  page_size: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  total_pages: z.number().int().nonnegative(),
+});
+
+export const customerHistoryResponseSchema = z.object({
+  customer_id: z.uuid(),
+  memberships: z.object({
+    data: z.array(z.object({
+      id: z.uuid(),
+      plan_id: z.number().int(),
+      plan_name: z.string().nullable(),
+      start_date: z.string(),
+      end_date: z.string(),
+      grace_days: z.number().int(),
+      access_until: z.string(),
+      status: z.string(),
+      price: z.number(),
+      discount_amount: z.number(),
+      created_at: z.string(),
+    })),
+    meta: paginationMetaSchema,
+  }),
+  payments: z.object({
+    data: z.array(z.object({
+      id: z.uuid(),
+      subscription_id: z.uuid().nullable(),
+      payment_date: z.string(),
+      amount_original: z.number(),
+      discount_amount: z.number(),
+      amount_paid: z.number(),
+      method: z.string().nullable(),
+      plan_name: z.string().nullable(),
+    })),
+    meta: paginationMetaSchema,
+  }).nullable(),
+  attendance: z.object({
+    data: z.array(z.object({
+      id: z.string(),
+      check_in_time: z.string(),
+      status: z.enum(["authorized", "denied"]),
+    })),
+    limit: z.number().int().positive().max(50),
+    total: z.number().int().nonnegative(),
+  }),
+  heatmap: z.object({
+    timezone: z.literal("America/Guatemala"),
+    days: z.number().int().positive().max(365),
+    from: z.string(),
+    to: z.string(),
+    data: z.array(z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      count: z.number().int().nonnegative(),
+    })),
+  }),
+  assessments: z.object({
+    data: z.array(z.object({
+      id: z.uuid(),
+      assessment_date: z.string(),
+      weight_kg: z.number().nullable(),
+      height_cm: z.number().nullable(),
+      body_fat_percentage: z.number().nullable(),
+      muscle_mass_kg: z.number().nullable(),
+      body_type: z.string().nullable(),
+      activity_level: z.string().nullable(),
+      water_liters_goal: z.number().nullable(),
+      daily_calories: z.number().nullable(),
+      protein_grams: z.number().nullable(),
+      carbs_grams: z.number().nullable(),
+      fat_grams: z.number().nullable(),
+      chest: z.number().nullable(),
+      waist: z.number().nullable(),
+      hip: z.number().nullable(),
+      arm_right: z.number().nullable(),
+      arm_left: z.number().nullable(),
+      leg_right: z.number().nullable(),
+      leg_left: z.number().nullable(),
+      diet_type: z.string().nullable(),
+    })),
+    meta: paginationMetaSchema,
+  }),
+  kpis: z.object({
+    member_since: z.string().nullable(),
+    total_visits: z.number().int().nonnegative(),
+    total_spent: z.number().nullable(),
+    initial_weight: z.number().nullable(),
+    current_weight: z.number().nullable(),
+    weight_change: z.number().nullable(),
   }),
 });
 
@@ -76,6 +218,8 @@ export const updateCustomerStatusInputSchema = z.object({
 export type CustomerListItem = z.infer<typeof customerListItemSchema>;
 export type CustomerDetail = z.infer<typeof customerDetailSchema>;
 export type CustomerListResponse = z.infer<typeof customerListResponseSchema>;
+export type CustomerSidebarResponse = z.infer<typeof customerSidebarResponseSchema>;
+export type CustomerHistoryResponse = z.infer<typeof customerHistoryResponseSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerInputSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerInputSchema>;
 export type UpdateCustomerStatusInput = z.infer<typeof updateCustomerStatusInputSchema>;
@@ -91,7 +235,13 @@ export class CustomerApiError extends Error {
   }
 }
 
-const allowedListSortColumns = new Set(["full_name", "created_at", "updated_at"]);
+const allowedListSortColumns = new Set([
+  "full_name",
+  "created_at",
+  "updated_at",
+  "last_check_in",
+  "membership_status",
+]);
 
 export function isValidCalendarDateString(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -144,6 +294,9 @@ export function mapCustomerListQuery(params: {
   pageSize?: number;
   search?: string | null;
   sort?: CustomerListSort;
+  isActive?: boolean;
+  planId?: number;
+  membershipStatus?: z.infer<typeof customerMembershipStatusSchema>;
 }) {
   const searchParams = new URLSearchParams();
 
@@ -156,6 +309,18 @@ export function mapCustomerListQuery(params: {
 
   if (params.sort) {
     searchParams.set("sort", params.sort);
+  }
+
+  if (params.isActive !== undefined) {
+    searchParams.set("is_active", String(params.isActive));
+  }
+
+  if (params.planId !== undefined) {
+    searchParams.set("plan_id", String(params.planId));
+  }
+
+  if (params.membershipStatus) {
+    searchParams.set("membership_status", params.membershipStatus);
   }
 
   return searchParams;

@@ -4,13 +4,17 @@ import {
   createCustomerInputSchema,
   CustomerApiError,
   customerDetailSchema,
+  customerHistoryResponseSchema,
   customerListResponseSchema,
+  customerSidebarResponseSchema,
   parseCustomerApiResponse,
   updateCustomerInputSchema,
   updateCustomerStatusInputSchema,
   type CreateCustomerInput,
   type CustomerDetail,
+  type CustomerHistoryResponse,
   type CustomerListResponse,
+  type CustomerSidebarResponse,
   type UpdateCustomerInput,
 } from "./local-customers";
 
@@ -48,6 +52,27 @@ export async function getCustomersList(pathname: string): Promise<CustomerListRe
   });
 
   return parseCustomerApiResponse(response, (payload) => customerListResponseSchema.parse(payload));
+}
+
+export async function getCustomerSidebar(search: string, limit = 20): Promise<CustomerSidebarResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (search.trim()) query.set("search", search.trim());
+  const response = await fetchCustomersApi(`/api/customers/sidebar?${query.toString()}`, {
+    method: "GET",
+  });
+
+  return parseCustomerApiResponse(response, (payload) => customerSidebarResponseSchema.parse(payload));
+}
+
+export async function getCustomerHistory(
+  id: string,
+  query: URLSearchParams,
+): Promise<CustomerHistoryResponse> {
+  const response = await fetchCustomersApi(`/api/customers/${id}/history?${query.toString()}`, {
+    method: "GET",
+  });
+
+  return parseCustomerApiResponse(response, (payload) => customerHistoryResponseSchema.parse(payload));
 }
 
 export async function getCustomerDetail(id: string): Promise<CustomerDetail> {

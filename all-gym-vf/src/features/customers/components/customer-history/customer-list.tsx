@@ -1,180 +1,132 @@
-'use client';
+"use client";
 
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { cn } from '@/lib/utils';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { IconLoader2, IconSearch } from '@tabler/icons-react';
+import { useDeferredValue, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { IconLoader2, IconSearch } from "@tabler/icons-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { getCustomerSidebar } from "@/features/customers/lib/customer-api";
+import type { CustomerSidebarResponse } from "@/features/customers/lib/local-customers";
+import { cn } from "@/lib/utils";
 
-export interface CustomerListItem {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  plan_name: string | null;
-  subscription_status: string | null;
-  is_active: boolean | null;
-}
+export type CustomerListItem = CustomerSidebarResponse["data"][number];
 
 interface CustomerListProps {
   initialCustomers: CustomerListItem[];
 }
 
-interface CustomerListResponse {
-  data?: CustomerListItem[];
-  error?: string;
-}
-
 export function CustomerList({ initialCustomers }: CustomerListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [results, setResults] = useState<CustomerListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [results, setResults] = useState<CustomerListItem[]>(initialCustomers);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
+  const [retryKey, setRetryKey] = useState(0);
   const params = useParams();
   const deferredSearchTerm = useDeferredValue(searchTerm.trim());
-  const currentcustomerId = params?.customerId as string;
-  const isSearching = deferredSearchTerm.length > 0;
-  const visibleCustomers = isSearching ? results : initialCustomers;
+  const currentCustomerId = params?.customerId as string;
 
   useEffect(() => {
-    if (!isSearching) {
-      return;
-    }
-
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    const controller = new AbortController();
+    let cancelled = false;
 
     const timeoutId = window.setTimeout(async () => {
+      setIsLoading(true);
+      setError(null);
       try {
-        const url = new URL('/api/panel/clientes/sidebar', window.location.origin);
-        url.searchParams.set('query', deferredSearchTerm);
-        url.searchParams.set('limit', '20');
-
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          signal: controller.signal,
-          cache: 'no-store',
-        });
-        const payload = (await response.json()) as CustomerListResponse;
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'No se pudieron cargar los clientes.');
-        }
-
-        if (requestIdRef.current !== requestId) return;
-        setResults(Array.isArray(payload.data) ? payload.data : []);
+        const payload = await getCustomerSidebar(deferredSearchTerm, 24);
+        if (!cancelled) setResults(payload.data);
       } catch (fetchError) {
-        if (controller.signal.aborted) return;
-        if (requestIdRef.current !== requestId) return;
-        setResults([]);
-        setError(fetchError instanceof Error ? fetchError.message : 'No se pudieron cargar los clientes.');
-      } finally {
-        if (requestIdRef.current === requestId) {
-          setIsLoading(false);
+        if (!cancelled) {
+          setResults([]);
+          setError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar los clientes.");
         }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
-    }, 300);
+    }, deferredSearchTerm ? 300 : 0);
 
     return () => {
-      controller.abort();
+      cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [deferredSearchTerm, initialCustomers, isSearching]);
+  }, [deferredSearchTerm, retryKey]);
 
   return (
-    <div className="flex flex-col h-full border-r bg-muted/10 w-full max-w-sm min-w-[300px]">
-      <div className="p-4 border-b space-y-4">
-        <h2 className="font-semibold text-lg px-2">Clientes</h2>
+    <div className="flex h-full w-full min-w-[300px] max-w-sm flex-col border-r bg-muted/10">
+      <div className="space-y-4 border-b p-4">
+        <h2 className="px-2 text-lg font-semibold">Clientes</h2>
         <div className="relative">
           <IconSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Buscar..."
             className="pl-9"
             value={searchTerm}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setSearchTerm(nextValue);
-              if (!nextValue.trim()) {
-                setError(null);
-                setIsLoading(false);
-              } else {
-                setError(null);
-                setIsLoading(true);
-              }
+            onChange={(event) => {
+              setSearchTerm(event.target.value);
+              setIsLoading(true);
+              setError(null);
             }}
           />
         </div>
       </div>
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-1 p-2">
-            {/* Botón para crear nuevo cliente (Siempre visible) */}
-            {/* <Link href="/panel/clientes/new">
-                <Button variant="outline" className="w-full justify-start gap-2 mb-2" size="sm">
-                    <IconUserPlus className="h-4 w-4" />
-                    Nuevo Cliente
-                </Button>
-            </Link> */}
-            
-          {isLoading && (
+          {isLoading ? (
             <div className="flex items-center justify-center gap-2 px-3 py-4 text-sm text-muted-foreground">
               <IconLoader2 className="h-4 w-4 animate-spin" />
-              Buscando clientes...
+              Cargando clientes...
             </div>
-          )}
+          ) : null}
 
-          {!isLoading && error && (
-            <div className="p-4 text-center text-sm text-destructive">
-              {error}
+          {!isLoading && error ? (
+            <div className="space-y-3 p-4 text-center text-sm text-destructive">
+              <p>{error}</p>
+              <Button size="sm" variant="outline" onClick={() => {
+                setIsLoading(true);
+                setRetryKey((value) => value + 1);
+              }}>
+                Reintentar
+              </Button>
             </div>
-          )}
+          ) : null}
 
-          {!error && visibleCustomers.map(customer => {
-             const initials = customer.full_name
-              ?.split(' ')
-              .map((n) => n[0])
-              .join('')
-              .toUpperCase()
-              .substring(0, 2) || '??';
+          {!isLoading && !error && results.map((customer) => {
+            const initials = customer.full_name.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase();
+            const isSelected = customer.id === currentCustomerId;
 
-             const isActive = customer.id === currentcustomerId;
-
-             return (
-              <Link 
-                key={customer.id} 
+            return (
+              <Link
+                key={customer.id}
                 href={`/panel/clientes/${customer.id}/history`}
                 className={cn(
-                  "flex items-center gap-3 p-3 rounded-lg transition-colors hover:bg-muted/50",
-                  isActive && "bg-muted shadow-sm"
+                  "flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50",
+                  isSelected && "bg-muted shadow-sm",
                 )}
               >
                 <Avatar className="h-10 w-10 border">
-                  <AvatarImage src={customer.avatar_url || ''} />
-                  <AvatarFallback>{initials}</AvatarFallback>
+                  <AvatarImage src={customer.avatar_url ?? ""} alt={customer.full_name} />
+                  <AvatarFallback>{initials || "??"}</AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col overflow-hidden">
-                  <span className={cn("text-sm font-medium truncate", isActive && "text-primary")}>
-                    {customer.full_name}
-                  </span>
-                  <span className="text-xs text-muted-foreground truncate">
-                    {customer.plan_name || 'Sin plan'}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <p className={cn("truncate text-sm font-medium", isSelected && "text-primary")}>{customer.full_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{customer.plan_name ?? "Sin plan"}</p>
                 </div>
-                {customer.subscription_status === 'active' && (
-                    <div className="ml-auto h-2 w-2 rounded-full bg-green-500" title="Activo" />
-                )}
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    customer.membership_status === "active" ? "bg-emerald-500" : "bg-muted-foreground/40",
+                  )}
+                  title={customer.membership_status}
+                />
               </Link>
-             );
+            );
           })}
-          
-          {!isLoading && !error && visibleCustomers.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">
-              No se encontraron clientes
-            </div>
-          )}
+
+          {!isLoading && !error && results.length === 0 ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">No se encontraron clientes</div>
+          ) : null}
         </div>
       </ScrollArea>
     </div>
