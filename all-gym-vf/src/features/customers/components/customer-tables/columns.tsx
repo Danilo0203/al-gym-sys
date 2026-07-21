@@ -1,15 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import { IconBrandWhatsapp } from "@tabler/icons-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DataTableColumnHeader } from "@/components/ui/table/data-table-column-header";
+import { SubscriptionStatusBadge } from "@/components/subscription-status-badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { CustomerListItem } from "@/features/customers/lib/local-customers";
 import { CustomerWhatsAppDialog } from "./customer-whatsapp-dialog";
 import { CellAction } from "./cell-action";
+
+export type Customer = CustomerListItem & {
+  plan_id: number | null;
+  plan_name: string | null;
+  subscription_status: string | null;
+  subscription_start_date: string | null;
+  subscription_end_date: string | null;
+  subscription_grace_days: number | null;
+  subscription_access_until: string | null;
+  subscription_display_status: string;
+  injuries?: string | null;
+  medical_notes?: string | null;
+};
+
+const membershipOptions = [
+  { label: "Activa", value: "active" },
+  { label: "Por vencer", value: "expiring" },
+  { label: "En prórroga", value: "grace" },
+  { label: "Vencida", value: "expired" },
+  { label: "Cancelada", value: "cancelled" },
+  { label: "Sin membresía", value: "none" },
+];
+
+function formatDate(value: string | null) {
+  if (!value) return "Sin registro";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-GT", {
+    timeZone: "America/Guatemala",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatCalendarDate(value: string | null) {
+  if (!value) return "Sin vigencia";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
 
 function WhatsAppCell({ customer }: { customer: Customer }) {
   const [open, setOpen] = useState(false);
@@ -32,9 +71,7 @@ function WhatsAppCell({ customer }: { customer: Customer }) {
               <IconBrandWhatsapp className="h-4 w-4" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>
-            <p>Mandar mensaje</p>
-          </TooltipContent>
+          <TooltipContent>Mandar mensaje</TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <CustomerWhatsAppDialog open={open} onOpenChange={setOpen} customer={customer} />
@@ -42,56 +79,13 @@ function WhatsAppCell({ customer }: { customer: Customer }) {
   );
 }
 
-export type Customer = {
-  id: string;
-  full_name: string | null;
-  created_at: string;
-  updated_at: string;
-  phone: string | null;
-  avatar_url: string | null;
-  is_active: boolean;
-  email: string | null;
-  birth_date: string;
-  gender: "male" | "female" | "other";
-  injuries?: string | null;
-  medical_notes?: string | null;
-  role?: "client";
-  current_membership?: unknown | null;
-  subscription_status?: string | null;
-  subscription_start_date: string | null;
-  subscription_end_date: string | null;
-  subscription_grace_days?: number | null;
-  subscription_access_until?: string | null;
-  subscription_display_status?: string | null;
-  plan_name?: string | null;
-  last_check_in: string | null;
-  biometric_id?: number | null;
-};
-
 interface CustomerColumnsOptions {
   fullNameColumnSize?: number;
   canUpdate?: boolean;
 }
 
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return {
-      date: value,
-      time: null as string | null,
-    };
-  }
-
-  return {
-    date: format(date, "dd/MM/yyyy", { locale: es }),
-    time: format(date, "HH:mm 'hs'", { locale: es }),
-  };
-}
-
 export function getColumns(options: CustomerColumnsOptions = {}): ColumnDef<Customer>[] {
   const fullNameColumnSize = options.fullNameColumnSize ?? 220;
-  const canUpdate = options.canUpdate ?? false;
 
   return [
     {
@@ -101,112 +95,122 @@ export function getColumns(options: CustomerColumnsOptions = {}): ColumnDef<Cust
       minSize: fullNameColumnSize,
       header: ({ column }) => <DataTableColumnHeader column={column} title="CLIENTE" />,
       enableColumnFilter: true,
-      meta: {
-        label: "Cliente",
-        placeholder: "Buscar por nombre...",
-        variant: "text" as const,
-      },
+      meta: { label: "Cliente", placeholder: "Buscar clientes...", variant: "text" as const },
       cell: ({ row }) => {
-        const { full_name, avatar_url, phone } = row.original;
-        const initials = (full_name || "")
-          .split(" ")
-          .map((word) => word[0])
-          .join("")
-          .toUpperCase()
-          .slice(0, 2);
-
+        const initials = row.original.full_name.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase();
         return (
           <div className="flex min-w-0 items-center gap-3">
             <Avatar className="h-9 w-9">
-              <AvatarImage src={avatar_url || ""} alt={full_name || "Cliente"} />
+              <AvatarImage src={row.original.avatar_url ?? ""} alt={row.original.full_name} />
               <AvatarFallback>{initials || "??"}</AvatarFallback>
             </Avatar>
-            <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium" title={full_name || "Sin nombre"}>
-                {full_name || "Sin nombre"}
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground">{phone || "Sin teléfono"}</span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{row.original.full_name}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{row.original.phone || "Sin teléfono"}</p>
             </div>
           </div>
         );
       },
     },
     {
-      accessorKey: "created_at",
-      size: 180,
-      minSize: 170,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="CREACIÓN" />,
-      meta: {
-        label: "Fecha de creación",
-      },
-      cell: ({ row }) => {
-        const formatted = formatDateTime(row.original.created_at);
-
-        return (
-          <div className="flex flex-col">
-            <span className="text-sm text-muted-foreground">{formatted.date}</span>
-            {formatted.time ? <span className="text-[10px] text-muted-foreground">{formatted.time}</span> : null}
-          </div>
-        );
-      },
+      accessorKey: "biometric_id",
+      size: 115,
+      header: "BIOMÉTRICO",
+      cell: ({ row }) => <span className="font-mono text-xs">#{row.original.biometric_id}</span>,
     },
     {
-      accessorKey: "updated_at",
-      size: 180,
-      minSize: 170,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="ACTUALIZACIÓN" />,
-      meta: {
-        label: "Fecha de actualización",
-      },
-      cell: ({ row }) => {
-        const formatted = formatDateTime(row.original.updated_at);
-
-        return (
-          <div className="flex flex-col">
-            <span className="text-sm text-muted-foreground">{formatted.date}</span>
-            {formatted.time ? <span className="text-[10px] text-muted-foreground">{formatted.time}</span> : null}
-          </div>
-        );
-      },
+      accessorKey: "plan_id",
+      size: 170,
+      header: "PLAN ACTUAL",
+      enableColumnFilter: true,
+      enableSorting: false,
+      meta: { label: "ID del plan", placeholder: "ID del plan", variant: "number" as const },
+      cell: ({ row }) => (
+        <div>
+          <p className="text-sm font-medium">{row.original.plan_name ?? "Sin plan"}</p>
+          {row.original.plan_id ? <p className="text-[10px] text-muted-foreground">Plan #{row.original.plan_id}</p> : null}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "membership_status",
+      size: 145,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="MEMBRESÍA" />,
+      enableColumnFilter: true,
+      meta: { label: "Membresía", variant: "select" as const, options: membershipOptions },
+      cell: ({ row }) => (
+        <SubscriptionStatusBadge
+          status={row.original.subscription_status}
+          endDate={row.original.subscription_end_date}
+          graceDays={row.original.subscription_grace_days}
+          accessUntil={row.original.subscription_access_until}
+          displayStatus={row.original.membership_status}
+        />
+      ),
+    },
+    {
+      id: "validity",
+      size: 190,
+      header: "VIGENCIA",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.subscription_start_date || row.original.subscription_end_date
+            ? `${formatCalendarDate(row.original.subscription_start_date)} – ${formatCalendarDate(row.original.subscription_end_date)}`
+            : "Sin vigencia"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "last_check_in",
+      size: 170,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="ÚLTIMO INGRESO" />,
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.last_check_in)}</span>,
     },
     {
       accessorKey: "is_active",
-      size: 140,
-      minSize: 130,
-      header: "ESTADO",
+      size: 130,
+      header: "CLIENTE",
+      enableColumnFilter: true,
+      enableSorting: false,
       meta: {
         label: "Estado cliente",
+        variant: "select" as const,
+        options: [{ label: "Activo", value: "true" }, { label: "Inactivo", value: "false" }],
       },
       cell: ({ row }) => (
-        <span
-          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-            row.original.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
-          }`}
-        >
+        <span className={row.original.is_active ? "text-xs font-medium text-emerald-600" : "text-xs font-medium text-muted-foreground"}>
           {row.original.is_active ? "Activo" : "Inactivo"}
         </span>
       ),
     },
     {
-      accessorKey: "phone",
-      size: 170,
-      minSize: 160,
+      accessorKey: "created_at",
+      size: 150,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="CREACIÓN" />,
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.created_at)}</span>,
+    },
+    {
+      accessorKey: "updated_at",
+      size: 150,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="ACTUALIZACIÓN" />,
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.updated_at)}</span>,
+    },
+    {
+      id: "contact",
+      size: 90,
       header: "CONTACTO",
-      meta: {
-        label: "Contacto",
-        disableRowClick: true,
-      },
+      enableSorting: false,
+      meta: { label: "Contacto", disableRowClick: true },
       cell: ({ row }) => <WhatsAppCell customer={row.original} />,
     },
     {
       id: "actions",
-      size: 140,
-      minSize: 130,
-      header: "Acciones",
-      meta: {
-        label: "Acciones",
-      },
-      cell: ({ row }) => <CellAction data={row.original} canUpdate={canUpdate} />,
+      size: 120,
+      header: "ACCIONES",
+      enableSorting: false,
+      meta: { label: "Acciones" },
+      cell: ({ row }) => <CellAction data={row.original} canUpdate={options.canUpdate ?? false} />,
     },
   ];
 }

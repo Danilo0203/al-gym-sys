@@ -1,66 +1,33 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { CustomerTable } from "./customer-tables/customer-table";
-import { searchParamsCache } from "@/lib/searchparams";
-import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { searchParamsCache } from "@/lib/searchparams";
 import {
+  customerMembershipStatusSchema,
   mapCustomerListQuery,
-  parseCustomerListResponse,
-  parseCustomerApiResponse,
   sortingStateToBackendSort,
 } from "@/features/customers/lib/local-customers";
+import { CustomerListingClient } from "./customer-listing-client";
 
 export default async function CustomerListingPage() {
   const access = await getUserAccessContext();
-  const canUpdate = hasPermission(access, "customers.update");
-
-  const page = searchParamsCache.get("page");
-  const pageSize = searchParamsCache.get("perPage");
-  const search = searchParamsCache.get("full_name");
-  const sort = sortingStateToBackendSort(searchParamsCache.get("sort"));
-  const cookieStore = await cookies();
-  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  const rawIsActive = searchParamsCache.get("is_active");
+  const rawPlanId = Number(searchParamsCache.get("plan_id"));
+  const membershipStatus = customerMembershipStatusSchema.safeParse(
+    searchParamsCache.get("membership_status"),
+  );
   const query = mapCustomerListQuery({
-    page,
-    pageSize,
-    search,
-    sort,
+    page: searchParamsCache.get("page"),
+    pageSize: searchParamsCache.get("perPage"),
+    search: searchParamsCache.get("full_name"),
+    sort: sortingStateToBackendSort(searchParamsCache.get("sort")),
+    isActive: rawIsActive === "true" ? true : rawIsActive === "false" ? false : undefined,
+    planId: Number.isInteger(rawPlanId) && rawPlanId > 0 ? rawPlanId : undefined,
+    membershipStatus: membershipStatus.success ? membershipStatus.data : undefined,
   });
 
-  let listResponse;
-
-  try {
-    const response = await fetchAuthBackend(`/customers?${query.toString()}`, {
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
-      cache: "no-store",
-    });
-
-    listResponse = await parseCustomerApiResponse(response, parseCustomerListResponse);
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "status" in error &&
-      typeof error.status === "number" &&
-      error.status === 401
-    ) {
-      redirect("/iniciar-sesion");
-    }
-
-    throw error;
-  }
-
   return (
-    <CustomerTable
-      data={listResponse.data.map((customer) => ({
-        ...customer,
-        subscription_start_date: null,
-        subscription_end_date: null,
-        last_check_in: null,
-      }))}
-      totalItems={listResponse.meta.total}
-      canUpdate={canUpdate}
+    <CustomerListingClient
+      query={query.toString()}
+      canUpdate={hasPermission(access, "customers.update")}
     />
   );
 }

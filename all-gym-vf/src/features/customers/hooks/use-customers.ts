@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import {
   createCustomer,
   getCustomerDetail,
+  getCustomerHistory,
+  getCustomersList,
   updateCustomer,
   updateCustomerStatus,
 } from "@/features/customers/lib/customer-api";
@@ -19,7 +21,19 @@ export const customersKeys = {
   all: ["customers"] as const,
   lists: () => [...customersKeys.all, "list"] as const,
   detail: (id: string) => [...customersKeys.all, "detail", id] as const,
+  history: (id: string, query: string) => [...customersKeys.detail(id), "history", query] as const,
 };
+
+export function useCustomersList(query: URLSearchParams) {
+  const queryString = query.toString();
+
+  return useQuery({
+    queryKey: [...customersKeys.lists(), queryString],
+    queryFn: () => getCustomersList(`/api/customers?${queryString}`),
+    retry: 1,
+    staleTime: 0,
+  });
+}
 
 export function useCustomer(id: string | null) {
   return useQuery({
@@ -28,6 +42,17 @@ export function useCustomer(id: string | null) {
     enabled: Boolean(id),
     staleTime: 0,
     refetchOnMount: "always",
+  });
+}
+
+export function useCustomerHistory(id: string, query: URLSearchParams) {
+  const queryString = query.toString();
+
+  return useQuery({
+    queryKey: customersKeys.history(id, queryString),
+    queryFn: () => getCustomerHistory(id, new URLSearchParams(queryString)),
+    retry: 1,
+    staleTime: 0,
   });
 }
 
