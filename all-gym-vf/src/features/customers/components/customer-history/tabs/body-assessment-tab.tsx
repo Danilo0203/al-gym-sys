@@ -1,442 +1,219 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { useState } from "react";
+import { IconClipboardHeart, IconEdit, IconPlus, IconRuler, IconScale } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  IconTrendingUp,
-  IconTrendingDown,
-  IconMinus,
-  IconScale,
-  IconRuler,
-  IconActivity,
-  IconDroplet,
-  IconFlame,
-  IconClipboardHeart,
-} from "@tabler/icons-react";
-import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useCreateCustomerBodyAssessment,
+  useUpdateCustomerBodyAssessment,
+} from "@/features/customers/hooks/use-customers";
+import {
+  bodyAssessmentCreateSchema,
+  bodyAssessmentUpdateSchema,
+  type BodyAssessmentsResponse,
+  type BodyAssessmentWriteInput,
+  type CustomerBodyAssessment,
+} from "@/features/customers/lib/customer-health";
 import { WeightChart } from "./weight-chart";
-import { cn } from "@/lib/utils";
-import { kilogramsToPounds } from "@/lib/fitness/measurements";
 
-interface BodyAssessmentTabProps {
-  bodyAssessments: CustomerHistoryResponse["assessments"]["data"];
+const measurementFields = [
+  ["weight_kg", "Peso", "kg", 700],
+  ["height_cm", "Altura", "cm", 300],
+  ["body_fat_percentage", "Grasa corporal", "%", 100],
+  ["muscle_mass_kg", "Masa muscular", "kg", 500],
+  ["chest", "Pecho", "cm", 500],
+  ["waist", "Cintura", "cm", 500],
+  ["hip", "Cadera", "cm", 500],
+  ["arm_right", "Brazo derecho", "cm", 500],
+  ["arm_left", "Brazo izquierdo", "cm", 500],
+  ["leg_right", "Pierna derecha", "cm", 500],
+  ["leg_left", "Pierna izquierda", "cm", 500],
+] as const;
+
+const nutritionFields = [
+  ["body_type", "Tipo corporal", "text", undefined],
+  ["activity_level", "Nivel de actividad", "text", undefined],
+  ["diet_type", "Tipo de dieta", "text", undefined],
+  ["water_liters_goal", "Agua objetivo", "number", "L"],
+  ["daily_calories", "Calorías diarias", "number", "kcal"],
+  ["protein_grams", "Proteína", "number", "g"],
+  ["carbs_grams", "Carbohidratos", "number", "g"],
+  ["fat_grams", "Grasa", "number", "g"],
+] as const;
+
+type AssessmentForm = Record<string, string>;
+
+function formFromAssessment(assessment: CustomerBodyAssessment | null): AssessmentForm {
+  const form: AssessmentForm = { assessment_date: assessment?.assessment_date ?? "", notes: assessment?.notes ?? "" };
+  for (const [key] of measurementFields) form[key] = assessment?.[key]?.toString() ?? "";
+  for (const [key] of nutritionFields) form[key] = assessment?.nutrition_snapshot?.[key]?.toString() ?? "";
+  return form;
 }
 
-export function BodyAssessmentTab({ bodyAssessments: localAssessments }: BodyAssessmentTabProps) {
-  const bodyAssessments = localAssessments.map((assessment) => ({
-    ...assessment,
-    muscle_mass: assessment.muscle_mass_kg,
-    chest_cm: assessment.chest,
-    waist_cm: assessment.waist,
-    arm_cm: assessment.arm_right,
-  }));
-  const bodyTypeLabels: Record<string, string> = {
-    ectomorph: "Ectomorfo",
-    mesomorph: "Mesomorfo",
-    endomorph: "Endomorfo",
+function calendarDate(value: string | null): string {
+  if (!value) return "—";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function metric(value: number | null, unit: string): string {
+  return value === null ? "—" : `${value} ${unit}`;
+}
+
+function formHasAssessmentContent(form: AssessmentForm): boolean {
+  if (measurementFields.some(([key]) => form[key].trim() !== "")) return true;
+  if (form.notes.trim() !== "") return true;
+  return nutritionFields.some(([key]) => form[key].trim() !== "");
+}
+
+export function BodyAssessmentTab({
+  customerId,
+  response,
+  canManage,
+}: {
+  customerId: string;
+  response: BodyAssessmentsResponse;
+  canManage: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<CustomerBodyAssessment | null>(null);
+  const [form, setForm] = useState<AssessmentForm>(() => formFromAssessment(null));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const createMutation = useCreateCustomerBodyAssessment();
+  const updateMutation = useUpdateCustomerBodyAssessment();
+  const pending = createMutation.isPending || updateMutation.isPending;
+
+  const changeOpen = (next: boolean, assessment: CustomerBodyAssessment | null = null) => {
+    if (!next && pending) return;
+    setOpen(next);
+    setEditing(next ? assessment : null);
+    setForm(formFromAssessment(next ? assessment : null));
+    setErrors({});
   };
 
-  const bodyTypeColors: Record<string, string> = {
-    ectomorph: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    mesomorph: "bg-green-500/10 text-green-500 border-green-500/20",
-    endomorph: "bg-orange-500/10 text-orange-500 border-orange-500/20",
+  const buildPayload = (): BodyAssessmentWriteInput => {
+    const payload: BodyAssessmentWriteInput = {};
+    if (form.assessment_date && form.assessment_date !== editing?.assessment_date) payload.assessment_date = form.assessment_date;
+    for (const [key] of measurementFields) {
+      const original = editing?.[key] ?? null;
+      const next = form[key] === "" ? null : Number(form[key]);
+      if (editing ? next !== original : next !== null) payload[key] = next;
+    }
+    const notes = form.notes.trim() || null;
+    if (editing ? notes !== editing.notes : notes !== null) payload.notes = notes;
+
+    const nutrition: NonNullable<BodyAssessmentWriteInput["nutrition_snapshot"]> = {};
+    for (const [key, , type] of nutritionFields) {
+      const original = editing?.nutrition_snapshot?.[key] ?? null;
+      const next = form[key].trim() === "" ? null : type === "number" ? Number(form[key]) : form[key].trim();
+      if (editing ? next !== original : next !== null) nutrition[key] = next as never;
+    }
+    if (Object.keys(nutrition).length) payload.nutrition_snapshot = nutrition;
+    return payload;
   };
 
-  // Calcular cambios respecto a la medición anterior
-  const assessmentsWithChange = bodyAssessments.map((assessment, idx) => {
-    const prev = bodyAssessments[idx + 1]; // anterior en orden cronológico inverso
-    const currentWeightLb = kilogramsToPounds(assessment.weight_kg);
-    const previousWeightLb = kilogramsToPounds(prev?.weight_kg ?? null);
-    return {
-      ...assessment,
-      weight_lb: currentWeightLb,
-      weightChange: previousWeightLb !== null && currentWeightLb !== null ? currentWeightLb - previousWeightLb : null,
-    };
-  });
+  const hasContent = formHasAssessmentContent(form);
+  const isDirty = Object.keys(buildPayload()).length > 0;
+
+  const submit = async () => {
+    if (!hasContent) {
+      setErrors({ body: "Ingresa al menos una medición, nota o dato nutricional." });
+      return;
+    }
+    const schema = editing ? bodyAssessmentUpdateSchema : bodyAssessmentCreateSchema;
+    const parsed = schema.safeParse(buildPayload());
+    if (!parsed.success) {
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) nextErrors[String(issue.path.at(-1) ?? "body")] = issue.message;
+      setErrors(nextErrors);
+      return;
+    }
+    try {
+      if (editing) {
+        await updateMutation.mutateAsync({ id: customerId, assessmentId: editing.id, data: parsed.data });
+      } else {
+        await createMutation.mutateAsync({ id: customerId, data: parsed.data });
+      }
+      changeOpen(false);
+    } catch {
+      // The mutation renders a sanitized error toast and the dialog stays open.
+    }
+  };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <WeightChart data={bodyAssessments} />
+    <div className="min-w-0 space-y-6">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-lg font-bold">Evaluaciones corporales</h3>
+          <p className="text-sm text-muted-foreground">Mediciones reales registradas, de la más reciente a la más antigua.</p>
         </div>
-
-        <Card className="bg-gradient-to-br from-card to-muted/30 border-primary/10 overflow-hidden relative">
-          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-            <IconClipboardHeart size={120} />
-          </div>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <IconActivity className="h-5 w-5 text-primary" />
-              Estado Actual
-            </CardTitle>
-            <CardDescription>Resumen de última evaluación</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-2">
-            {bodyAssessments.length > 0 ? (
-              <>
-                <div className="flex justify-between items-end border-b border-primary/5 pb-4">
-                  <div className="flex flex-col">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Peso</span>
-                    <span className="text-3xl font-bold tracking-tight">
-                      {kilogramsToPounds(bodyAssessments[0].weight_kg) ?? "-"}{" "}
-                      <span className="text-sm font-normal text-muted-foreground">lb</span>
-                    </span>
-                  </div>
-                  {assessmentsWithChange[0].weightChange !== null && (
-                    <div
-                      className={cn(
-                        "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all",
-                        assessmentsWithChange[0].weightChange > 0
-                          ? "bg-red-500/10 text-red-500"
-                          : assessmentsWithChange[0].weightChange < 0
-                            ? "bg-green-500/10 text-green-500"
-                            : "bg-gray-500/10 text-gray-500",
-                      )}
-                    >
-                      {assessmentsWithChange[0].weightChange > 0 ? (
-                        <IconTrendingUp className="h-3.5 w-3.5" />
-                      ) : assessmentsWithChange[0].weightChange < 0 ? (
-                        <IconTrendingDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <IconMinus className="h-3.5 w-3.5" />
-                      )}
-                        <span>
-                          {assessmentsWithChange[0].weightChange > 0 ? "+" : ""}
-                          {assessmentsWithChange[0].weightChange.toFixed(1)}
-                          {" "}lb
-                        </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-xl bg-background/50 border border-primary/5">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest block mb-1">
-                      Grasa Corporal
-                    </span>
-                    <span className="text-lg font-bold">
-                      {bodyAssessments[0].body_fat_percentage ? `${bodyAssessments[0].body_fat_percentage}%` : "N/D"}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-background/50 border border-primary/5">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest block mb-1">
-                      Masa Muscular
-                    </span>
-                    <span className="text-lg font-bold">
-                      {bodyAssessments[0].muscle_mass ? `${bodyAssessments[0].muscle_mass} kg` : "N/D"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground flex items-center gap-2">
-                      <IconScale className="h-4 w-4" /> Somatotipo
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={cn("px-2 font-medium capitalize", bodyTypeColors[bodyAssessments[0].body_type || ""])}
-                    >
-                      {bodyTypeLabels[bodyAssessments[0].body_type || ""] || bodyAssessments[0].body_type || "N/D"}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground flex items-center gap-2">
-                      <IconFlame className="h-4 w-4" /> Calorías Objetivo
-                    </span>
-                    <span className="font-semibold">
-                      {bodyAssessments[0].daily_calories ? `${bodyAssessments[0].daily_calories} kcal` : "N/D"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground flex items-center gap-2">
-                      <IconDroplet className="h-4 w-4" /> Consumo de Agua
-                    </span>
-                    <span className="font-semibold">
-                      {bodyAssessments[0].water_liters_goal ? `${bodyAssessments[0].water_liters_goal} L` : "N/D"}
-                    </span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <IconClipboardHeart className="h-12 w-12 text-muted-foreground/30 mb-2" />
-                <p className="text-sm text-muted-foreground">No hay datos disponibles</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {canManage ? <Button onClick={() => changeOpen(true)}><IconPlus className="h-4 w-4" /> Nueva evaluación</Button> : null}
       </div>
 
-      <div className="space-y-6">
-        <div className="flex items-center justify-between pb-2 px-2">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
-              <IconRuler className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-black text-xl tracking-tight">Historial de Evolución</h3>
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest opacity-70">
-                Registro físico completo
-              </p>
-            </div>
-          </div>
-          <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary font-black px-3 py-1 text-xs">
-            {bodyAssessments.length} {bodyAssessments.length === 1 ? "ENTRADA" : "ENTRADAS"}
-          </Badge>
-        </div>
+      <WeightChart data={response.data} />
 
-        {bodyAssessments.length === 0 ? (
-          <Card className="border-dashed border-primary/20 bg-muted/5 rounded-3xl">
-            <CardContent className="flex flex-col items-center justify-center py-20">
-              <div className="bg-muted/10 p-4 rounded-full mb-4">
-                <IconClipboardHeart className="h-12 w-12 text-muted-foreground/30" />
-              </div>
-              <p className="text-muted-foreground font-medium">No hay registros de evaluaciones disponibles todavía</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-8">
-            {assessmentsWithChange.map((assessment, index) => (
-              <div
-                key={assessment.id}
-                className={cn(
-                  "p-1 rounded-[2.5rem] border transition-all duration-500",
-                  index === 0
-                    ? "bg-gradient-to-br from-primary/20 via-background to-background border-primary/20 shadow-2xl shadow-primary/5"
-                    : "bg-muted/10 border-primary/5 shadow-sm",
-                )}
-              >
-                <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3">
-                  {/* TILE 1: FECHA Y PESO (Main Title) */}
-                  <div className="lg:col-span-4 bg-background/60 backdrop-blur-md rounded-[2rem] p-6 flex flex-col justify-between border border-primary/5 min-h-[180px]">
-                    <div className="flex justify-between items-start">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-1">
-                          {format(new Date(assessment.assessment_date), "EEEE", { locale: es })}
-                        </span>
-                        <h4 className="text-2xl font-black tracking-tighter">
-                          {format(new Date(assessment.assessment_date), "dd MMM, yyyy", { locale: es })}
-                        </h4>
-                      </div>
-                      {index === 0 && (
-                        <Badge className="bg-primary text-[10px] font-black px-2 py-0 border-none rounded-full text-white">
-                          ÚLTIMA
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="mt-8 flex items-end justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-[11px] font-bold text-muted-foreground uppercase">Peso Corporal</span>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-5xl font-black tracking-tight">{assessment.weight_lb ?? "-"}</span>
-                          <span className="text-lg font-bold text-muted-foreground">lb</span>
-                        </div>
-                      </div>
-
-                      {assessment.weightChange !== null && (
-                        <div
-                          className={cn(
-                            "flex flex-col items-end mb-1 px-4 py-2 rounded-2xl border",
-                            assessment.weightChange > 0
-                              ? "bg-red-500/5 border-red-500/10"
-                              : assessment.weightChange < 0
-                                ? "bg-emerald-500/5 border-emerald-500/10"
-                                : "bg-muted/5 border-muted",
-                          )}
-                        >
-                          <span className="text-[10px] font-black uppercase tracking-wider mb-0.5 opacity-60">
-                            Cambio
-                          </span>
-                          <div
-                            className={cn(
-                              "flex items-center gap-1 font-black text-lg",
-                              assessment.weightChange > 0
-                                ? "text-red-500"
-                                : assessment.weightChange < 0
-                                  ? "text-emerald-500"
-                                  : "text-muted-foreground",
-                            )}
-                          >
-                            {assessment.weightChange > 0 ? (
-                              <IconTrendingUp className="h-5 w-5" />
-                            ) : assessment.weightChange < 0 ? (
-                              <IconTrendingDown className="h-5 w-5" />
-                            ) : (
-                              <IconMinus className="h-4 w-4" />
-                            )}
-                            {assessment.weightChange > 0 ? "+" : ""}
-                            {assessment.weightChange.toFixed(1)} lb
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* TILE 2: COMPOSICION (Stats) */}
-                  <div className="lg:col-span-5 bg-card rounded-[2rem] p-6 border border-primary/5 grid grid-cols-2 gap-4">
-                    <div className="flex flex-col justify-center gap-1 p-4 bg-muted/20 rounded-[1.5rem] border border-primary/5">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                        Grasa Corp.
-                      </span>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-black">{assessment.body_fat_percentage ?? "-"}</span>
-                        <span className="text-sm font-bold opacity-50">%</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col justify-center gap-1 p-4 bg-muted/20 rounded-[1.5rem] border border-primary/5">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                        Masa Muscular
-                      </span>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-black">{assessment.muscle_mass ?? "-"}</span>
-                        <span className="text-sm font-bold opacity-50">kg</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col justify-center gap-1 p-4 bg-muted/20 rounded-[1.5rem] border border-primary/5">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                        Estatura
-                      </span>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-black">{assessment.height_cm ?? "-"}</span>
-                        <span className="text-sm font-bold opacity-50">cm</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col justify-center gap-1 p-4 bg-primary/5 rounded-[1.5rem] border border-primary/10">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-primary/80">
-                        Somatotipo
-                      </span>
-                      {assessment.body_type ? (
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "mt-1 text-[10px] font-black uppercase tracking-tighter border-none px-0",
-                            bodyTypeColors[assessment.body_type].split(" ")[1],
-                          )}
-                        >
-                          {bodyTypeLabels[assessment.body_type] || assessment.body_type}
-                        </Badge>
-                      ) : (
-                        <span className="text-xl font-black">-</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* TILE 3: NUTRICION INTENSIVA */}
-                  <div className="lg:col-span-3 bg-gradient-to-br from-card to-muted/20 rounded-[2rem] p-6 border border-primary/5 flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-2">
-                        <IconFlame className="h-3 w-3 text-orange-500" /> kcal diarias
-                      </span>
-                      <span className="text-2xl font-black tracking-tighter">{assessment.daily_calories ?? "-"}</span>
-                    </div>
-
-                    <div className="h-px bg-primary/5 w-full" />
-
-                    <div className="grid grid-cols-1 gap-3 flex-1 justify-center">
-                      {assessment.protein_grams || assessment.carbs_grams || assessment.fat_grams ? (
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="flex flex-col items-center p-2 bg-rose-500/5 rounded-2xl border border-rose-500/10">
-                            <span className="text-lg font-black text-rose-500 leading-none">
-                              {assessment.protein_grams || 0}
-                            </span>
-                            <span className="text-[8px] font-black uppercase mt-1 opacity-70">Prot</span>
-                          </div>
-                          <div className="flex flex-col items-center p-2 bg-sky-500/5 rounded-2xl border border-sky-500/10">
-                            <span className="text-lg font-black text-sky-500 leading-none">
-                              {assessment.carbs_grams || 0}
-                            </span>
-                            <span className="text-[8px] font-black uppercase mt-1 opacity-70">Carbs</span>
-                          </div>
-                          <div className="flex flex-col items-center p-2 bg-amber-500/5 rounded-2xl border border-amber-500/10">
-                            <span className="text-lg font-black text-amber-500 leading-none">
-                              {assessment.fat_grams || 0}
-                            </span>
-                            <span className="text-[8px] font-black uppercase mt-1 opacity-70">Fat</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center p-4 text-[10px] text-muted-foreground italic bg-muted/20 rounded-2xl">
-                          Sin macros
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* TILE 4: MEDIDAS (Full Width Row below) */}
-                  <div className="lg:col-span-7 bg-card rounded-[2rem] p-6 border border-primary/5 flex flex-col md:flex-row items-center gap-6">
-                    <div className="flex flex-col gap-0.5 md:mr-4">
-                      <h5 className="text-[10px] font-black uppercase tracking-[.2em] text-muted-foreground">
-                        Perímetros
-                      </h5>
-                      <p className="text-xs font-medium text-muted-foreground/60 w-32">
-                        Mediciones anatómicas en centímetros
-                      </p>
-                    </div>
-
-                    <div className="flex-1 grid grid-cols-3 gap-4 w-full">
-                      <div className="relative group">
-                        <div className="absolute inset-0 bg-primary/5 blur-xl group-hover:bg-primary/10 transition-all opacity-0 group-hover:opacity-100" />
-                        <div className="relative bg-muted/30 rounded-[1.5rem] p-4 flex flex-col items-center border border-primary/5 transition-transform hover:-translate-y-1">
-                          <span className="text-xl font-black">{assessment.chest_cm || "-"}</span>
-                          <span className="text-[8px] font-black uppercase tracking-widest mt-1 text-primary">
-                            Pecho
-                          </span>
-                        </div>
-                      </div>
-                      <div className="relative group">
-                        <div className="relative bg-muted/30 rounded-[1.5rem] p-4 flex flex-col items-center border border-primary/5 transition-transform hover:-translate-y-1">
-                          <span className="text-xl font-black">{assessment.waist_cm || "-"}</span>
-                          <span className="text-[8px] font-black uppercase tracking-widest mt-1 text-primary">
-                            Cintura
-                          </span>
-                        </div>
-                      </div>
-                      <div className="relative group">
-                        <div className="relative bg-muted/30 rounded-[1.5rem] p-4 flex flex-col items-center border border-primary/5 transition-transform hover:-translate-y-1">
-                          <span className="text-xl font-black">{assessment.arm_cm || "-"}</span>
-                          <span className="text-[8px] font-black uppercase tracking-widest mt-1 text-primary">
-                            Brazo
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* TILE 5: DIETA Y ACTIVIDAD (Compact) */}
-                  <div className="lg:col-span-5 bg-muted/20 rounded-[2rem] p-6 border border-primary/5 flex items-center gap-4">
-                    <div className="p-3 bg-background/80 rounded-2xl border border-primary/5">
-                      <IconActivity className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="flex flex-col gap-1 justify-center">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                          Nivel de Actividad
-                        </span>
-                        <Badge
-                          variant="secondary"
-                          className="bg-primary/10 text-primary border-none text-[9px] font-black px-1.5 h-4"
-                        >
-                          {assessment.diet_type || "-"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm font-bold capitalize">
-                        {assessment.activity_level
-                          ? assessment.activity_level.replace(/_/g, " ").replace(/(\d+)\s+(\d+)/, "$1 a $2")
-                          : "Nivel no definido"}
-                      </p>
-                    </div>
-                  </div>
+      {response.data.length === 0 ? (
+        <Card className="border-dashed"><CardContent className="flex min-h-52 flex-col items-center justify-center gap-3 text-center"><IconClipboardHeart className="h-10 w-10 text-muted-foreground/40" /><p className="font-medium">Aún no hay evaluaciones corporales</p><p className="text-sm text-muted-foreground">{canManage ? "Puedes registrar una evaluación parcial con al menos una medición, nota o dato nutricional." : "No hay mediciones registradas para mostrar."}</p></CardContent></Card>
+      ) : (
+        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+          {response.data.map((assessment) => (
+            <Card key={assessment.id} className="min-w-0 overflow-hidden border-primary/10">
+              <CardHeader className="flex flex-row items-start justify-between gap-4 border-b bg-muted/20">
+                <div><CardTitle className="text-base">{calendarDate(assessment.assessment_date)}</CardTitle><p className="text-xs text-muted-foreground">Evaluación corporal</p></div>
+                {canManage ? <Button size="sm" variant="outline" onClick={() => changeOpen(true, assessment)}><IconEdit className="h-4 w-4" /> Editar</Button> : null}
+              </CardHeader>
+              <CardContent className="space-y-4 p-5">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Metric label="Peso" value={metric(assessment.weight_kg, "kg")} icon={<IconScale />} />
+                  <Metric label="Altura" value={metric(assessment.height_cm, "cm")} icon={<IconRuler />} />
+                  <Metric label="Grasa" value={metric(assessment.body_fat_percentage, "%")} />
+                  <Metric label="Músculo" value={metric(assessment.muscle_mass_kg, "kg")} />
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                <div className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">
+                  {measurementFields.slice(4).map(([key, label, unit]) => <Row key={key} label={label} value={metric(assessment[key], unit)} />)}
+                </div>
+                {assessment.notes ? <div className="rounded-lg border bg-muted/10 p-3"><p className="text-xs text-muted-foreground">Notas</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{assessment.notes}</p></div> : null}
+                {assessment.nutrition_snapshot ? <div className="rounded-lg border bg-muted/10 p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instantánea nutricional</p><div className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">{nutritionFields.map(([key, label, type, unit]) => <Row key={key} label={label} value={assessment.nutrition_snapshot?.[key] === null ? "—" : `${assessment.nutrition_snapshot?.[key]}${type === "number" && unit ? ` ${unit}` : ""}`} />)}</div></div> : null}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {canManage ? (
+        <Dialog open={open} onOpenChange={(next) => changeOpen(next, editing)}>
+          <DialogContent className="max-h-[90vh] min-w-0 overflow-y-auto sm:max-w-4xl">
+            <DialogHeader><DialogTitle>{editing ? "Editar evaluación corporal" : "Nueva evaluación corporal"}</DialogTitle><DialogDescription>Registra únicamente datos medidos. Puedes guardar una evaluación parcial.</DialogDescription></DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2"><Label htmlFor="assessment-date">Fecha (opcional)</Label><Input id="assessment-date" type="date" value={form.assessment_date} onChange={(event) => setForm((current) => ({ ...current, assessment_date: event.target.value }))} autoFocus aria-invalid={Boolean(errors.assessment_date)} />{errors.assessment_date ? <p className="text-xs text-destructive">{errors.assessment_date}</p> : null}</div>
+              <fieldset className="space-y-3"><legend className="font-semibold">Mediciones</legend><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{measurementFields.map(([key, label, unit, max]) => <NumberField key={key} id={key} label={`${label} (${unit})`} value={form[key]} max={max} error={errors[key]} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} />)}</div></fieldset>
+              <div className="space-y-2"><Label htmlFor="assessment-notes">Notas</Label><Textarea id="assessment-notes" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} aria-invalid={Boolean(errors.notes)} />{errors.notes ? <p className="text-xs text-destructive">{errors.notes}</p> : null}</div>
+              <fieldset className="space-y-3"><legend className="font-semibold">Instantánea nutricional (opcional)</legend><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{nutritionFields.map(([key, label, type, unit]) => type === "number" ? <NumberField key={key} id={key} label={`${label}${unit ? ` (${unit})` : ""}`} value={form[key]} error={errors[key]} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} /> : <div key={key} className="space-y-2"><Label htmlFor={`assessment-${key}`}>{label}</Label><Input id={`assessment-${key}`} value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} aria-invalid={Boolean(errors[key])} />{errors[key] ? <p className="text-xs text-destructive">{errors[key]}</p> : null}</div>)}</div></fieldset>
+              {errors.body ? <p className="text-sm text-destructive">{errors.body}</p> : null}
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => changeOpen(false)} disabled={pending}>Cancelar</Button><Button onClick={submit} disabled={pending || !isDirty || !hasContent}>{pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear evaluación"}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
+}
+
+function NumberField({ id, label, value, error, onChange, max }: { id: string; label: string; value: string; error?: string; onChange: (value: string) => void; max?: number }) {
+  return <div className="space-y-2"><Label htmlFor={`assessment-${id}`}>{label}</Label><Input id={`assessment-${id}`} type="number" min="0" max={max} step="any" value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} />{error ? <p className="text-xs text-destructive">{error}</p> : null}</div>;
+}
+
+function Metric({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  return <div className="min-w-0 rounded-lg border bg-muted/10 p-3"><div className="flex items-center gap-1 text-xs text-muted-foreground">{icon}<span>{label}</span></div><p className="mt-1 truncate font-bold">{value}</p></div>;
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return <div className="flex min-w-0 justify-between gap-3 border-b py-1 last:border-0"><span className="text-muted-foreground">{label}</span><span className="break-words text-right font-medium">{value}</span></div>;
 }

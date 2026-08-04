@@ -122,12 +122,30 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
         </Card>
 
         <Card>
+          <CardHeader><CardTitle>Estado de salud</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            <Row
+              label="Perfil"
+              value={customer.health_profile_status === "completed"
+                ? "Perfil de salud completado"
+                : customer.health_profile_status === "requires_attention"
+                  ? "Requiere atención"
+                  : "Perfil de salud pendiente"}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader><CardTitle>Capacidades</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Capability enabled={customer.capabilities.update_customer} label="Editar cliente" />
             <Capability enabled={customer.capabilities.manage_account} label="Administrar cuenta" />
             <Capability enabled={customer.capabilities.manage_membership} label="Gestionar membresía" />
             <Capability enabled={customer.capabilities.view_payments} label="Ver pagos" />
+            {customer.capabilities.view_health_profile ? <Capability enabled label="Ver salud" /> : null}
+            {customer.capabilities.manage_health_profile ? <Capability enabled label="Editar salud" /> : null}
+            {customer.capabilities.view_body_assessments ? <Capability enabled label="Ver evaluaciones" /> : null}
+            {customer.capabilities.manage_body_assessments ? <Capability enabled label="Editar evaluaciones" /> : null}
           </CardContent>
         </Card>
       </div>

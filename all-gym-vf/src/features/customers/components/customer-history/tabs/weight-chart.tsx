@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { IconScale } from "@tabler/icons-react";
 
@@ -14,35 +14,49 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
-import { kilogramsToPounds } from "@/lib/fitness/measurements";
+import type { CustomerBodyAssessment } from "@/features/customers/lib/customer-health";
 
-export const description = "Gráfico interactivo de peso";
+export const description = "Gráfico interactivo de evolución corporal";
 
 const chartConfig = {
-  weight: {
-    label: "Peso (lb)",
+  value: {
+    label: "Medición",
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
 
+const metrics = {
+  weight: { label: "Peso", unit: "kg" },
+  bodyFat: { label: "Grasa corporal", unit: "%" },
+  muscleMass: { label: "Masa muscular", unit: "kg" },
+} as const;
+
+type Metric = keyof typeof metrics;
+
 interface WeightChartProps {
-  data: CustomerHistoryResponse["assessments"]["data"];
+  data: CustomerBodyAssessment[];
 }
 
 export function WeightChart({ data }: WeightChartProps) {
   const [timeRange, setTimeRange] = React.useState("90d");
+  const [metric, setMetric] = React.useState<Metric>("weight");
+  const metricDetails = metrics[metric];
 
   // Transform data
   const chartData = React.useMemo(() => {
     return data
-      .filter((item) => item.weight_kg !== null && item.weight_kg !== undefined)
-      .sort((a, b) => new Date(a.assessment_date).getTime() - new Date(b.assessment_date).getTime())
       .map((item) => ({
-        date: item.assessment_date, // Keep as string ISO
-        weight: kilogramsToPounds(item.weight_kg as number) as number,
-      }));
-  }, [data]);
+        date: item.assessment_date,
+        value: metric === "weight"
+          ? item.weight_kg
+          : metric === "bodyFat"
+            ? item.body_fat_percentage
+            : item.muscle_mass_kg,
+      }))
+      .filter((item): item is { date: string; value: number } => item.value !== null && item.date !== null)
+      .sort((a, b) => parseISO(a.date).getTime() - parseISO(b.date).getTime())
+      .map((item) => ({ date: item.date, value: item.value }));
+  }, [data, metric]);
 
   const filteredData = React.useMemo(() => {
     const referenceDate = new Date();
@@ -57,17 +71,8 @@ export function WeightChart({ data }: WeightChartProps) {
 
     const startDate = new Date(referenceDate);
     startDate.setDate(startDate.getDate() - daysToSubtract);
-    return chartData.filter((item) => new Date(item.date) >= startDate);
+    return chartData.filter((item) => parseISO(item.date) >= startDate);
   }, [chartData, timeRange]);
-
-  // Handle empty state
-  if (chartData.length === 0) {
-    return (
-      <Card className="flex flex-col items-center justify-center p-6 bg-muted/20">
-        <p className="text-muted-foreground text-sm">No hay datos suficientes.</p>
-      </Card>
-    );
-  }
 
   return (
     <Card className="border-primary/10 shadow-sm overflow-hidden backdrop-blur-sm bg-card/80">
@@ -77,40 +82,49 @@ export function WeightChart({ data }: WeightChartProps) {
             <div className="p-1.5 rounded-md bg-primary/10">
               <IconScale className="h-4 w-4 text-primary" />
             </div>
-            Evolución del Peso
+            Evolución corporal
           </CardTitle>
-          <CardDescription>Seguimiento de progreso físico</CardDescription>
+          <CardDescription>{metricDetails.label} en {metricDetails.unit}, usando únicamente mediciones disponibles</CardDescription>
         </div>
-        <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger
-            className="w-[160px] rounded-lg sm:ml-auto bg-background/50 border-primary/10"
-            aria-label="Seleccionar un rango"
-          >
-            <SelectValue placeholder="Últimos 3 meses" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl border-primary/10 backdrop-blur-md">
-            <SelectItem value="all" className="rounded-lg">
-              Todo el Historial
-            </SelectItem>
-            <SelectItem value="90d" className="rounded-lg">
-              Últimos 3 meses
-            </SelectItem>
-            <SelectItem value="30d" className="rounded-lg">
-              Últimos 30 días
-            </SelectItem>
-            <SelectItem value="7d" className="rounded-lg">
-              Esta semana
-            </SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row">
+          <Select value={metric} onValueChange={(value) => setMetric(value as Metric)}>
+            <SelectTrigger className="w-full rounded-lg bg-background/50 border-primary/10 sm:w-[170px]" aria-label="Seleccionar métrica">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="weight">Peso</SelectItem>
+              <SelectItem value="bodyFat">Grasa corporal</SelectItem>
+              <SelectItem value="muscleMass">Masa muscular</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={timeRange} onValueChange={setTimeRange}>
+            <SelectTrigger
+              className="w-full rounded-lg bg-background/50 border-primary/10 sm:w-[160px]"
+              aria-label="Seleccionar un rango"
+            >
+              <SelectValue placeholder="Últimos 3 meses" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-primary/10 backdrop-blur-md">
+              <SelectItem value="all" className="rounded-lg">Todo el Historial</SelectItem>
+              <SelectItem value="90d" className="rounded-lg">Últimos 3 meses</SelectItem>
+              <SelectItem value="30d" className="rounded-lg">Últimos 30 días</SelectItem>
+              <SelectItem value="7d" className="rounded-lg">Esta semana</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+        {filteredData.length === 0 ? (
+          <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+            No hay mediciones de {metricDetails.label.toLowerCase()} disponibles.
+          </div>
+        ) : (
+          <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
           <AreaChart data={filteredData}>
             <defs>
               <linearGradient id="fillWeight" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-weight)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--color-weight)" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--color-value)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--color-value)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
@@ -120,7 +134,7 @@ export function WeightChart({ data }: WeightChartProps) {
               tickMargin={10}
               axisLine={false}
               tickFormatter={(value) => {
-                const date = new Date(value);
+                const date = parseISO(value);
                 return format(date, "MMM d", { locale: es });
               }}
               stroke="currentColor"
@@ -134,8 +148,8 @@ export function WeightChart({ data }: WeightChartProps) {
               stroke="currentColor"
               opacity={0.5}
               fontSize={11}
-              domain={["dataMin - 5", "dataMax + 5"]}
-              tickFormatter={(value) => `${value} lb`}
+              domain={["auto", "auto"]}
+              tickFormatter={(value) => `${value} ${metricDetails.unit}`}
             />
             <ChartTooltip
               cursor={{ stroke: "var(--primary)", strokeWidth: 1, strokeDasharray: "4 4" }}
@@ -143,21 +157,21 @@ export function WeightChart({ data }: WeightChartProps) {
                 <ChartTooltipContent
                   indicator="dot"
                   labelFormatter={(value) => {
-                    const date = new Date(value);
+                    const date = parseISO(String(value));
                     return format(date, "PPP", { locale: es });
                   }}
                 />
               }
             />
             <Area
-              dataKey="weight"
+              dataKey="value"
               type="monotone"
               fill="url(#fillWeight)"
               fillOpacity={0.4}
-              stroke="var(--color-weight)"
+              stroke="var(--color-value)"
               strokeWidth={3}
               dot={{
-                fill: "var(--color-weight)",
+                fill: "var(--color-value)",
                 stroke: "var(--background)",
                 strokeWidth: 2,
                 r: 4,
@@ -165,11 +179,12 @@ export function WeightChart({ data }: WeightChartProps) {
               }}
               activeDot={{
                 r: 6,
-                style: { fill: "var(--color-weight)", opacity: 0.9 },
+                style: { fill: "var(--color-value)", opacity: 0.9 },
               }}
             />
           </AreaChart>
-        </ChartContainer>
+          </ChartContainer>
+        )}
       </CardContent>
     </Card>
   );
