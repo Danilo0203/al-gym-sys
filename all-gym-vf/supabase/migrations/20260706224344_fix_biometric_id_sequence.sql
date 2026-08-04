@@ -2,9 +2,10 @@ create sequence if not exists public.biometric_id_seq;
 
 select setval(
   'public.biometric_id_seq',
-  coalesce((select max(biometric_id) from public.profiles), 0),
-  true
-);
+  coalesce(max(biometric_id), 1),
+  max(biometric_id) is not null
+)
+from public.profiles;
 
 create or replace function public.next_biometric_id()
 returns integer
