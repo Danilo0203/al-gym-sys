@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseJsonText } from "@/lib/auth/contracts";
+import { customerBodyAssessmentSchema, customerHealthProfileStatusSchema } from "./customer-health";
 
 export const customerGenderSchema = z.enum(["male", "female", "other"]);
 export const customerListSortSchema = z.enum([
@@ -56,6 +57,7 @@ export const customerDetailSchema = customerListItemSchema.extend({
   role: z.literal("client"),
   injuries: z.string().nullable(),
   medical_notes: z.string().nullable(),
+  health_profile_status: customerHealthProfileStatusSchema,
   account: z.object({
     email: z.string().email().nullable(),
     has_password: z.boolean(),
@@ -66,6 +68,10 @@ export const customerDetailSchema = customerListItemSchema.extend({
     manage_account: z.boolean(),
     manage_membership: z.boolean(),
     view_payments: z.boolean(),
+    view_health_profile: z.boolean(),
+    manage_health_profile: z.boolean(),
+    view_body_assessments: z.boolean(),
+    manage_body_assessments: z.boolean(),
   }).strict(),
 }).strict();
 
@@ -149,31 +155,9 @@ export const customerHistoryResponseSchema = z.object({
     })),
   }),
   assessments: z.object({
-    data: z.array(z.object({
-      id: z.uuid(),
-      assessment_date: z.string(),
-      weight_kg: z.number().nullable(),
-      height_cm: z.number().nullable(),
-      body_fat_percentage: z.number().nullable(),
-      muscle_mass_kg: z.number().nullable(),
-      body_type: z.string().nullable(),
-      activity_level: z.string().nullable(),
-      water_liters_goal: z.number().nullable(),
-      daily_calories: z.number().nullable(),
-      protein_grams: z.number().nullable(),
-      carbs_grams: z.number().nullable(),
-      fat_grams: z.number().nullable(),
-      chest: z.number().nullable(),
-      waist: z.number().nullable(),
-      hip: z.number().nullable(),
-      arm_right: z.number().nullable(),
-      arm_left: z.number().nullable(),
-      leg_right: z.number().nullable(),
-      leg_left: z.number().nullable(),
-      diet_type: z.string().nullable(),
-    })),
+    data: z.array(customerBodyAssessmentSchema),
     meta: paginationMetaSchema,
-  }),
+  }).nullable(),
   kpis: z.object({
     member_since: z.string().nullable(),
     total_visits: z.number().int().nonnegative(),
@@ -380,6 +364,8 @@ function getCustomerErrorMessage(status: number, responseText: string): string {
         return "No tienes autorización para administrar esta cuenta.";
       case "CUSTOMER_NOT_FOUND":
         return "Cliente no encontrado.";
+      case "BODY_ASSESSMENT_NOT_FOUND":
+        return "Evaluación corporal no encontrada.";
     }
   } catch {
     return status >= 500 ? "No fue posible completar la operación." : "No fue posible procesar la respuesta del servidor.";

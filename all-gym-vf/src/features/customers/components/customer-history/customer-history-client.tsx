@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconActivity,
   IconArrowLeft,
@@ -18,6 +18,7 @@ import {
   IconPhone,
   IconRun,
   IconScale,
+  IconHeartbeat,
   IconTrendingDown,
   IconTrendingUp,
   IconUserCheck,
@@ -40,6 +41,8 @@ import { CustomerStatusActionSummary } from "@/features/customers/components/cus
 import { CustomerAccountDialog } from "@/features/customers/components/customer-account-dialog";
 import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customers";
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
+import type { BodyAssessmentsResponse, CustomerHealthProfile } from "@/features/customers/lib/customer-health";
+import { CustomerHealthProfileSection } from "@/features/customers/components/customer-health-profile";
 import { AccessHistoryTab } from "./tabs/access-history-tab";
 import { BodyAssessmentTab } from "./tabs/body-assessment-tab";
 import { PaymentHistoryTab } from "./tabs/payment-history-tab";
@@ -51,6 +54,8 @@ import { es } from "date-fns/locale";
 interface CustomerHistoryClientProps {
   profile: CustomerDetail;
   history: CustomerHistoryResponse;
+  healthProfile?: CustomerHealthProfile;
+  bodyAssessments?: BodyAssessmentsResponse;
   membershipsPage: number;
   paymentsPage: number;
   assessmentsPage: number;
@@ -60,7 +65,7 @@ interface CustomerHistoryClientProps {
   isRefreshing: boolean;
 }
 
-const sectionIds = ["overview", "routine", "memberships", "payments", "attendance", "assessments"] as const;
+const sectionIds = ["overview", "routine", "memberships", "payments", "attendance", "health", "assessments"] as const;
 
 const dateTimeFormatter = new Intl.DateTimeFormat("es-GT", {
   timeZone: "America/Guatemala",
@@ -102,6 +107,8 @@ function membershipHeaderMeta(status: CustomerDetail["membership_status"]) {
 export function CustomerHistoryClient({
   profile,
   history,
+  healthProfile,
+  bodyAssessments,
   membershipsPage,
   paymentsPage,
   assessmentsPage,
@@ -123,6 +130,12 @@ export function CustomerHistoryClient({
     : "sin fecha registrada";
   const canUpdateCustomer = profile.capabilities.update_customer;
   const canManageAccount = profile.capabilities.manage_account;
+  const visibleSectionIds = useMemo(() => sectionIds.filter((sectionId) => {
+    if (sectionId === "payments") return history.payments !== null;
+    if (sectionId === "health") return profile.capabilities.view_health_profile;
+    if (sectionId === "assessments") return profile.capabilities.view_body_assessments;
+    return true;
+  }), [history.payments, profile.capabilities.view_body_assessments, profile.capabilities.view_health_profile]);
   const accountStatus = profile.account.login_enabled
     ? "Acceso configurado"
     : "Acceso pendiente";
@@ -160,7 +173,7 @@ export function CustomerHistoryClient({
       const activationPoint = content.getBoundingClientRect().top + 160;
       let nextSection: (typeof sectionIds)[number] = "overview";
 
-      for (const sectionId of sectionIds) {
+      for (const sectionId of visibleSectionIds) {
         const section = document.getElementById(sectionId);
         if (section && section.getBoundingClientRect().top <= activationPoint) nextSection = sectionId;
       }
@@ -171,7 +184,7 @@ export function CustomerHistoryClient({
     handleScroll();
     content.addEventListener("scroll", handleScroll, { passive: true });
     return () => content.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [visibleSectionIds]);
 
   const scrollToSection = (sectionId: (typeof sectionIds)[number]) => {
     const content = contentRef.current;
@@ -331,7 +344,8 @@ export function CustomerHistoryClient({
           <NavTab active={activeSection === "memberships"} onClick={() => scrollToSection("memberships")} label="Membresías" icon={<IconFileCertificate />} />
           {history.payments ? <NavTab active={activeSection === "payments"} onClick={() => scrollToSection("payments")} label="Finanzas" icon={<IconCoin />} /> : null}
           <NavTab active={activeSection === "attendance"} onClick={() => scrollToSection("attendance")} label="Accesos" icon={<IconRun />} />
-          <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evolution" icon={<IconScale />} />
+          {profile.capabilities.view_health_profile ? <NavTab active={activeSection === "health"} onClick={() => scrollToSection("health")} label="Salud" icon={<IconHeartbeat />} /> : null}
+          {profile.capabilities.view_body_assessments ? <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evolution" icon={<IconScale />} /> : null}
         </nav>
       </header>
 
@@ -363,6 +377,7 @@ export function CustomerHistoryClient({
                 <Row label="Credenciales" value={credentialsStatus} />
                 <Row label="Miembro desde" value={formatCalendarDate(history.kpis.member_since)} />
                 <Row label="Último ingreso" value={formatDateTime(profile.last_check_in)} />
+                <Row label="Estado de salud" value={healthStatusLabel(profile.health_profile_status)} />
               </OverviewCard>
               <OverviewCard title="Membresía actual" icon={<IconFileCertificate />}>
                 <Row label="Plan" value={membership?.plan_name ?? "Sin plan"} />
@@ -420,16 +435,30 @@ export function CustomerHistoryClient({
             />
           </section>
 
-          <section id="assessments" className="min-w-0 scroll-mt-4 space-y-6">
-            <SectionHeader icon={<IconActivity />} title="Progreso Somatométrico" />
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Datos físicos</h4>
-            <BodyAssessmentTab bodyAssessments={history.assessments.data} />
-            <Pagination meta={history.assessments.meta} page={assessmentsPage} onChange={onAssessmentsPageChange} />
-          </section>
+          {profile.capabilities.view_health_profile && healthProfile ? (
+            <section id="health" className="min-w-0 scroll-mt-4 space-y-6">
+              <SectionHeader icon={<IconHeartbeat />} title="Salud y perfil de entrenamiento" />
+              <CustomerHealthProfileSection profile={healthProfile} canManage={profile.capabilities.manage_health_profile} />
+            </section>
+          ) : null}
+
+          {profile.capabilities.view_body_assessments && bodyAssessments ? (
+            <section id="assessments" className="min-w-0 scroll-mt-4 space-y-6">
+              <SectionHeader icon={<IconActivity />} title="Progreso Somatométrico" />
+              <BodyAssessmentTab customerId={profile.id} response={bodyAssessments} canManage={profile.capabilities.manage_body_assessments} />
+              <Pagination meta={bodyAssessments.meta} page={assessmentsPage} onChange={onAssessmentsPageChange} />
+            </section>
+          ) : null}
         </div>
       </div>
     </div>
   );
+}
+
+function healthStatusLabel(status: CustomerDetail["health_profile_status"]): string {
+  if (status === "completed") return "Perfil de salud completado";
+  if (status === "requires_attention") return "Requiere atención";
+  return "Perfil de salud pendiente";
 }
 
 function HeaderStatusText({ tone, label }: { tone: "success" | "warning" | "danger" | "muted"; label: string }) {

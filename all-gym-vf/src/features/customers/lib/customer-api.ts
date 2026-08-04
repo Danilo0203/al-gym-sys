@@ -19,6 +19,19 @@ import {
   type UpdateCustomerInput,
   type UpdateCustomerAccountInput,
 } from "./local-customers";
+import {
+  bodyAssessmentCreateSchema,
+  bodyAssessmentsResponseSchema,
+  bodyAssessmentUpdateSchema,
+  customerBodyAssessmentSchema,
+  customerHealthProfileSchema,
+  customerHealthProfileUpdateSchema,
+  type BodyAssessmentsResponse,
+  type BodyAssessmentWriteInput,
+  type CustomerBodyAssessment,
+  type CustomerHealthProfile,
+  type CustomerHealthProfileUpdateInput,
+} from "./customer-health";
 
 async function fetchCustomersApi(pathname: string, init: RequestInit): Promise<Response> {
   let response: Response;
@@ -83,6 +96,58 @@ export async function getCustomerDetail(id: string): Promise<CustomerDetail> {
   });
 
   return parseCustomerApiResponse(response, (payload) => customerDetailSchema.parse(payload));
+}
+
+export async function getCustomerHealthProfile(id: string): Promise<CustomerHealthProfile> {
+  const response = await fetchCustomersApi(`/api/customers/${id}/health-profile`, { method: "GET" });
+  return parseCustomerApiResponse(response, (payload) => customerHealthProfileSchema.parse(payload));
+}
+
+export async function updateCustomerHealthProfile(
+  id: string,
+  input: CustomerHealthProfileUpdateInput,
+): Promise<CustomerHealthProfile> {
+  const payload = customerHealthProfileUpdateSchema.parse(input);
+  const response = await fetchCustomersApi(`/api/customers/${id}/health-profile`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return parseCustomerApiResponse(response, (result) => customerHealthProfileSchema.parse(result));
+}
+
+export async function getCustomerBodyAssessments(
+  id: string,
+  page: number,
+  pageSize: number,
+): Promise<BodyAssessmentsResponse> {
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  const response = await fetchCustomersApi(`/api/customers/${id}/body-assessments?${query}`, { method: "GET" });
+  return parseCustomerApiResponse(response, (payload) => bodyAssessmentsResponseSchema.parse(payload));
+}
+
+export async function createCustomerBodyAssessment(
+  id: string,
+  input: BodyAssessmentWriteInput,
+): Promise<CustomerBodyAssessment> {
+  const payload = bodyAssessmentCreateSchema.parse(input);
+  const response = await fetchCustomersApi(`/api/customers/${id}/body-assessments`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return parseCustomerApiResponse(response, (result) => customerBodyAssessmentSchema.parse(result));
+}
+
+export async function updateCustomerBodyAssessment(
+  id: string,
+  assessmentId: string,
+  input: BodyAssessmentWriteInput,
+): Promise<CustomerBodyAssessment> {
+  const payload = bodyAssessmentUpdateSchema.parse(input);
+  const response = await fetchCustomersApi(`/api/customers/${id}/body-assessments/${assessmentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return parseCustomerApiResponse(response, (result) => customerBodyAssessmentSchema.parse(result));
 }
 
 export async function createCustomer(input: CreateCustomerInput): Promise<CustomerDetail> {

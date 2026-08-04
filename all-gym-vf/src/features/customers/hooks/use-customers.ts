@@ -5,13 +5,22 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   createCustomer,
+  createCustomerBodyAssessment,
+  getCustomerBodyAssessments,
   getCustomerDetail,
+  getCustomerHealthProfile,
   getCustomerHistory,
   getCustomersList,
   updateCustomer,
   updateCustomerAccount,
+  updateCustomerBodyAssessment,
+  updateCustomerHealthProfile,
   updateCustomerStatus,
 } from "@/features/customers/lib/customer-api";
+import type {
+  BodyAssessmentWriteInput,
+  CustomerHealthProfileUpdateInput,
+} from "@/features/customers/lib/customer-health";
 import type {
   CreateCustomerInput,
   CustomerDetail,
@@ -24,6 +33,10 @@ export const customersKeys = {
   lists: () => [...customersKeys.all, "list"] as const,
   detail: (id: string) => [...customersKeys.all, "detail", id] as const,
   history: (id: string, query: string) => [...customersKeys.detail(id), "history", query] as const,
+  healthProfile: (id: string) => [...customersKeys.detail(id), "health-profile"] as const,
+  bodyAssessments: (id: string) => [...customersKeys.detail(id), "body-assessments"] as const,
+  bodyAssessmentsPage: (id: string, page: number, pageSize: number) =>
+    [...customersKeys.bodyAssessments(id), page, pageSize] as const,
 };
 
 export function useCustomersList(query: URLSearchParams) {
@@ -55,6 +68,66 @@ export function useCustomerHistory(id: string, query: URLSearchParams) {
     queryFn: () => getCustomerHistory(id, new URLSearchParams(queryString)),
     retry: 1,
     staleTime: 0,
+  });
+}
+
+export function useCustomerHealthProfile(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: customersKeys.healthProfile(id),
+    queryFn: () => getCustomerHealthProfile(id),
+    enabled: Boolean(id) && enabled,
+    staleTime: 0,
+  });
+}
+
+export function useCustomerBodyAssessments(id: string, page: number, pageSize: number, enabled: boolean) {
+  return useQuery({
+    queryKey: customersKeys.bodyAssessmentsPage(id, page, pageSize),
+    queryFn: () => getCustomerBodyAssessments(id, page, pageSize),
+    enabled: Boolean(id) && enabled,
+    staleTime: 0,
+  });
+}
+
+export function useUpdateCustomerHealthProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CustomerHealthProfileUpdateInput }) =>
+      updateCustomerHealthProfile(id, data),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(customersKeys.healthProfile(profile.customer_id), profile);
+      queryClient.invalidateQueries({ queryKey: customersKeys.detail(profile.customer_id) });
+      toast.success("Perfil de salud actualizado.");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No fue posible actualizar salud."),
+  });
+}
+
+export function useCreateCustomerBodyAssessment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: BodyAssessmentWriteInput }) =>
+      createCustomerBodyAssessment(id, data),
+    onSuccess: (assessment) => {
+      queryClient.invalidateQueries({ queryKey: customersKeys.bodyAssessments(assessment.customer_id) });
+      queryClient.invalidateQueries({ queryKey: [...customersKeys.detail(assessment.customer_id), "history"] });
+      toast.success("Evaluación corporal creada.");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No fue posible crear la evaluación."),
+  });
+}
+
+export function useUpdateCustomerBodyAssessment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, assessmentId, data }: { id: string; assessmentId: string; data: BodyAssessmentWriteInput }) =>
+      updateCustomerBodyAssessment(id, assessmentId, data),
+    onSuccess: (assessment) => {
+      queryClient.invalidateQueries({ queryKey: customersKeys.bodyAssessments(assessment.customer_id) });
+      queryClient.invalidateQueries({ queryKey: [...customersKeys.detail(assessment.customer_id), "history"] });
+      toast.success("Evaluación corporal actualizada.");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "No fue posible actualizar la evaluación."),
   });
 }
 
