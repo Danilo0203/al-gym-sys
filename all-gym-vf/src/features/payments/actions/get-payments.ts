@@ -1,9 +1,12 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import { z } from "zod";
+
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
-import { Payment } from "../components/payment-tables/columns";
+import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import type { ExtendedColumnSort } from "@/types/data-table";
+import type { Payment } from "../components/payment-tables/columns";
 
 export interface GetPaymentsParams {
   page: number;
@@ -20,20 +23,29 @@ export interface GetPaymentsResponse {
   total: number;
 }
 
-interface PaymentRow {
-  id: string;
-  payment_date: string;
-  amount_paid: number | string;
-  method: Payment["method"];
-  user_id: string;
-  user_name: string | null;
-  avatar_url: string | null;
-  plan_name: string | null;
-  subscription_status: string | null;
-  subscription_end_date: string | null;
-  subscription_grace_days?: number | null;
-  subscription_access_until?: string | null;
-}
+const paymentSchema = z.object({
+  id: z.string().uuid(),
+  payment_date: z.string().datetime(),
+  amount_paid: z.number(),
+  method: z.enum(["cash", "card", "transfer"]),
+  user_id: z.string().uuid(),
+  user_name: z.string(),
+  avatar_url: z.string().nullable(),
+  plan_name: z.string(),
+  subscription_status: z.string().nullable(),
+  subscription_end_date: z.string().nullable(),
+  subscription_grace_days: z.number().nullable(),
+  subscription_access_until: z.string().nullable(),
+});
+
+const paymentsResponseSchema = z.object({
+  data: z.array(paymentSchema),
+  total: z.number().int().nonnegative(),
+});
+
+const sortableColumns = new Set([
+  "payment_date", "user_name", "subscription_status", "plan_name", "method", "amount_paid",
+]);
 
 export async function getPayments({
   page,
@@ -45,116 +57,42 @@ export async function getPayments({
   sort,
 }: GetPaymentsParams): Promise<GetPaymentsResponse> {
   const access = await getUserAccessContext();
-  if (!access.isAuthenticated) {
-    throw new Error("No autenticado");
-  }
+  if (!access.isAuthenticated) throw new Error("No autenticado");
   if (!hasPermission(access, "payments.view")) {
     throw new Error("No autorizado: Se requiere permiso payments.view");
   }
 
-  const supabase = await createClient();
-  let query = supabase.from("payments_overview").select("*", { count: "exact" });
+  const query = new URLSearchParams({ page: String(page), perPage: String(perPage) });
+  if (user_name) query.set("user_name", user_name);
+  if (method) query.set("method", method);
+  if (subscription_status) query.set("subscription_status", subscription_status);
 
-  // Apply text filters
-  if (user_name) {
-    query = query.ilike("user_name", `%${user_name}%`);
-  }
-
-  // Apply subscription status filter
-  if (subscription_status) {
-    const statuses = subscription_status.split(",").filter(Boolean);
-    if (statuses.length > 0) {
-      query = query.in("subscription_status", statuses);
-    }
-  }
-
-  // Apply method filter (multi-select)
-  if (method) {
-    const methods = method.split(",").filter(Boolean);
-    if (methods.length > 0) {
-      query = query.in("method", methods);
-    }
-  }
-
-  // Apply date range filter
   if (payment_date) {
-    const dates = payment_date.split(",").filter(Boolean);
-    if (dates.length >= 1 && dates[0]) {
-      const startTimestamp = parseInt(dates[0], 10);
-      if (!isNaN(startTimestamp)) {
-        const startDate = new Date(startTimestamp);
-        query = query.gte("payment_date", startDate.toISOString());
-      }
+    const [start, end] = payment_date.split(",");
+    const startTimestamp = Number(start);
+    if (start && Number.isFinite(startTimestamp) && !Number.isNaN(new Date(startTimestamp).getTime())) {
+      query.set("payment_date_start", new Date(startTimestamp).toISOString());
     }
-    if (dates.length >= 2 && dates[1]) {
-      const endTimestamp = parseInt(dates[1], 10);
-      if (!isNaN(endTimestamp)) {
-        const endDate = new Date(endTimestamp);
-        endDate.setHours(23, 59, 59, 999);
-        query = query.lte("payment_date", endDate.toISOString());
-      }
+    const endTimestamp = Number(end);
+    if (end && Number.isFinite(endTimestamp) && !Number.isNaN(new Date(endTimestamp).getTime())) {
+      const endDate = new Date(endTimestamp);
+      endDate.setHours(23, 59, 59, 999);
+      query.set("payment_date_end", endDate.toISOString());
     }
   }
 
-  // Pagination
-  const from = (page - 1) * perPage;
-  const to = from + perPage - 1;
-
-  // Sorting logic
-  if (sort && sort.length > 0) {
-    const sortColumnMap: Partial<Record<string, keyof PaymentRow>> = {
-      payment_date: "payment_date",
-      user_name: "user_name",
-      subscription_status: "subscription_status",
-      plan_name: "plan_name",
-      method: "method",
-      amount_paid: "amount_paid",
-    };
-    let hasAppliedSort = false;
-
-    sort.forEach((s) => {
-      const column = sortColumnMap[s.id];
-      if (column) {
-        query = query.order(column, { ascending: !s.desc, nullsFirst: false });
-        hasAppliedSort = true;
-      }
-    });
-
-    if (!hasAppliedSort) {
-      query = query.order("payment_date", { ascending: false });
-    }
-  } else {
-    query = query.order("payment_date", { ascending: false });
+  const validSort = sort?.filter((entry) => sortableColumns.has(entry.id));
+  if (validSort?.length) {
+    query.set("sort", validSort.map((entry) => `${entry.id}:${entry.desc ? "desc" : "asc"}`).join(","));
   }
 
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    console.error("Error fetching payments:", error);
-    throw new Error("Error al cargar pagos");
-  }
-
-  const payments: Payment[] = ((data || []) as PaymentRow[]).map((p) => {
-    return {
-      id: p.id,
-      payment_date: p.payment_date,
-      amount_paid: Number(p.amount_paid),
-      method: p.method,
-      user_id: p.user_id,
-      user_name: p.user_name || "Usuario eliminado",
-      avatar_url: p.avatar_url,
-      plan_name: p.plan_name || "Sin plan",
-      subscription_status: p.subscription_status,
-      subscription_end_date: p.subscription_end_date,
-      subscription_grace_days: p.subscription_grace_days ?? null,
-      subscription_access_until: p.subscription_access_until ?? null,
-    };
+  const cookieStore = await cookies();
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  const response = await fetchAuthBackend(`/payments?${query.toString()}`, {
+    method: "GET",
+    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
   });
 
-  return {
-    data: payments,
-    total: count || 0,
-  };
+  if (!response.ok) throw new Error("Error al cargar pagos");
+  return paymentsResponseSchema.parse(await response.json());
 }

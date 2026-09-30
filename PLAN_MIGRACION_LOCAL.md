@@ -6,11 +6,11 @@
 
 ## Objetivo y criterio de cierre
 
-La aplicación debe poder arrancar y ejecutar **todos los flujos usados por el gimnasio** con PostgreSQL, API, web, archivos y sincronización biométrica locales, sin contactar Hostinger ni los servicios de Supabase. La base local será la única fuente de verdad. El cierre exige probarlo con las rutas al VPS/Supabase bloqueadas; que la página cargue o que compile no demuestra independencia.
+La aplicación debe poder arrancar y ejecutar **todos los flujos usados por el gimnasio** con PostgreSQL, API, web, archivos y sincronización biométrica locales, **sin internet**, Hostinger ni los servicios de Supabase. La base local será la única fuente de verdad. El cierre exige probarlo con la red externa bloqueada; que la página cargue o que compile no demuestra independencia.
 
 `auth.users` y otras tablas heredadas pueden permanecer **dentro de PostgreSQL local** mientras sean necesarias para compatibilidad. Eliminar la dependencia significa retirar las llamadas a Supabase Auth, Data API, Storage y Edge Functions, no necesariamente renombrar el esquema SQL.
 
-**Fuera del corte Hostinger/Supabase:** ExerciseDB/RapidAPI y Cloudflare Tunnel son dependencias externas distintas. Si el requisito final es operar también **sin internet**, completar `P3-05` y `P5-05` antes de cerrar `P6-04`.
+ExerciseDB/RapidAPI y Cloudflare Tunnel son dependencias externas distintas de Hostinger/Supabase. Como el requisito final es operar **sin internet**, `P3-05` y `P5-05` son obligatorias antes de cerrar `P6-04`. Las imágenes de ejercicios deben proceder de archivos locales de la computadora, con rutas persistentes y respaldo.
 
 ## Cómo usar este documento con varios agentes
 
@@ -26,7 +26,7 @@ La aplicación debe poder arrancar y ejecutar **todos los flujos usados por el g
 - [x] `B-01` Ambas ramas `codex/local-unified-test` existen y apuntan a los repositorios correctos.
 - [x] `B-02` El backend ofrece autenticación/sesiones, perfil y Resumen local (`src/modules/auth`, `profile`, `dashboard`).
 - [x] `B-03` El backend ofrece clientes, historial, salud, membresías y operaciones de rutinas (`src/modules/customers`, `memberships`, `customer-routines`). **Esto no afirma que todas las pantallas de esos dominios hayan dejado Supabase.**
-- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0011_customer_routines.sql`; la aplicación de cada una en una instalación concreta requiere comprobación aparte.
+- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0012_plans_local_writes.sql`; la aplicación de cada una en una instalación concreta requiere comprobación aparte.
 - [ ] `B-05` Prueba integral sin conexión al VPS/Supabase. Pendiente; es la puerta final de este plan.
 
 ## Paquetes paralelos y dependencias
@@ -45,17 +45,17 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 
 **Puerta:** existe una matriz verificable de cada operación y un entorno de pruebas que no pueda escribir en el VPS.
 
-- [ ] `P0-01` Inventariar por pantalla y operación (lectura, alta, edición, borrado) el origen actual y el destino local. Incluir caja, pagos, planes, inventario, clientes, socio, usuarios, roles, mensajes, ejercicios, rutinas y asistencias. **Entregable:** tabla de rutas/acciones con propietario de datos.
+- [x] `P0-01` Inventariar por pantalla y operación (lectura, alta, edición, borrado) el origen actual y el destino local. Incluye caja, pagos, planes, inventario, clientes, socio, usuarios, roles, mensajes, ejercicios, rutinas y asistencias. **Entregable:** `docs/migracion-local/INVENTARIO.md`; actualizarlo al descubrir nuevos caminos.
 - [ ] `P0-02` Definir contratos HTTP, permisos/RLS, errores y transacciones para los módulos faltantes; documentar qué tablas y funciones SQL heredadas se conservan. **Entregable:** especificación corta por carril revisada por quien integra.
-- [ ] `P0-03` Definir almacenamiento local de imágenes/archivos, ruta persistente, límites, autorización, URL y respaldo; inventariar objetos existentes en Supabase Storage. **Entregable:** diseño y conteos de objetos.
-- [ ] `P0-04` Preparar datos de prueba y verificación aislada: PostgreSQL de pruebas, usuario por rol y comprobaciones de que ningún test apunta al VPS. **Entregable:** comandos reproducibles y resultado inicial.
+- [ ] `P0-03` Definir almacenamiento local de imágenes/archivos, ruta persistente, límites, autorización, URL y respaldo; inventariar objetos existentes en Supabase Storage. **Diseño:** `docs/migracion-local/ALMACENAMIENTO_LOCAL.md`. **Pendiente:** conteos de objetos del origen y carpeta de imágenes del usuario.
+- [x] `P0-04` Preparar datos de prueba y verificación aislada: PostgreSQL de pruebas, usuario por rol y comprobaciones de que ningún test apunta al VPS. `src/test/prepare-db.ts` exige `algym_test`, restringe `DB_HOST`, `PGHOST` y `PGHOSTADDR` a loopback, limpia configuraciones PG heredadas y siembra roles sintéticos. `pnpm test` recrea exclusivamente esa base.
 - [ ] `P0-05` Definir cómo se hará el corte: respaldo inicial, ventana sin escrituras, importación incremental/final, reconciliación y reversión. **Entregable:** runbook revisable; no ejecutarlo aún.
 
 ## Fase 1 — Una sola fuente para finanzas y existencias
 
 **Puerta:** una operación de venta o membresía cambia la base local y el Resumen refleja ese mismo cambio, sin escribir en Supabase.
 
-- [ ] `P1-01` **Planes:** implementar `POST`, `PUT/PATCH` y `DELETE` o desactivación en el backend, con validación, permisos y pruebas; conectar la web. Hoy `plans.routes.ts` solo tiene `GET /` y `GET /:id`, y las mutaciones devuelven 405.
+- [ ] `P1-01` **Planes:** `POST`, `PUT` y `DELETE` lógico en el backend, con validación, permisos y pruebas; web conectada. `0012_plans_local_writes.sql` fue aplicada a `algym` local después de crear un respaldo. **Pendiente para cerrar:** prueba de lectura y escritura con red externa bloqueada.
 - [ ] `P1-02` **Pagos:** migrar listado, detalle, alta, correcciones y reversión a API/transacciones locales. Preservar importes, estados, referencias e historial; adaptar `src/features/payments/actions/get-payments.ts`.
 - [ ] `P1-03` **Caja:** migrar apertura/cierre, movimientos, cobros de membresía, venta de productos y anulaciones de `src/features/cash/actions/cash-actions.ts`. Reproducir la atomicidad de las funciones SQL usadas hoy (`open_cash_session`, `attach_payment_to_cash`, `renew_subscription_with_payment`, etc.).
 - [ ] `P1-04` **Inventario:** migrar productos, imágenes, entradas/salidas, ajustes y stock de `src/features/inventory/actions/inventory-actions.ts`; coordinar ventas con `P1-03` para no descontar existencias dos veces.
@@ -79,7 +79,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 - [ ] `P3-02` Completar los caminos de generación/importación de `src/features/customers/actions/customer-routine-actions.ts`; sustituir `functions.invoke("exercise-catalog-provider")` por un servicio local o un catálogo local.
 - [ ] `P3-03` Migrar imágenes de productos y ejercicios desde Supabase Storage al almacenamiento decidido en `P0-03`; copiar archivos, reescribir URL y comprobar integridad y permisos.
 - [ ] `P3-04` Migrar plantillas de mensajes y cualquier consulta/escritura restante de `src/features/messages/actions/message-actions.ts`.
-- [ ] `P3-05` **Solo para operación sin internet:** guardar un catálogo suficiente y eliminar la necesidad de ExerciseDB/RapidAPI en tiempo de uso. Probar búsqueda/generación sin red.
+- [ ] `P3-05` Guardar un catálogo suficiente y eliminar la necesidad de ExerciseDB/RapidAPI en tiempo de uso. Importar y servir las imágenes de ejercicios desde archivos locales de la computadora, sin URL remotas; probar búsqueda y generación sin red.
 
 ## Fase 4 — Reloj biométrico y asistencias
 
@@ -98,7 +98,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 - [ ] `P5-02` Retirar de runtime y ejemplos las variables `NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY` y URL del VPS una vez migrados sus consumidores; revisar Dockerfile y dependencias del paquete.
 - [ ] `P5-03` Implementar respaldos automáticos de PostgreSQL **y archivos**, prueba de restauración en instancia separada y procedimiento de actualización de esquema sin borrar datos. El script actual `database/scripts/restore_local_database.sh` recrea la base y no sirve como respaldo diario.
 - [ ] `P5-04` Verificar permisos de DB, RLS/roles heredados, secretos, cookies, acceso a archivos y red local; probar al menos dueño, administrador, empleado y socio.
-- [ ] `P5-05` **Solo para operación sin internet:** retirar o hacer opcional `cloudflared` y cualquier descarga o llamada externa necesaria para arrancar o usar funciones esenciales.
+- [ ] `P5-05` Retirar o hacer opcional `cloudflared` y cualquier descarga o llamada externa necesaria para arrancar o usar funciones esenciales sin internet.
 
 ## Fase 6 — Corte y aceptación
 
@@ -106,7 +106,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 
 - [ ] `P6-01` Con respaldo verificado y ventana de corte acordada, detener escrituras al origen, importar el delta final de PostgreSQL, usuarios y archivos; conservar IDs y relaciones. Registrar fecha/hora y conteos antes/después.
 - [ ] `P6-02` Reconciliar por entidad: usuarios, clientes, planes, membresías, pagos, sesiones de caja, productos, existencias, rutinas, asistencias, comandos y archivos. Resolver diferencias antes del cierre.
-- [ ] `P6-03` Ejecutar prueba de aceptación sin VPS/Supabase: login, creación de cliente/usuario, plan, membresía, cobro/cierre/reversión, venta/stock, rutina/imagen, portal del socio, marcaje ZKTeco, Resumen y restauración de respaldo. Registrar resultados y logs sin secretos.
+- [ ] `P6-03` Ejecutar prueba de aceptación con la red externa bloqueada: login, creación de cliente/usuario, plan, membresía, cobro/cierre/reversión, venta/stock, rutina/imagen **desde archivo local**, portal del socio, marcaje ZKTeco, Resumen y restauración de respaldo. Registrar resultados y logs sin secretos.
 - [ ] `P6-04` Eliminar configuración y claves ya innecesarias; rotar credenciales expuestas; apagar Hostinger/Supabase **solo después** de confirmar `P6-01` a `P6-03` y mantener un respaldo recuperable.
 
 ## Validación mínima por entrega
@@ -123,6 +123,10 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | ID | Estado | Responsable | Repo / commit o PR | Evidencia (comando, resultado, escenario) | Fecha / bloqueo |
 | --- | --- | --- | --- | --- | --- |
 | B-01 a B-04 | Base verificada por código y rama | — | `codex/local-unified-test` en ambos repos | Rutas y migraciones indicadas arriba; no equivale a aceptación integral | Estado inicial |
-| P0-01 | Pendiente | — | — | — | — |
+| P0-01 | Hecho | Codex | `al-gym-sys` `ecae278` | Inventario por módulo y operación en `docs/migracion-local/INVENTARIO.md` | 2026-09-29 |
+| P1-01 | Implementado; falta puerta offline | Codex | Backend `e4cbfda`; web `ecae278` | Backend: `pnpm typecheck`, `pnpm test` 128/128, `pnpm build`; web: lint enfocado, `npx tsc --noEmit`, `npm run build`. Respaldo local en `/private/tmp/algym-before-plans-0012.dump`; migración aplicada a `algym`; `POST /plans` sin sesión respondió 401. | Falta lectura/escritura con red externa bloqueada |
+| P0-03 | Diseño inicial; faltan objetos de origen | Codex | `docs/migracion-local/ALMACENAMIENTO_LOCAL.md` | DB local: 0 ejercicios, 0 productos, sin `storage.objects`; web pública: solo 4 iconos PWA. Contrato de directorio persistente, límites, URL, autorización y respaldo definido. | Falta inventario remoto y ruta de archivos de ejercicios |
+| P0-04 | Hecho | Codex | Backend `6f2a793` | `pnpm test` 130/130 en `algym_test`; `DB_HOST` y `PGHOST` remotos rechazados antes de recrear DB; roles sintéticos `admin`, `employee`, `owner`, `trainer`, `client`. | 2026-09-29 |
+| P1-02 | Listado local implementado; resto pendiente | Codex | Backend `6f2a793`; web `src/features/payments/actions/get-payments.ts` | GET `/payments`: filtros, orden, paginación, 401/403; suite backend 130/130; lint, typecheck y build web. | Faltan alta, detalle, corrección, reversión y puerta offline |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.
