@@ -15,6 +15,13 @@
 4. La subida y el vínculo con la entidad deben completarse de forma coordinada. Si una escritura de base falla, retirar el archivo recién creado; si se reemplaza un archivo, conservar el anterior hasta confirmar que ya no está referenciado. La baja lógica de planes o productos no debe borrar archivos históricos sin revisión de referencias.
 5. El respaldo diario debe incluir **ambas** piezas: volcado de PostgreSQL y copia verificable de `LOCAL_MEDIA_ROOT`, con un manifiesto SHA-256 de archivos y fecha común. Probar restauración en otro directorio y otra base, no sobre la instalación en uso.
 
+## Base implementada
+
+- La API local acepta `POST /media/exercises` y `POST /media/products` con sesión y permiso de alta o edición, limita el cuerpo a 5 MB, verifica la firma de PNG/JPEG/WebP/GIF y guarda el archivo por SHA-256 bajo `LOCAL_MEDIA_ROOT` (valor por defecto `./data/media`).
+- `GET /media/{tipo}/{archivo}` requiere sesión, verifica el hash y sirve el archivo. Next.js expone la URL relativa `/api/media/{tipo}/{archivo}` y reenvía la sesión a la API, de modo que el navegador no necesita conocer el puerto del backend.
+- La prueba sintética subió y leyó una imagen PNG desde un directorio temporal, confirmó rechazo sin sesión o permiso y rechazo de datos que no son imagen.
+- La API de archivos **todavía no está conectada** a la creación de ejercicios, imágenes de productos ni a una importación de archivos reales. El directorio aún no figura como volumen en Compose ni tiene respaldo automático.
+
 ## Importación pendiente
 
 1. Inventariar en el origen los buckets `exercises` y `products`, claves, tamaños y conteos sin publicar tokens. Exportar los objetos y validar hash/cantidad.
