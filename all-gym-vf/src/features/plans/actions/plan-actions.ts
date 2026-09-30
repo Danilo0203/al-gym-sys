@@ -1,7 +1,6 @@
 'use server';
 import { plansListResponseSchema } from "@/features/customers/lib/local-memberships";
 
-import { createClient } from '@/lib/supabase/server';
 import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
 import { revalidatePath } from 'next/cache';
 
@@ -184,7 +183,7 @@ export async function deletePlan(id: number) {
     }
 
     revalidatePath('/panel/planes');
-    return { success: true, message: 'Plan eliminado correctamente' };
+    return { success: true, message: 'Plan desactivado correctamente' };
   } catch (error) {
     console.error('Error deleting plan:', error);
     return { success: false, error: 'Error de conexión con el backend' };

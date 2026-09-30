@@ -1,0 +1,35 @@
+# Inventario de orígenes de datos y operaciones
+
+Base: `codex/local-unified-test` de `al-gym-sys` y `algym-local-backend`. Este inventario registra **el código**, no prueba que una instalación tenga todas las migraciones aplicadas. Las rutas `all-gym-vf/...` y `gym-sync-server/...` son relativas a `al-gym-sys`; `backend/...` significa el repositorio hermano `algym-local-backend`.
+
+| Pantalla o servicio | Lecturas actuales | Altas, cambios y borrados actuales | Dependencia pendiente / destino local | Evidencia principal |
+| --- | --- | --- | --- | --- |
+| Login con contraseña y sesión | Backend local `/auth/me` | Backend local `/auth/login`, `/auth/logout`, cambio de contraseña | Local. OAuth y recuperación opcionales aún requieren decisión | `all-gym-vf/src/app/api/auth/`; `backend/src/modules/auth/` |
+| Perfil del personal | Backend local `/profile` | Backend local `PATCH /profile` | Local; verificar todos los campos frente a la interfaz | `all-gym-vf/src/features/profile/`; `backend/src/modules/profile/` |
+| Resumen del negocio | Backend local `/dashboard/overview` lee pagos, membresías y clientes de PostgreSQL local | Solo lectura | Riesgo de cifras divergentes mientras caja/pagos escriban en Supabase | `all-gym-vf/src/features/overview/server/local-dashboard.ts`; `backend/src/modules/dashboard/dashboard.service.ts` |
+| Clientes del panel: lista, detalle, cuenta, salud, historial | Rutas locales de `/api/customers` y backend `/customers`; caminos heredados aún consultan Supabase | Backend local para alta, perfil, cuenta, estado y evaluaciones; `customer-actions.ts` conserva mutaciones Supabase | Auditar llamadas activas de cada formulario y eliminar caminos heredados | `all-gym-vf/src/app/api/customers/`; `all-gym-vf/src/features/customers/actions/customer-actions.ts`; `backend/src/modules/customers/` |
+| Membresía de cliente | Backend local `/customers/:id/membership` | Backend local crea, renueva y cancela; los cobros de caja aún usan funciones Supabase | Unir pago + membresía en transacción local | `all-gym-vf/src/features/customers/lib/local-memberships.ts`; `backend/src/modules/memberships/`; `all-gym-vf/src/features/cash/actions/cash-actions.ts` |
+| Planes | `GET /plans` y `GET /plans/:id` locales | `POST`, `PUT`, `DELETE` lógico añadidos al código local; requieren migración `0012_plans_local_writes.sql` en la instalación | Comprobar aplicación de migración y operación desde UI antes de cerrar `P1-01` | `all-gym-vf/src/features/plans/actions/plan-actions.ts`; `backend/src/modules/plans/` |
+| Pagos del panel | Vista `payments_overview` vía Supabase | Correcciones/reversiones vinculadas a caja vía Supabase | API local de pagos y transacciones, luego adaptar lista y detalles | `all-gym-vf/src/features/payments/actions/get-payments.ts`; `all-gym-vf/src/features/cash/actions/cash-actions.ts` |
+| Caja: sesiones, cobros, ventas | Tablas/vistas Supabase y usuarios de Supabase Auth | RPC de Supabase para apertura, cierre, cobro, renovación, reversión y venta/anulación | Reproducir transacciones atómicas en backend local | `all-gym-vf/src/features/cash/actions/cash-actions.ts` |
+| Inventario/productos | Supabase Data API | Supabase Data API, RPC de stock y Storage de imágenes | API local + movimientos atómicos con caja + archivos locales | `all-gym-vf/src/features/inventory/actions/inventory-actions.ts` |
+| Usuarios del panel | Supabase Auth Admin y perfiles | Supabase Auth Admin para alta, contraseña y baja | Gestión de `auth.users`, perfiles y sesiones en backend local | `all-gym-vf/src/features/users/actions/user-actions.ts` |
+| Roles y permisos | Supabase Auth Admin + tablas RBAC | Tablas RBAC mediante cliente administrador Supabase | Endpoints RBAC locales; mantener controles del backend | `all-gym-vf/src/features/roles/actions/role-actions.ts`; `backend/database/migrations/0010_rbac_hardening.sql` |
+| Portal `/mi` | Supabase Admin para perfil, `customer_overview` y membresías; rutina mezcla caminos | Edición a través de los flujos correspondientes | Endpoints propios del socio con autorización por usuario | `all-gym-vf/src/features/client/server/client-data.ts`; `all-gym-vf/src/app/api/me/` |
+| Rutina del cliente | Workspace y mutaciones básicas locales; catálogo/generador mezclan Supabase | Detalles/borradores locales; plantillas/importación aún usan Supabase | Catálogo, plantillas y generación 100% locales | `all-gym-vf/src/features/customers/lib/customer-routine-api.ts`; `all-gym-vf/src/features/customers/actions/customer-routine-actions.ts`; `backend/src/modules/customer-routines/` |
+| Ejercicios y plantillas | Tablas Supabase y búsqueda de ExerciseDB/RapidAPI o Edge Function | Supabase Data API/Storage, importaciones de proveedor | Catálogo e imágenes en disco local; no llamar a proveedor en tiempo de uso | `all-gym-vf/src/features/exercises/actions/exercise-actions.ts`; `all-gym-vf/src/features/routines/actions/`; `all-gym-vf/src/app/panel/ejercicios/page.tsx` |
+| Mensajes/plantillas | Supabase Data API | Supabase Data API | CRUD local | `all-gym-vf/src/features/messages/actions/message-actions.ts` |
+| Reloj biométrico y asistencias | Sync consulta membresías/asistencias/comandos en Supabase; panel consulta sync | Sync escribe marcajes y comandos en Supabase | Repositorio local único y pruebas con reloj real | `gym-sync-server/index.js`; `all-gym-vf/src/app/panel/asistencias/page.tsx` |
+| Imágenes y otros archivos | URL de Supabase Storage y algunas URL externas | Carga de productos/ejercicios a Supabase Storage | Copia de objetos, URL locales, respaldo junto con la DB | `all-gym-vf/src/features/inventory/actions/inventory-actions.ts`; `all-gym-vf/src/features/exercises/actions/exercise-actions.ts` |
+| Despliegue | Web y sync en Compose; backend/PostgreSQL corren aparte | Build de web exige variables de Supabase; `cloudflared` arranca en Compose | Compose local completo, sin claves ni red externa obligatorias | `docker-compose.yml`; `deploy/env/*.example`; `all-gym-vf/Dockerfile` |
+
+## Riesgos que condicionan el orden
+
+1. **Fuentes divergentes:** Resumen lee PostgreSQL local y caja/pagos aún usan Supabase. Migrar pagos y caja antes de usar el Resumen como verificación financiera.
+2. **Corte de datos:** `backend/database/scripts/restore_local_database.sh` reconstruye una copia desde archivos privados; no realiza sincronización continua ni sustituye un respaldo diario. Identificar el delta final y bloquear escrituras remotas durante el corte.
+3. **Archivos fuera de la DB:** un dump de PostgreSQL no incluye objetos de Storage ni imágenes externas. Deben contarse, copiarse y verificarse por separado.
+4. **Sin internet:** ExerciseDB/RapidAPI y `cloudflared` son dependencias adicionales aunque se eliminen Hostinger y Supabase. El criterio del usuario exige resolver ambas.
+
+## Cómo mantener este inventario
+
+Al cerrar cada paquete del `PLAN_MIGRACION_LOCAL.md`, actualizar su fila con el origen nuevo y un enlace al commit o prueba de integración. Si se descubre un flujo no listado, agregar una fila y una tarea con ID estable al plan antes de declararlo migrado.

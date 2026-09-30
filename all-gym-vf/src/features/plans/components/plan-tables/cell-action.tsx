@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { deletePlan } from '../../actions/plan-actions';
@@ -21,11 +21,6 @@ export const CellAction: React.FC<CellActionProps> = ({ data }) => {
   const [openEdit, setOpenEdit] = useState(false);
   const router = useRouter();
   const { data: currentUser } = useCurrentUser();
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   const canUpdate = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes('plans.update'));
   const canDelete = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes('plans.delete'));
@@ -36,14 +31,14 @@ export const CellAction: React.FC<CellActionProps> = ({ data }) => {
     try {
       const result = await deletePlan(data.id);
       if (result.success) {
-        toast.success(result.message || 'Plan eliminado correctamente');
+        toast.success(result.message || 'Plan desactivado correctamente');
         router.refresh();
       } else {
         toast.error(`Error: ${result.error}`);
       }
       setOpenDelete(false);
     } catch {
-        toast.error('Error al eliminar el plan');
+        toast.error('Error al desactivar el plan');
     } finally {
       setLoading(false);
     }
@@ -56,6 +51,9 @@ export const CellAction: React.FC<CellActionProps> = ({ data }) => {
         onClose={() => setOpenDelete(false)}
         onConfirm={onDelete}
         loading={loading}
+        title="¿Desactivar este plan?"
+        description="El plan dejará de ofrecerse a nuevos clientes. Las membresías anteriores conservarán su historial."
+        confirmText="Desactivar"
       />
       
       {canUpdate ? (
@@ -68,8 +66,7 @@ export const CellAction: React.FC<CellActionProps> = ({ data }) => {
         />
       ) : null}
 
-      {isMounted && (
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
           {canUpdate ? (
             <Button 
                 variant="ghost" 
@@ -89,11 +86,10 @@ export const CellAction: React.FC<CellActionProps> = ({ data }) => {
                 onClick={() => setOpenDelete(true)}
             >
               <IconTrash className="h-4 w-4 text-destructive" />
-              <span className="sr-only">Eliminar</span>
+              <span className="sr-only">Desactivar</span>
             </Button>
           ) : null}
-        </div>
-      )}
+      </div>
     </>
   );
 };
