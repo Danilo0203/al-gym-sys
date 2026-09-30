@@ -275,7 +275,7 @@ Archivos actuales:
 
 La app depende del backend local para autenticacion, sesiones, autorizacion y perfil actual. Supabase permanece temporalmente para:
 
-- Algunos flujos de clientes y la administracion de roles que aun no se migran. La administracion de usuarios internos ya usa el backend local.
+- Algunos flujos de clientes. La administracion de usuarios internos y el catalogo de roles/permisos ya usan el backend local; falta permitir la asignacion de roles personalizados.
 - Alta/correccion de pagos, caja e inventario.
 - Generacion/asignacion de rutinas y otras acciones pendientes.
 - Operaciones pendientes de la web que todavia usan `SUPABASE_SERVICE_ROLE_KEY` en servidor.

@@ -94,7 +94,7 @@ export function RolesListing() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
-                    {canDeleteRoles && (
+                    {canDeleteRoles && !role.is_system && (
                       <Button
                         variant="ghost"
                         size="icon"

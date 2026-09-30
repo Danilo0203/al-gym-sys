@@ -32,8 +32,8 @@ import { profileKeys } from "@/features/profile/hooks/use-profile";
 
 const formSchema = z.object({
   name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
-  slug: z.string().min(2, "El slug debe tener al menos 2 caracteres")
-    .regex(/^[a-z0-9_]+$/, "Solo letras minúsculas, números y guiones bajos"),
+  slug: z.string().regex(/^[a-z][a-z0-9_]{2,39}$/,
+    "Usa de 3 a 40 caracteres; empieza con una letra minúscula"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -199,20 +199,14 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
           permissionIds: Array.from(selectedPermIds),
         });
 
-      toast.promise(actionPromise, {
-        loading: isEditing ? "Guardando cambios..." : "Creando rol...",
-        success: isEditing ? "Rol actualizado correctamente" : "Rol creado correctamente",
-        error: (error) => {
-          if (error instanceof Error) return error.message;
-          return isEditing ? "Error al actualizar rol" : "Error al crear rol";
-        },
-      });
-
       const result = await actionPromise;
       if (result.success) {
+        toast.success(isEditing ? "Rol actualizado correctamente" : "Rol creado correctamente");
         await queryClient.invalidateQueries({ queryKey: profileKeys.current() });
         router.refresh();
         onSuccess();
+      } else {
+        toast.error(result.error || (isEditing ? "Error al actualizar rol" : "Error al crear rol"));
       }
     } catch {
       toast.error("Error inesperado");
@@ -232,7 +226,7 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
           <SheetDescription>
             {isEditing
               ? "Modifica el nombre y los permisos del rol."
-              : "Crea un nuevo rol interno con sus permisos."}
+              : "Crea un rol con sus permisos. La asignación de roles personalizados a usuarios aún no está disponible."}
           </SheetDescription>
         </SheetHeader>
 
