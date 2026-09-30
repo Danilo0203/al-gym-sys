@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { createClient } from "@/lib/supabase/server";
@@ -10,7 +11,6 @@ import type { TrainingProfileInput } from "@/lib/training/types";
 import { normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 
 const GUATEMALA_UTC_OFFSET = "-06:00";
-const CASH_CLOSE_WITHOUT_PASSWORD_PERMISSION = "cash.close_without_admin_password";
 
 type SessionStatus = "open" | "closed" | "closed_with_difference" | "cancelled";
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -420,107 +420,18 @@ async function requireCashAccess() {
   };
 }
 
-type CashCloseAccess = {
-  role: string | null;
-  userId: string;
-  isOwner: boolean;
-  permissions: string[];
-};
-
-function createPasswordAuthClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Missing Supabase auth credentials.");
-  }
-
-  return createSupabaseJsClient(supabaseUrl, supabaseKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  });
+async function localCashRequest(path: string, init?: RequestInit): Promise<Response> {
+  const cookieStore = await cookies();
+  const headers = new Headers(init?.headers);
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  if (init?.body) headers.set("content-type", "application/json");
+  return fetchAuthBackend(`/cash${path}`, { ...init, headers, cache: "no-store" });
 }
 
-async function listAuthUsersByIds(adminClient: ReturnType<typeof createAdminClient>, userIds: string[]) {
-  if (userIds.length === 0) return [] as Array<{ id: string; email: string | null }>;
-
-  const normalizedIds = new Set(userIds);
-  const users: Array<{ id: string; email: string | null }> = [];
-  const perPage = 1000;
-  let page = 1;
-
-  while (true) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-
-    for (const user of data.users || []) {
-      if (normalizedIds.has(user.id)) {
-        users.push({ id: user.id, email: user.email || null });
-      }
-    }
-
-    if ((data.users || []).length < perPage) break;
-    page += 1;
-  }
-
-  return users;
-}
-
-async function resolveCashCloseAuthorizer(params: {
-  access: CashCloseAccess;
-  adminPassword?: string;
-}) {
-  const { access, adminPassword } = params;
-  const canCloseWithoutPassword = Boolean(
-    access.isOwner || access.role === "admin" || access.permissions.includes(CASH_CLOSE_WITHOUT_PASSWORD_PERMISSION),
-  );
-
-  if (canCloseWithoutPassword) {
-    return {
-      requestedByUserId: access.userId,
-      closedByUserId: access.userId,
-    };
-  }
-
-  const password = adminPassword?.trim();
-  if (!password) {
-    throw new Error("Debes ingresar la contraseña de un administrador u owner para cerrar la caja.");
-  }
-
-  const adminClient = createAdminClient();
-  const { data: privilegedProfiles, error: profileError } = await adminClient
-    .from("profiles")
-    .select("id, role")
-    .in("role", ["owner", "admin"]);
-
-  if (profileError) {
-    throw profileError;
-  }
-
-  const privilegedIds = (privilegedProfiles || []).map((row) => String(row.id));
-  const privilegedUsers = await listAuthUsersByIds(adminClient, privilegedIds);
-  const authClient = createPasswordAuthClient();
-
-  for (const user of privilegedUsers) {
-    if (!user.email) continue;
-
-    const { data, error } = await authClient.auth.signInWithPassword({
-      email: user.email,
-      password,
-    });
-
-    if (!error && data.session) {
-      return {
-        requestedByUserId: access.userId,
-        closedByUserId: user.id,
-      };
-    }
-  }
-
-  throw new Error("La contraseña no coincide con ningún administrador u owner.");
+async function localCashError(response: Response): Promise<Error> {
+  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+  return new Error(payload?.error?.message || "No se pudo completar la operación de caja");
 }
 
 async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typeof requireCashAccess>>) {
@@ -544,21 +455,6 @@ async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typ
   }
 
   return session;
-}
-
-function getGuatemalaDateRange(date = new Date()) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Guatemala",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  const [year, month, day] = formatter.format(date).split("-");
-  return {
-    start: `${year}-${month}-${day}T00:00:00${GUATEMALA_UTC_OFFSET}`,
-    end: `${year}-${month}-${day}T23:59:59.999${GUATEMALA_UTC_OFFSET}`,
-  };
 }
 
 function buildNameMap(rows: ProfileNameRow[] | null | undefined) {
@@ -1037,238 +933,25 @@ async function reverseAndRecreatePaymentWithFallback(params: {
 }
 
 export async function getCashDashboardData(): Promise<CashDashboardData> {
-  const access = await requireCashAccess();
-  const adminClient = createAdminClient();
-
-  const { data: registers, error: registerError } = await adminClient
-    .from("cash_registers")
-    .select("id, name, is_active, created_at")
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1);
-
-  if (registerError) {
-    throw toCashActionError(registerError, "Error al cargar caja");
-  }
-
-  const register = registers?.[0] || null;
-
-  let currentSession: CashSessionView | null = null;
-  let supervisedOpenSessions: CashSessionView[] = [];
-  let sessionMovements: CashMovementView[] = [];
-  let summary: CashDashboardSummary | null = null;
-
-  if (register) {
-    const { data: sessionRows, error: sessionError } = await adminClient
-      .from("cash_sessions")
-      .select("*")
-      .eq("opened_by_user_id", access.userId)
-      .eq("status", "open")
-      .order("opened_at", { ascending: false })
-      .limit(1);
-
-    if (sessionError) {
-      throw toCashActionError(sessionError, "Error al cargar sesion de caja");
-    }
-
-    const sessionRow = (sessionRows as CashSessionRow[] | null)?.[0] || null;
-    if (sessionRow) {
-      const [hydrated] = await hydrateSessions([sessionRow]);
-      currentSession = hydrated;
-
-      const { data: movementRows, error: movementError } = await adminClient
-        .from("cash_movements")
-        .select("*")
-        .eq("cash_session_id", sessionRow.id)
-        .order("created_at", { ascending: false });
-
-      if (movementError) {
-        throw toCashActionError(movementError, "Error al cargar movimientos de caja");
-      }
-
-      const profileIds = Array.from(
-        new Set(
-          ((movementRows as CashMovementRow[] | null) || []).flatMap((movement) => [
-            movement.created_by_user_id,
-            movement.customer_id,
-          ]).filter((value): value is string => Boolean(value)),
-        ),
-      );
-      const paymentIds = Array.from(
-        new Set(
-          ((movementRows as CashMovementRow[] | null) || [])
-            .map((movement) => movement.source_payment_id)
-            .filter((value): value is string => Boolean(value)),
-        ),
-      );
-      const productSaleIds = Array.from(
-        new Set(
-          ((movementRows as CashMovementRow[] | null) || [])
-            .map((movement) => movement.source_product_sale_id)
-            .filter((value): value is string => Boolean(value)),
-        ),
-      );
-      const profileMap = await getProfileMap(profileIds);
-      const paymentStatusMap = await getPaymentStatusMap(paymentIds);
-      const productSaleSummaryMap = await getProductSaleSummaryMap(productSaleIds);
-      sessionMovements = mapMovementRows(
-        (movementRows as CashMovementRow[] | null) || [],
-        profileMap,
-        paymentStatusMap,
-        productSaleSummaryMap,
-      );
-      summary = buildCashSummary(sessionMovements, currentSession.opening_amount);
-    }
-
-    if (access.isOwner) {
-      const { data: openSessionRows, error: openSessionError } = await adminClient
-        .from("cash_sessions")
-        .select("*")
-        .eq("cash_register_id", register.id)
-        .eq("status", "open")
-        .neq("opened_by_user_id", access.userId)
-        .order("opened_at", { ascending: false });
-
-      if (openSessionError) {
-        throw toCashActionError(openSessionError, "Error al cargar sesiones abiertas supervisadas");
-      }
-
-      supervisedOpenSessions = await hydrateSessions((openSessionRows as CashSessionRow[] | null) || []);
-    }
-  }
-
-  const todayRange = getGuatemalaDateRange();
-  const outOfSessionQuery = adminClient
-    .from("cash_movements")
-    .select("*")
-    .eq("session_link_status", "out_of_session")
-    .eq("created_by_user_id", access.userId)
-    .gte("created_at", todayRange.start)
-    .lte("created_at", todayRange.end)
-    .order("created_at", { ascending: false });
-
-  const { data: outOfSessionRows, error: outOfSessionError } = await outOfSessionQuery;
-  if (outOfSessionError) {
-    throw toCashActionError(outOfSessionError, "Error al cargar movimientos fuera de sesion");
-  }
-
-  const outOfSessionProfileIds = Array.from(
-    new Set(
-      ((outOfSessionRows as CashMovementRow[] | null) || []).flatMap((movement) => [
-        movement.created_by_user_id,
-        movement.customer_id,
-      ]).filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const outOfSessionPaymentIds = Array.from(
-    new Set(
-      ((outOfSessionRows as CashMovementRow[] | null) || [])
-        .map((movement) => movement.source_payment_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const outOfSessionProductSaleIds = Array.from(
-    new Set(
-      ((outOfSessionRows as CashMovementRow[] | null) || [])
-        .map((movement) => movement.source_product_sale_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const outOfSessionProfileMap = await getProfileMap(outOfSessionProfileIds);
-  const outOfSessionPaymentStatusMap = await getPaymentStatusMap(outOfSessionPaymentIds);
-  const outOfSessionProductSaleSummaryMap = await getProductSaleSummaryMap(outOfSessionProductSaleIds);
-  const outOfSessionMovements = mapMovementRows(
-    (outOfSessionRows as CashMovementRow[] | null) || [],
-    outOfSessionProfileMap,
-    outOfSessionPaymentStatusMap,
-    outOfSessionProductSaleSummaryMap,
-  );
-
-  const canOperateSession = Boolean(currentSession);
-  const canOpenSession = !currentSession;
-  const activityMovements = [...sessionMovements, ...outOfSessionMovements].sort(
-    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
-  );
-
-  return {
-    access,
-    register: register ? { id: register.id, name: register.name } : null,
-    currentSession,
-    supervisedOpenSessions,
-    summary,
-    sessionMovements,
-    outOfSessionMovements,
-    activityMovements,
-    canOpenSession,
-    canOperateSession,
-  };
+  await requireCashAccess();
+  const response = await localCashRequest("/dashboard");
+  if (!response.ok) throw await localCashError(response);
+  return await response.json() as CashDashboardData;
 }
 
 export async function ensureDefaultCashRegister(): Promise<EnsureCashRegisterResult> {
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated || !access.userId || !(access.isOwner || access.role === "admin") || !hasPermission(access, "cash.operate")) {
+    const access = await requireCashAccess();
+    if (!(access.isOwner || access.role === "admin")) {
       return { success: false, error: "No autorizado para configurar la caja principal" };
     }
-
-    const adminClient = createAdminClient();
-
-    const { data: activeRegister } = await adminClient
-      .from("cash_registers")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (activeRegister) {
-      revalidatePath("/panel/caja");
-      return { success: true, register: { id: activeRegister.id, name: activeRegister.name } };
-    }
-
-    const { data: namedRegister } = await adminClient
-      .from("cash_registers")
-      .select("id, name")
-      .eq("name", "Caja principal")
-      .limit(1)
-      .maybeSingle();
-
-    if (namedRegister) {
-      const { data: updatedRegister, error: updateError } = await adminClient
-        .from("cash_registers")
-        .update({ is_active: true })
-        .eq("id", namedRegister.id)
-        .select("id, name")
-        .single();
-
-      if (updateError || !updatedRegister) {
-        return { success: false, error: updateError?.message || "No se pudo reactivar la caja principal" };
-      }
-
-      revalidatePath("/panel/caja");
-      return { success: true, register: { id: updatedRegister.id, name: updatedRegister.name } };
-    }
-
-    const { data: createdRegister, error: insertError } = await adminClient
-      .from("cash_registers")
-      .insert({
-        name: "Caja principal",
-        is_active: true,
-      })
-      .select("id, name")
-      .single();
-
-    if (insertError || !createdRegister) {
-      return { success: false, error: insertError?.message || "No se pudo crear la caja principal" };
-    }
-
+    const response = await localCashRequest("/registers/default", { method: "POST" });
+    if (!response.ok) throw await localCashError(response);
+    const payload = await response.json() as { register: { id: string; name: string } };
     revalidatePath("/panel/caja");
-    return { success: true, register: { id: createdRegister.id, name: createdRegister.name } };
+    return { success: true, register: payload.register };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "No se pudo garantizar la caja principal",
-    };
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo configurar la caja principal" };
   }
 }
 
@@ -1656,18 +1339,11 @@ export async function getCashSessionDetail(sessionId: string): Promise<CashSessi
 
 export async function openCashSession(registerId: string, openingAmount: number, notes?: string) {
   await requireCashAccess();
-  const supabase = await createClient();
-
-  const { error } = await supabase.rpc("open_cash_session", {
-    p_register_id: registerId,
-    p_opening_amount: openingAmount,
-    p_notes: notes?.trim() || null,
+  const response = await localCashRequest("/sessions", {
+    method: "POST",
+    body: JSON.stringify({ registerId, openingAmount, notes }),
   });
-
-  if (error) {
-    throw toCashActionError(error, "No se pudo abrir caja");
-  }
-
+  if (!response.ok) throw await localCashError(response);
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
 }
@@ -1678,22 +1354,12 @@ export async function closeCashSession(
   notes?: string,
   adminPassword?: string,
 ) {
-  const access = await requireCashAccess();
-  const authorization = await resolveCashCloseAuthorizer({ access, adminPassword });
-  const supabase = createAdminClient();
-
-  const { error } = await supabase.rpc("close_cash_session", {
-    p_session_id: sessionId,
-    p_counted_amount: countedAmount,
-    p_notes: notes?.trim() || null,
-    p_requested_by_user_id: authorization.requestedByUserId,
-    p_closed_by_user_id: authorization.closedByUserId,
+  await requireCashAccess();
+  const response = await localCashRequest(`/sessions/${encodeURIComponent(sessionId)}/close`, {
+    method: "POST",
+    body: JSON.stringify({ countedAmount, notes, adminPassword }),
   });
-
-  if (error) {
-    throw toCashActionError(error, "No se pudo cerrar caja");
-  }
-
+  if (!response.ok) throw await localCashError(response);
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
   revalidatePath(`/panel/caja/historial/${sessionId}`);
