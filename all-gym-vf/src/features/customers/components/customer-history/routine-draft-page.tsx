@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -25,16 +25,13 @@ import type {
   CustomerRoutineWorkspace,
   ExerciseCatalogItem,
   ExerciseReplacementGroup,
-  ProviderExerciseSummary,
   RoutineDetailRecord,
   RoutineReplacementContext,
 } from "@/lib/training/types";
 import {
   generateRoutineProposal,
   getRoutineExerciseReplacementOptions,
-  importExerciseFromProvider,
   searchExerciseCatalog,
-  searchExerciseProvider,
 } from "@/features/customers/actions/customer-routine-actions";
 import {
   updateCustomerRoutine,
@@ -74,48 +71,39 @@ function toNullableFloat(value: string) {
 
 export function RoutineDraftPage({ customerId, customerName, workspace }: RoutineDraftPageProps) {
   const router = useRouter();
-  const [editors, setEditors] = useState<Record<number, DetailEditorState>>({});
+  const [editorOverrides, setEditorOverrides] = useState<Record<number, { source: string; value: DetailEditorState }>>({});
+  const editors = Object.fromEntries(workspace.draftDetails.map((detail) => {
+    const source = buildEditorState(detail);
+    const override = editorOverrides[detail.id];
+    return [detail.id, override?.source === JSON.stringify(source) ? override.value : source];
+  })) as Record<number, DetailEditorState>;
   const [busyDetailId, setBusyDetailId] = useState<number | null>(null);
-  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [generationState, setGenerationState] = useState<{ active: boolean; pendingId: string | null }>({
+    active: false,
+    pendingId: null,
+  });
   const [isApproving, setIsApproving] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<RoutineDetailRecord | null>(null);
   const replacementRequestRef = useRef<number | null>(null);
-  const pendingDraftIdRef = useRef<string | null>(null);
   const [replacementContext, setReplacementContext] = useState<RoutineReplacementContext | null>(null);
   const [replacementGroups, setReplacementGroups] = useState<ExerciseReplacementGroup[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [manualResults, setManualResults] = useState<ExerciseCatalogItem[]>([]);
-  const [providerResults, setProviderResults] = useState<ProviderExerciseSummary[]>([]);
   const [showManualSearch, setShowManualSearch] = useState(false);
-  const [showProviderFallback, setShowProviderFallback] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSearchingManual, setIsSearchingManual] = useState(false);
-  const [isSearchingProvider, setIsSearchingProvider] = useState(false);
-  const [isImportingProvider, setIsImportingProvider] = useState(false);
 
-  useEffect(() => {
-    const nextEditors: Record<number, DetailEditorState> = {};
-    for (const detail of workspace.draftDetails) {
-      nextEditors[detail.id] = buildEditorState(detail);
-    }
-    setEditors(nextEditors);
-  }, [workspace.draftDetails]);
-
-  useEffect(() => {
-    if (!isGeneratingDraft) return;
-    if (!pendingDraftIdRef.current) return;
-    if (workspace.draftRoutine?.id !== pendingDraftIdRef.current) return;
-
-    setIsGeneratingDraft(false);
-    pendingDraftIdRef.current = null;
-  }, [isGeneratingDraft, workspace.draftRoutine?.id]);
+  const isGeneratingDraft = generationState.active && generationState.pendingId !== workspace.draftRoutine?.id;
 
   const handleEditorChange = (detailId: number, patch: Partial<DetailEditorState>) => {
-    setEditors((current) => ({
+    const detail = workspace.draftDetails.find((item) => item.id === detailId);
+    if (!detail) return;
+    const source = JSON.stringify(buildEditorState(detail));
+    setEditorOverrides((current) => ({
       ...current,
       [detailId]: {
-        ...(current[detailId] || buildEditorState(workspace.draftDetails.find((detail) => detail.id === detailId)!)),
-        ...patch,
+        source,
+        value: { ...(current[detailId]?.source === source ? current[detailId].value : buildEditorState(detail)), ...patch },
       },
     }));
   };
@@ -164,25 +152,23 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
 
   const handleGenerateDraft = async () => {
     try {
-      setIsGeneratingDraft(true);
-      pendingDraftIdRef.current = null;
+      setGenerationState({ active: true, pendingId: null });
       const result = await generateRoutineProposal(customerId);
 
       if (!result.success) {
         toast.error(result.error || "Aún faltan datos para generar la propuesta.");
-        setIsGeneratingDraft(false);
+        setGenerationState({ active: false, pendingId: null });
         return;
       }
 
-      pendingDraftIdRef.current = result.routineId;
+      setGenerationState({ active: true, pendingId: result.routineId });
       toast.success(workspace.draftRoutine ? "Nueva rutina generada." : "Propuesta de rutina generada.");
 
       startTransition(() => {
         router.refresh();
       });
     } catch (error) {
-      pendingDraftIdRef.current = null;
-      setIsGeneratingDraft(false);
+      setGenerationState({ active: false, pendingId: null });
       toast.error(error instanceof Error ? error.message : "No se pudo generar la rutina.");
     }
   };
@@ -193,13 +179,9 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
     setReplacementContext(null);
     setReplacementGroups([]);
     setShowManualSearch(false);
-    setShowProviderFallback(false);
     setIsLoadingSuggestions(false);
     setIsSearchingManual(false);
-    setIsSearchingProvider(false);
-    setIsImportingProvider(false);
     setManualResults([]);
-    setProviderResults([]);
     setSearchTerm("");
   };
 
@@ -234,9 +216,7 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
     setReplacementContext(null);
     setReplacementGroups([]);
     setShowManualSearch(false);
-    setShowProviderFallback(false);
     setManualResults([]);
-    setProviderResults([]);
     void loadReplacementOptions(detail);
   };
 
@@ -257,23 +237,6 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
     }
   };
 
-  const handleProviderSearch = async () => {
-    if (!searchTerm.trim()) {
-      setProviderResults([]);
-      return;
-    }
-
-    try {
-      setIsSearchingProvider(true);
-      const result = await searchExerciseProvider(searchTerm);
-      setProviderResults(result.data || []);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudo consultar ExerciseDB.");
-    } finally {
-      setIsSearchingProvider(false);
-    }
-  };
-
   const handleReplaceWithLocal = async (exerciseId: number) => {
     if (!replaceTarget || !workspace.draftRoutine) return;
 
@@ -289,25 +252,6 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
       toast.error(error instanceof Error ? error.message : "No se pudo reemplazar el ejercicio.");
     } finally {
       setBusyDetailId(null);
-    }
-  };
-
-  const handleReplaceWithProvider = async (exercise: ProviderExerciseSummary) => {
-    if (!replaceTarget || !workspace.draftRoutine) return;
-
-    try {
-      setIsImportingProvider(true);
-      const imported = await importExerciseFromProvider(exercise as unknown as Record<string, unknown>);
-      await updateRoutineDetail(customerId, workspace.draftRoutine.id, replaceTarget.id, {
-        exercise_id: imported.data.id,
-      });
-      toast.success("Ejercicio importado desde ExerciseDB y asignado.");
-      closeReplaceDialog();
-      router.refresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudo importar el ejercicio.");
-    } finally {
-      setIsImportingProvider(false);
     }
   };
 
@@ -472,8 +416,7 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
           <DialogHeader>
             <DialogTitle>Reemplazar ejercicio</DialogTitle>
             <DialogDescription>
-              Primero verás alternativas sugeridas para este bloque. La búsqueda manual queda como respaldo y
-              ExerciseDB solo aparece si de verdad necesitas salirte del catálogo local.
+              Primero verás alternativas sugeridas para este bloque. También puedes buscar manualmente en el catálogo local.
             </DialogDescription>
           </DialogHeader>
 
@@ -522,7 +465,7 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
                 <div className="rounded-xl border border-dashed p-4">
                   <p className="text-sm font-medium">No encontramos sugerencias automáticas para este caso.</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Puedes usar la búsqueda manual del catálogo o, si hace falta, consultar ExerciseDB como respaldo.
+                    Puedes usar la búsqueda manual del catálogo local.
                   </p>
                 </div>
               )}
@@ -565,44 +508,6 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
                         onSelect={handleReplaceWithLocal}
                       />
 
-                      <div className="rounded-xl border border-dashed p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold">Respaldo con ExerciseDB</p>
-                            <p className="text-sm text-muted-foreground">
-                              Úsalo solo si el catálogo local no te da una alternativa adecuada.
-                            </p>
-                          </div>
-                          <Button variant="ghost" onClick={() => setShowProviderFallback((current) => !current)}>
-                            {showProviderFallback ? "Ocultar respaldo" : "Consultar ExerciseDB"}
-                          </Button>
-                        </div>
-
-                        {showProviderFallback ? (
-                          <div className="mt-4 space-y-4">
-                            <div className="flex flex-col gap-3 md:flex-row">
-                              <Input
-                                value={searchTerm}
-                                onChange={(event) => setSearchTerm(event.target.value)}
-                                placeholder="Buscar también en ExerciseDB..."
-                              />
-                              <Button
-                                variant="outline"
-                                onClick={handleProviderSearch}
-                                disabled={isSearchingProvider || isImportingProvider}
-                              >
-                                {isSearchingProvider ? "Consultando..." : "Buscar en ExerciseDB"}
-                              </Button>
-                            </div>
-
-                            <ProviderFallbackSection
-                              results={providerResults}
-                              importing={isImportingProvider}
-                              onSelect={handleReplaceWithProvider}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
                     </div>
                   </CollapsibleContent>
                 </div>
@@ -774,47 +679,6 @@ function ManualSearchSection({
         {results.length === 0 ? <p className="text-sm text-muted-foreground">{emptyMessage}</p> : null}
         {results.map((exercise) => (
           <ReplacementOptionCard key={exercise.id} option={exercise} busy={busy} onSelect={onSelect} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ProviderFallbackSection({
-  results,
-  importing,
-  onSelect,
-}: {
-  results: ProviderExerciseSummary[];
-  importing: boolean;
-  onSelect: (exercise: ProviderExerciseSummary) => Promise<void>;
-}) {
-  return (
-    <section className="rounded-xl border p-4">
-      <div className="flex items-center gap-2">
-        <h4 className="text-sm font-semibold">Resultados de ExerciseDB</h4>
-        <Badge variant="secondary">{results.length}</Badge>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        {results.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aquí solo aparecerán opciones cuando necesites importar algo externo.</p>
-        ) : null}
-        {results.map((exercise) => (
-          <div key={exercise.exerciseId} className="rounded-lg border bg-background p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex min-w-0 flex-1 gap-4">
-                <ReplacementMediaThumb src={exercise.imageUrl} alt={exercise.name} className="h-24 w-28 shrink-0" />
-                <div className="min-w-0 space-y-1">
-                  <p className="font-medium">{exercise.name}</p>
-                  <p className="text-sm text-muted-foreground">ID externo: {exercise.exerciseId}</p>
-                </div>
-              </div>
-              <Button size="sm" className="lg:min-w-36" onClick={() => void onSelect(exercise)} disabled={importing}>
-                {importing ? "Importando..." : "Importar y usar"}
-              </Button>
-            </div>
-          </div>
         ))}
       </div>
     </section>

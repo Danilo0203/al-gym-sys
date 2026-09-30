@@ -7,9 +7,6 @@ import { z } from "zod";
 
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
-import { buildExerciseSlug } from "@/lib/training/catalog";
-import { resolveExerciseImageUrl } from "@/lib/training/exercise-media";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 const exerciseNameSchema = z
   .string()
@@ -34,7 +31,6 @@ const updateExercisePreferencesSchema = z
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-const EXERCISE_MEDIA_BUCKET = "exercises";
 
 interface ExerciseCatalogMutationResult {
   success: boolean;
@@ -44,55 +40,6 @@ interface ExerciseCatalogMutationResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function getStoragePublicPrefix() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
-  if (!supabaseUrl) return null;
-  return `${supabaseUrl}/storage/v1/object/public/${EXERCISE_MEDIA_BUCKET}/`;
-}
-
-function isExerciseMediaStoredLocally(url: string | null | undefined) {
-  if (!url) return false;
-  if (url.startsWith("data:image/")) return true;
-
-  const storagePublicPrefix = getStoragePublicPrefix();
-  return storagePublicPrefix ? url.startsWith(storagePublicPrefix) : false;
-}
-
-function resolveImageExtension(contentType: string | null, sourceUrl: string) {
-  const normalizedType = contentType?.toLowerCase().trim() || "";
-
-  if (normalizedType.includes("gif")) return "gif";
-  if (normalizedType.includes("png")) return "png";
-  if (normalizedType.includes("jpeg") || normalizedType.includes("jpg")) return "jpg";
-  if (normalizedType.includes("webp")) return "webp";
-
-  try {
-    const url = new URL(sourceUrl);
-    const pathname = url.pathname.toLowerCase();
-
-    if (pathname.endsWith(".gif")) return "gif";
-    if (pathname.endsWith(".png")) return "png";
-    if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "jpg";
-    if (pathname.endsWith(".webp")) return "webp";
-  } catch {
-    // Ignore malformed URLs and use the default extension below.
-  }
-
-  return "gif";
-}
-
-async function ensureExerciseMediaBucket(adminClient: ReturnType<typeof createAdminClient>) {
-  const { error } = await adminClient.storage.createBucket(EXERCISE_MEDIA_BUCKET, {
-    public: true,
-    allowedMimeTypes: ["image/*"],
-    fileSizeLimit: "15MB",
-  });
-
-  if (error && !/already exists|duplicate|exists/i.test(error.message || "")) {
-    throw error;
-  }
 }
 
 async function ensureAdminAccess(permission: string = "exercises.view") {
@@ -247,146 +194,15 @@ export async function updateExerciseCatalogPreferences(input: {
 }
 
 export async function saveExerciseMediaToLocal(exerciseId: number): Promise<ExerciseCatalogMutationResult> {
-  try {
-    const authError = await ensureAdminAccess("exercises.update");
-    if (authError) {
-      return { success: false, error: authError };
-    }
-
-    if (!Number.isFinite(exerciseId) || exerciseId <= 0) {
-      return { success: false, error: "El identificador del ejercicio no es válido." };
-    }
-
-    const adminClient = createAdminClient();
-    const { data: exercise, error: exerciseError } = await adminClient
-      .from("exercises")
-      .select("id, slug, name, provider, provider_item_id, image_url, animation_url, raw_payload")
-      .eq("id", exerciseId)
-      .single();
-
-    if (exerciseError || !exercise) {
-      console.error("Error fetching exercise for local media sync:", exerciseError);
-      return { success: false, error: "No se encontró el ejercicio." };
-    }
-
-    const currentImageUrl = typeof exercise.image_url === "string" ? exercise.image_url : null;
-    if (!currentImageUrl) {
-      return { success: false, error: "Este ejercicio no tiene imagen para guardar localmente." };
-    }
-
-    if (isExerciseMediaStoredLocally(currentImageUrl)) {
-      if (exercise.provider !== "local") {
-        const currentPayload = isRecord(exercise.raw_payload) ? exercise.raw_payload : {};
-        await adminClient
-          .from("exercises")
-          .update({
-            provider: "local",
-            raw_payload: {
-              ...currentPayload,
-              media_cache: {
-                ...(isRecord(currentPayload.media_cache) ? currentPayload.media_cache : {}),
-                source_url: currentImageUrl,
-                cached_at: new Date().toISOString(),
-                bucket: EXERCISE_MEDIA_BUCKET,
-                status: "already_local",
-              },
-            },
-          })
-          .eq("id", exerciseId);
-      }
-
-      revalidatePath("/panel/ejercicios");
-      return { success: true, message: "La imagen ya estaba guardada localmente." };
-    }
-
-    await ensureExerciseMediaBucket(adminClient);
-
-    const resolvedSourceUrl =
-      (await resolveExerciseImageUrl({
-        imageUrl: currentImageUrl,
-        name: typeof exercise.name === "string" ? exercise.name : null,
-        fallbackQueries: [
-          typeof exercise.slug === "string" ? exercise.slug.replace(/-/g, " ") : null,
-          typeof exercise.provider_item_id === "string" ? exercise.provider_item_id : null,
-        ],
-      })) || currentImageUrl;
-
-    const mediaResponse = await fetch(resolvedSourceUrl, {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    if (!mediaResponse.ok) {
-      return { success: false, error: "No se pudo descargar la imagen original para guardarla localmente." };
-    }
-
-    const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
-    const contentType = mediaResponse.headers.get("content-type") || "image/gif";
-    const fileExtension = resolveImageExtension(contentType, resolvedSourceUrl);
-    const fileBaseName =
-      (typeof exercise.slug === "string" && exercise.slug.trim()) ||
-      (typeof exercise.provider_item_id === "string" && exercise.provider_item_id.trim()) ||
-      buildExerciseSlug({ name: exercise.name || `exercise-${exercise.id}` }) ||
-      `exercise-${exercise.id}`;
-    const storagePath = `catalog/${exercise.id}/${fileBaseName}.${fileExtension}`;
-
-    const { data: uploadData, error: uploadError } = await adminClient.storage
-      .from(EXERCISE_MEDIA_BUCKET)
-      .upload(storagePath, mediaBuffer, {
-        contentType,
-        upsert: true,
-        cacheControl: "31536000",
-      });
-
-    if (uploadError || !uploadData) {
-      console.error("Error uploading exercise media to Supabase Storage:", uploadError);
-      return { success: false, error: "No se pudo guardar la imagen en Supabase Storage." };
-    }
-
-    const { data: publicUrlData } = adminClient.storage.from(EXERCISE_MEDIA_BUCKET).getPublicUrl(uploadData.path);
-    const publicUrl = publicUrlData.publicUrl;
-    const currentPayload = isRecord(exercise.raw_payload) ? exercise.raw_payload : {};
-
-    const { error: updateError } = await adminClient
-      .from("exercises")
-      .update({
-        provider: "local",
-        image_url: publicUrl,
-        animation_url: publicUrl,
-        raw_payload: {
-          ...currentPayload,
-          media_cache: {
-            source_provider: exercise.provider,
-            source_url: resolvedSourceUrl,
-            legacy_source_url: currentImageUrl !== resolvedSourceUrl ? currentImageUrl : undefined,
-            bucket: EXERCISE_MEDIA_BUCKET,
-            path: uploadData.path,
-            cached_at: new Date().toISOString(),
-            content_type: contentType,
-          },
-        },
-      })
-      .eq("id", exerciseId);
-
-    if (updateError) {
-      console.error("Error updating exercise after local media sync:", updateError);
-      return { success: false, error: "La imagen se guardó, pero no se pudo actualizar el ejercicio." };
-    }
-
-    revalidatePath("/panel/ejercicios");
-    revalidatePath("/panel/clientes");
-
-    return {
-      success: true,
-      message: "Imagen guardada localmente en Supabase Storage.",
-    };
-  } catch (error) {
-    console.error("Unexpected error saving exercise media locally:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Error inesperado al guardar la imagen localmente.",
-    };
+  const authError = await ensureAdminAccess("exercises.update");
+  if (authError) return { success: false, error: authError };
+  if (!Number.isInteger(exerciseId) || exerciseId <= 0) {
+    return { success: false, error: "El identificador del ejercicio no es válido." };
   }
+  return {
+    success: false,
+    error: "Selecciona una imagen de tu computadora para reemplazarla; la descarga externa está deshabilitada.",
+  };
 }
 
 export async function archiveStarterPackExercises(): Promise<ExerciseCatalogMutationResult> {

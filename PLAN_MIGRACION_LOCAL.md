@@ -75,11 +75,11 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 
 **Puerta:** catálogo, imágenes y rutinas se leen y modifican localmente; ninguna acción activa requiere Storage o Edge Functions de Supabase.
 
-- [ ] `P3-01` Migrar catálogo de ejercicios, preferencias, búsqueda y plantillas desde `src/features/exercises/actions`, `src/features/routines/actions` y `src/app/panel/ejercicios/page.tsx`. La pantalla de catálogo y el alta manual con imagen ya usan API/archivos locales; faltan búsqueda para rutinas, generación, asignación, vista del socio y rutas de importación antiguas.
+- [ ] `P3-01` Migrar catálogo de ejercicios, preferencias, búsqueda y plantillas desde `src/features/exercises/actions`, `src/features/routines/actions` y `src/app/panel/ejercicios/page.tsx`. La pantalla de catálogo, el alta manual con imagen y la búsqueda/selección para rutinas ya usan API/archivos locales; faltan generación, asignación, vista del socio y plantillas que aún consultan Supabase.
 - [ ] `P3-02` Completar los caminos de generación/importación de `src/features/customers/actions/customer-routine-actions.ts`; sustituir `functions.invoke("exercise-catalog-provider")` por un servicio local o un catálogo local.
 - [ ] `P3-03` Migrar imágenes de productos y ejercicios desde Supabase Storage al almacenamiento decidido en `P0-03`; copiar archivos, reescribir URL y comprobar integridad y permisos.
 - [ ] `P3-04` Migrar plantillas de mensajes y cualquier consulta/escritura restante de `src/features/messages/actions/message-actions.ts`.
-- [ ] `P3-05` Guardar un catálogo suficiente y eliminar la necesidad de ExerciseDB/RapidAPI en tiempo de uso. Importar y servir las imágenes de ejercicios desde archivos locales de la computadora, sin URL remotas; probar búsqueda y generación sin red.
+- [ ] `P3-05` Guardar un catálogo suficiente y eliminar la necesidad de ExerciseDB/RapidAPI en tiempo de uso. La búsqueda visible de rutinas usa el catálogo local y ya no consulta el proveedor; faltan imágenes reales de la computadora, volumen/respaldo y prueba de búsqueda y generación sin red. No hay ejercicios en `algym` local todavía.
 
 ## Fase 4 — Reloj biométrico y asistencias
 
@@ -129,5 +129,6 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | P0-04 | Hecho | Codex | Backend `6f2a793` | `pnpm test` 130/130 en `algym_test`; `DB_HOST` y `PGHOST` remotos rechazados antes de recrear DB; roles sintéticos `admin`, `employee`, `owner`, `trainer`, `client`. | 2026-09-29 |
 | P1-02 | Listado local implementado; resto pendiente | Codex | Backend `6f2a793`; web `src/features/payments/actions/get-payments.ts` | GET `/payments`: filtros, orden, paginación, 401/403; suite backend 130/130; lint, typecheck y build web. | Faltan alta, detalle, corrección, reversión y puerta offline |
 | P3-01 | Catálogo web y alta manual locales; resto pendiente | Codex | Backend `0c846e5` y migraciones `0013`/`0014`; web `src/features/exercises` | Suite backend 132/132, incluyendo imagen en disco, edición y nombre histórico en rutina; web lint, typecheck y build. Respaldo `/private/tmp/algym-before-exercises-0013.dump`, políticas aplicadas a `algym`, GET sin sesión 401. | Catálogo local real vacío; faltan datos, rutinas, portal y prueba sin red |
+| P3-01/P3-05 | Búsqueda y selección de ejercicios locales; entrega parcial | Codex | Backend `c214543`; web `src/features/routines/actions/exercise-search-actions.ts` y selector | GET accesible con permiso de rutinas; 132/132 pruebas backend, lint/typecheck/build web. Eliminada la búsqueda remota visible y el fallback de imágenes remotas en rutinas. | Falta catálogo e imágenes reales; generación y plantillas conservan escrituras/lecturas Supabase |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.

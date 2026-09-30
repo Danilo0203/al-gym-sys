@@ -314,7 +314,7 @@ export async function getRoutineBlueprintDetail(blueprintId: string): Promise<{
         notes: typeof row.notes === "string" ? row.notes : null,
         exercise_name_snapshot: typeof row.exercise_name_snapshot === "string" ? row.exercise_name_snapshot : null,
         exercise_image_url: resolvedImageUrl,
-        exercise_video_url: typeof ex.video_url === "string" ? ex.video_url : null,
+        exercise_video_url: null,
       };
     }),
   );
