@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   IconBarbell,
   IconBolt,
@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PRIMARY_GOAL_OPTIONS } from "@/lib/training/options";
 import { formatSessionDuration } from "@/lib/training/profile-defaults";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { RoutineDetailRecord, RoutineRecord, TrainingProfileRecord } from "@/lib/training/types";
 import { cn } from "@/lib/utils";
 
@@ -86,7 +87,7 @@ function getBlockLabel(blockType: RoutineDetailRecord["block_type"]) {
 }
 
 function hasUsableExerciseMedia(detail: RoutineDetailRecord) {
-  return Boolean(detail.exercise_image_url);
+  return isExerciseMediaStoredLocally(detail.exercise_image_url);
 }
 
 function getBlockTone(blockType: RoutineDetailRecord["block_type"]) {
@@ -132,55 +133,6 @@ function getBlockTone(blockType: RoutineDetailRecord["block_type"]) {
         glow: "from-primary/16 via-primary/5",
         badge: "border-primary/35 bg-primary/10 text-primary",
       };
-  }
-}
-
-const WORKOUTX_API_KEY = "wx_6caf560e0d5e686d09bc51046f268764d0937fb5a4d51fa50f8526f0";
-
-function normalizeMediaSearchText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function fetchExerciseMediaFallback(query: string): Promise<string | null> {
-  const normalized = normalizeMediaSearchText(query);
-  if (!normalized) return null;
-
-  try {
-    const url = new URL("https://api.workoutxapp.com/v1/exercises");
-    url.searchParams.set("limit", "10");
-
-    const response = await fetch(url.toString(), {
-      headers: {
-        "X-WorkoutX-Key": WORKOUTX_API_KEY,
-      },
-      cache: "force-cache",
-    });
-
-    if (!response.ok) return null;
-
-    const exercises = (await response.json()) as Array<{
-      id?: string;
-      name?: string;
-      gifUrl?: string;
-    }>;
-
-    const exactMatch = exercises.find(
-      (e) => normalizeMediaSearchText(e.name || "") === normalized && e.gifUrl,
-    );
-    const partialMatch = exercises.find(
-      (e) => normalizeMediaSearchText(e.name || "").includes(normalized) && e.gifUrl,
-    );
-    const anyWithGif = exercises.find((e) => e.gifUrl);
-
-    return exactMatch?.gifUrl || partialMatch?.gifUrl || anyWithGif?.gifUrl || null;
-  } catch {
-    return null;
   }
 }
 
@@ -397,7 +349,7 @@ function ExerciseCard({
   onSave: (detailId: number) => Promise<void>;
 }) {
   const tone = getBlockTone(detail.block_type);
-  const demoHref = detail.exercise_video_url || detail.exercise_image_url || null;
+  const demoHref = isExerciseMediaStoredLocally(detail.exercise_image_url) ? detail.exercise_image_url : null;
 
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-border/70 bg-card/75 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:bg-card/90 hover:shadow-lg hover:shadow-black/10">
@@ -541,66 +493,9 @@ function ExerciseCard({
 
 function ExerciseMediaPreview({ detail }: { detail: RoutineDetailRecord }) {
   const title = detail.exercise_name_snapshot || "Ejercicio por definir";
-  const [hasMediaError, setHasMediaError] = useState(false);
-  const [mediaUrl, setMediaUrl] = useState(detail.exercise_image_url);
-  const [hasAttemptedFallback, setHasAttemptedFallback] = useState(false);
-  const [isResolvingFallback, setIsResolvingFallback] = useState(false);
-
-  useEffect(() => {
-    setMediaUrl(detail.exercise_image_url);
-    setHasMediaError(false);
-    setHasAttemptedFallback(false);
-    setIsResolvingFallback(false);
-  }, [detail.exercise_image_url, title]);
-
-  useEffect(() => {
-    if (mediaUrl || hasAttemptedFallback || isResolvingFallback || !title) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const resolveFallback = async () => {
-      try {
-        setIsResolvingFallback(true);
-        const fallbackUrl = await fetchExerciseMediaFallback(title);
-        if (!cancelled && fallbackUrl) {
-          setMediaUrl(fallbackUrl);
-          setHasMediaError(false);
-        }
-      } finally {
-        if (!cancelled) {
-          setHasAttemptedFallback(true);
-          setIsResolvingFallback(false);
-        }
-      }
-    };
-
-    void resolveFallback();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hasAttemptedFallback, isResolvingFallback, mediaUrl, title]);
-
-  const canRenderMedia = Boolean(mediaUrl) && !hasMediaError;
-
-  const handleMediaError = async () => {
-    if (!hasAttemptedFallback && title) {
-      setIsResolvingFallback(true);
-      const fallbackUrl = await fetchExerciseMediaFallback(title);
-      setHasAttemptedFallback(true);
-      setIsResolvingFallback(false);
-
-      if (fallbackUrl && fallbackUrl !== mediaUrl) {
-        setMediaUrl(fallbackUrl);
-        setHasMediaError(false);
-        return;
-      }
-    }
-
-    setHasMediaError(true);
-  };
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const mediaUrl = isExerciseMediaStoredLocally(detail.exercise_image_url) ? detail.exercise_image_url : null;
+  const canRenderMedia = Boolean(mediaUrl && failedUrl !== mediaUrl);
 
   return (
     <div className="w-full">
@@ -608,14 +503,14 @@ function ExerciseMediaPreview({ detail }: { detail: RoutineDetailRecord }) {
         <div className="overflow-hidden rounded-3xl border border-border/70 bg-muted/20 shadow-sm">
           <div className="relative aspect-[4/3] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]">
             <div className="absolute inset-3 rounded-2xl bg-background/35" />
-            {/* GIF demos are rendered directly to preserve animation and avoid provider optimization issues. */}
+            {/* Render local GIF files directly to preserve animation. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={mediaUrl!}
               alt={`Demostración visual de ${title}`}
               loading="lazy"
               className="relative h-full w-full object-contain p-4 transition-transform duration-300 group-hover:scale-[1.03]"
-              onError={() => void handleMediaError()}
+              onError={() => setFailedUrl(mediaUrl)}
             />
           </div>
         </div>

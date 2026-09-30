@@ -28,7 +28,7 @@ Base: `codex/local-unified-test` de `al-gym-sys` y `algym-local-backend`. Este i
 1. **Fuentes divergentes:** Resumen lee PostgreSQL local y caja/pagos aún usan Supabase. Migrar pagos y caja antes de usar el Resumen como verificación financiera.
 2. **Corte de datos:** `backend/database/scripts/restore_local_database.sh` reconstruye una copia desde archivos privados; no realiza sincronización continua ni sustituye un respaldo diario. Identificar el delta final y bloquear escrituras remotas durante el corte.
 3. **Archivos fuera de la DB:** un dump de PostgreSQL no incluye objetos de Storage ni imágenes externas. Deben contarse, copiarse y verificarse por separado.
-4. **Sin internet:** ExerciseDB/RapidAPI y `cloudflared` son dependencias adicionales aunque se eliminen Hostinger y Supabase. El criterio del usuario exige resolver ambas.
+4. **Sin internet:** se retiró la consulta automática de WorkoutX en la vista de rutina, la búsqueda activa de ExerciseDB y se hizo opcional `cloudflared`. Todavía falta demostrar que el runtime completo funciona sin internet.
 
 ## Cómo mantener este inventario
 

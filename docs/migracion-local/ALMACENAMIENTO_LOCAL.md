@@ -5,7 +5,7 @@
 - La base PostgreSQL local `algym` contiene 0 filas en `public.exercises` y 0 en `public.products`.
 - La base local no contiene `storage.objects`: un respaldo de PostgreSQL por sí solo no recupera los objetos de Supabase Storage.
 - `all-gym-vf/public` contiene cuatro iconos PWA y ninguna imagen de ejercicio o producto.
-- Las cargas actuales de ejercicios y productos escriben en Supabase Storage (`exercise-actions.ts` e `inventory-actions.ts`). Las imágenes remotas usadas por rutinas también pueden venir de ExerciseDB. **Falta el inventario de objetos del origen y la carpeta de imágenes que aportará el usuario**; no se puede considerar migrado ningún archivo con estos conteos locales.
+- El alta manual de ejercicios ya usa disco local; productos y otras rutas heredadas aún escriben en Supabase Storage. Las rutinas antiguas pueden contener URL externas en la base, pero la interfaz deja de solicitarlas hasta que se importen sus archivos. **Falta el inventario de objetos del origen y la carpeta de imágenes que aportará el usuario**; no se puede considerar migrado ningún archivo con estos conteos locales.
 
 ## Contrato de destino
 
@@ -20,7 +20,7 @@
 - La API local acepta `POST /media/exercises` y `POST /media/products` con sesión y permiso de alta o edición, limita el cuerpo a 5 MB, verifica la firma de PNG/JPEG/WebP/GIF y guarda el archivo por SHA-256 bajo `LOCAL_MEDIA_ROOT` (valor por defecto `./data/media`).
 - `GET /media/{tipo}/{archivo}` requiere sesión, verifica el hash y sirve el archivo. Next.js expone la URL relativa `/api/media/{tipo}/{archivo}` y reenvía la sesión a la API, de modo que el navegador no necesita conocer el puerto del backend.
 - La prueba sintética subió y leyó una imagen PNG desde un directorio temporal, confirmó rechazo sin sesión o permiso y rechazo de datos que no son imagen.
-- La creación manual de ejercicios ya sube la imagen comprimida a esta API y guarda su URL relativa en `public.exercises` de PostgreSQL local. Los productos, las imágenes de ejercicios existentes y los caminos de rutinas aún no están conectados. El directorio aún no figura como volumen en Compose ni tiene respaldo automático.
+- La creación manual de ejercicios ya sube la imagen comprimida a esta API y guarda su URL relativa en `public.exercises` de PostgreSQL local. La búsqueda y selección de ejercicios para rutinas ya consultan el catálogo local; sus demás escrituras siguen pendientes. Los productos y las imágenes de ejercicios existentes aún no están conectados. El directorio aún no figura como volumen en Compose ni tiene respaldo automático.
 
 ## Importación pendiente
 

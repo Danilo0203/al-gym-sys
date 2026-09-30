@@ -56,6 +56,8 @@ services:
       - gym-local
 
   cloudflared:
+    profiles:
+      - remote-access
     image: cloudflare/cloudflared:latest
     command:
       - tunnel

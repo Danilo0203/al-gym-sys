@@ -98,7 +98,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 - [ ] `P5-02` Retirar de runtime y ejemplos las variables `NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SERVICE_ROLE_KEY` y URL del VPS una vez migrados sus consumidores; revisar Dockerfile y dependencias del paquete.
 - [ ] `P5-03` Implementar respaldos automáticos de PostgreSQL **y archivos**, prueba de restauración en instancia separada y procedimiento de actualización de esquema sin borrar datos. El script actual `database/scripts/restore_local_database.sh` recrea la base y no sirve como respaldo diario.
 - [ ] `P5-04` Verificar permisos de DB, RLS/roles heredados, secretos, cookies, acceso a archivos y red local; probar al menos dueño, administrador, empleado y socio.
-- [ ] `P5-05` Retirar o hacer opcional `cloudflared` y cualquier descarga o llamada externa necesaria para arrancar o usar funciones esenciales sin internet.
+- [ ] `P5-05` Retirar o hacer opcional `cloudflared` y cualquier descarga o llamada externa necesaria para arrancar o usar funciones esenciales sin internet. `cloudflared` solo se inicia con el perfil `remote-access`; falta auditar el resto del runtime y probar arranque sin red.
 
 ## Fase 6 — Corte y aceptación
 
@@ -107,7 +107,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 - [ ] `P6-01` Con respaldo verificado y ventana de corte acordada, detener escrituras al origen, importar el delta final de PostgreSQL, usuarios y archivos; conservar IDs y relaciones. Registrar fecha/hora y conteos antes/después.
 - [ ] `P6-02` Reconciliar por entidad: usuarios, clientes, planes, membresías, pagos, sesiones de caja, productos, existencias, rutinas, asistencias, comandos y archivos. Resolver diferencias antes del cierre.
 - [ ] `P6-03` Ejecutar prueba de aceptación con la red externa bloqueada: login, creación de cliente/usuario, plan, membresía, cobro/cierre/reversión, venta/stock, rutina/imagen **desde archivo local**, portal del socio, marcaje ZKTeco, Resumen y restauración de respaldo. Registrar resultados y logs sin secretos.
-- [ ] `P6-04` Eliminar configuración y claves ya innecesarias; rotar credenciales expuestas; apagar Hostinger/Supabase **solo después** de confirmar `P6-01` a `P6-03` y mantener un respaldo recuperable.
+- [ ] `P6-04` Eliminar configuración y claves ya innecesarias; rotar credenciales expuestas, incluida la antigua clave de WorkoutX que estuvo embebida en código; apagar Hostinger/Supabase **solo después** de confirmar `P6-01` a `P6-03` y mantener un respaldo recuperable.
 
 ## Validación mínima por entrega
 
@@ -130,5 +130,6 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | P1-02 | Listado local implementado; resto pendiente | Codex | Backend `6f2a793`; web `src/features/payments/actions/get-payments.ts` | GET `/payments`: filtros, orden, paginación, 401/403; suite backend 130/130; lint, typecheck y build web. | Faltan alta, detalle, corrección, reversión y puerta offline |
 | P3-01 | Catálogo web y alta manual locales; resto pendiente | Codex | Backend `0c846e5` y migraciones `0013`/`0014`; web `src/features/exercises` | Suite backend 132/132, incluyendo imagen en disco, edición y nombre histórico en rutina; web lint, typecheck y build. Respaldo `/private/tmp/algym-before-exercises-0013.dump`, políticas aplicadas a `algym`, GET sin sesión 401. | Catálogo local real vacío; faltan datos, rutinas, portal y prueba sin red |
 | P3-01/P3-05 | Búsqueda y selección de ejercicios locales; entrega parcial | Codex | Backend `c214543`; web `src/features/routines/actions/exercise-search-actions.ts` y selector | GET accesible con permiso de rutinas; 132/132 pruebas backend, lint/typecheck/build web. Eliminada la búsqueda remota visible y el fallback de imágenes remotas en rutinas. | Falta catálogo e imágenes reales; generación y plantillas conservan escrituras/lecturas Supabase |
+| P3-05/P5-05 | Sin consulta automática de WorkoutX; túnel opcional | Codex | Web `routine-workspace-shared.tsx`; `docker-compose.yml` | Búsqueda de la API externa y clave embebida eliminada; Compose muestra `sync`/`web` por defecto y añade `cloudflared` solo con `--profile remote-access`. | Web y sync aún usan Supabase; no existe prueba integral sin internet |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.
