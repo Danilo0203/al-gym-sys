@@ -74,7 +74,7 @@ interface RenewSubscriptionSheetProps {
   ) => Promise<{
     success: boolean;
     error?: string;
-    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean };
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; pending?: boolean };
   }>;
 }
 

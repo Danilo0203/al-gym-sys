@@ -1,11 +1,10 @@
 "use client";
 
 import {
-  createCustomer,
-  renewSubscription,
-  updateCustomer,
   type CreateCustomerData,
+  type RenewSubscriptionData,
 } from "@/features/customers/actions/customer-actions";
+import { createCashCustomer, renewCashCustomer } from "@/features/cash/actions/cash-customer-actions";
 import type { CustomerSheetFormValues } from "@/features/customers/hooks/use-hook-form-customers";
 import { poundsToKilograms } from "@/lib/fitness/measurements";
 import { combineSessionDuration, DEFAULT_TRAINING_LOCATION } from "@/lib/training/profile-defaults";
@@ -79,19 +78,18 @@ export async function submitLegacyCashCustomer(
   };
 
   if (customerId) {
-    await updateCustomer(customerId, customerPayload);
-    return;
+    throw new Error("Edita el cliente desde el módulo de clientes.");
   }
 
-  await createCustomer(customerPayload);
+  await createCashCustomer(customerPayload);
 }
 
 export async function renewLegacyCashCustomer(
   customerId: string,
   payload: Record<string, unknown>,
 ) {
-  return renewSubscription(
+  return renewCashCustomer(
     customerId,
-    payload as unknown as Parameters<typeof renewSubscription>[1],
+    payload as unknown as RenewSubscriptionData,
   );
 }
