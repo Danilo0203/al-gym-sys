@@ -1,43 +1,59 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
-export interface MessageTemplate {
-  id: string;
-  name: string;
-  content: string;
-  is_active: boolean;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { fetchAuthBackend } from "@/lib/auth/backend-auth";
+
+const messageTemplateSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  content: z.string(),
+  is_active: z.boolean(),
+  created_by: z.uuid().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type MessageTemplate = z.infer<typeof messageTemplateSchema>;
+
+async function messageRequest(path: string, init?: RequestInit): Promise<Response> {
+  const cookieStore = await cookies();
+  const headers = new Headers(init?.headers);
+  const cookieHeader = cookieStore.getAll().map(({ name, value }) => `${name}=${value}`).join("; ");
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  if (init?.body) headers.set("content-type", "application/json");
+  return fetchAuthBackend(`/messages${path}`, { ...init, headers, cache: "no-store" });
+}
+
+async function messageError(response: Response): Promise<string> {
+  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+  return payload?.error?.message || "No se pudo completar la solicitud";
+}
+
+async function authorized(permission: string): Promise<string | null> {
+  try {
+    const access = await getUserAccessContext();
+    if (!access.isAuthenticated) return "No autenticado";
+    if (!hasPermission(access, permission)) return "No autorizado";
+    return null;
+  } catch {
+    return "No se pudo verificar la sesión";
+  }
 }
 
 export async function getMessageTemplates(params?: {
   includeInactive?: boolean;
 }): Promise<{ success: boolean; data?: MessageTemplate[]; error?: string }> {
+  const error = await authorized("messages.view");
+  if (error) return { success: false, error };
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "messages.view")) {
-      return { success: false, error: "No autorizado" };
-    }
-
-    const adminClient = createAdminClient();
-    let query = adminClient
-      .from("message_templates")
-      .select("*")
-      .order("updated_at", { ascending: false });
-
-    if (!(params?.includeInactive)) {
-      query = query.eq("is_active", true);
-    }
-
-    const { data, error } = await query;
-
-    if (error) return { success: false, error: error.message };
-    return { success: true, data: data as MessageTemplate[] };
+    const response = await messageRequest(`?include_inactive=${params?.includeInactive === true}`);
+    if (!response.ok) return { success: false, error: await messageError(response) };
+    const payload = z.object({ data: z.array(messageTemplateSchema) }).parse(await response.json());
+    return { success: true, data: payload.data };
   } catch {
     return { success: false, error: "Error al obtener mensajes" };
   }
@@ -47,24 +63,11 @@ export async function createMessageTemplate(data: {
   name: string;
   content: string;
 }): Promise<{ success: boolean; error?: string }> {
+  const error = await authorized("messages.create");
+  if (error) return { success: false, error };
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "messages.create")) {
-      return { success: false, error: "No autorizado" };
-    }
-
-    const adminClient = createAdminClient();
-
-    const { error } = await adminClient.from("message_templates").insert({
-      name: data.name,
-      content: data.content,
-      is_active: true,
-      created_by: access.userId,
-    });
-
-    if (error) return { success: false, error: error.message };
-
+    const response = await messageRequest("", { method: "POST", body: JSON.stringify(data) });
+    if (!response.ok) return { success: false, error: await messageError(response) };
     revalidatePath("/panel/mensajes");
     return { success: true };
   } catch {
@@ -78,26 +81,14 @@ export async function updateMessageTemplate(data: {
   content?: string;
   is_active?: boolean;
 }): Promise<{ success: boolean; error?: string }> {
+  const error = await authorized("messages.update");
+  if (error) return { success: false, error };
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "messages.update")) {
-      return { success: false, error: "No autorizado" };
-    }
-
-    const adminClient = createAdminClient();
-    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.content !== undefined) updateData.content = data.content;
-    if (data.is_active !== undefined) updateData.is_active = data.is_active;
-
-    const { error } = await adminClient
-      .from("message_templates")
-      .update(updateData)
-      .eq("id", data.id);
-
-    if (error) return { success: false, error: error.message };
-
+    const { id, ...input } = data;
+    const response = await messageRequest(`/${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify(input),
+    });
+    if (!response.ok) return { success: false, error: await messageError(response) };
     revalidatePath("/panel/mensajes");
     return { success: true };
   } catch {
@@ -106,18 +97,11 @@ export async function updateMessageTemplate(data: {
 }
 
 export async function deleteMessageTemplate(id: string): Promise<{ success: boolean; error?: string }> {
+  const error = await authorized("messages.delete");
+  if (error) return { success: false, error };
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "messages.delete")) {
-      return { success: false, error: "No autorizado" };
-    }
-
-    const adminClient = createAdminClient();
-    const { error } = await adminClient.from("message_templates").delete().eq("id", id);
-
-    if (error) return { success: false, error: error.message };
-
+    const response = await messageRequest(`/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) return { success: false, error: await messageError(response) };
     revalidatePath("/panel/mensajes");
     return { success: true };
   } catch {
@@ -125,9 +109,6 @@ export async function deleteMessageTemplate(id: string): Promise<{ success: bool
   }
 }
 
-export async function toggleMessageTemplateActive(
-  id: string,
-  is_active: boolean,
-): Promise<{ success: boolean; error?: string }> {
+export async function toggleMessageTemplateActive(id: string, is_active: boolean) {
   return updateMessageTemplate({ id, is_active });
 }

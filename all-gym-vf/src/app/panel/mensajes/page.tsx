@@ -23,7 +23,10 @@ export default async function MessagesPage() {
       pageHeaderAction={hasPermission(access, "messages.create") ? <CreateMessageButton /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={2} rowCount={5} />}>
-        <MessagesListing />
+        <MessagesListing
+          canUpdate={hasPermission(access, "messages.update")}
+          canDelete={hasPermission(access, "messages.delete")}
+        />
       </Suspense>
     </PageContainer>
   );

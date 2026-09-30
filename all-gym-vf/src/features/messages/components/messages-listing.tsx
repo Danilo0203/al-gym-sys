@@ -32,7 +32,7 @@ function previewContent(content: string): string {
   return preview.length > 120 ? preview.slice(0, 120) + "..." : preview;
 }
 
-export function MessagesListing() {
+export function MessagesListing({ canUpdate, canDelete }: { canUpdate: boolean; canDelete: boolean }) {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
@@ -113,7 +113,7 @@ export function MessagesListing() {
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Button
+                {canUpdate ? <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
@@ -125,8 +125,8 @@ export function MessagesListing() {
                   ) : (
                     <Eye className="h-4 w-4 text-muted-foreground" />
                   )}
-                </Button>
-                <Button
+                </Button> : null}
+                {canUpdate ? <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
@@ -136,15 +136,15 @@ export function MessagesListing() {
                   }}
                 >
                   <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
+                </Button> : null}
+                {canDelete ? <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => handleDelete(template.id)}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                </Button> : null}
               </div>
             </CardContent>
           </Card>
