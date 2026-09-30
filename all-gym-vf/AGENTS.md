@@ -25,7 +25,7 @@
 ## External Integrations
 - Cash and customer mutations reconcile the affected customer with local `gym-sync-server` through `src/features/cash/lib/local-device-sync.ts`. Device hardware acceptance is still pending.
 - The attendance admin page reads the local `gym-sync-server`.
-- The visible exercise catalog and routine search use local API data and local images; generation and historical imports still need migration.
+- The visible exercise catalog, routine search, replacement suggestions, and manual draft generation use local API data. Automatic generation from Cash, routine blueprints, and historical image imports still need migration.
 
 ## Database And Schema
 - Active local SQL migrations live in the sibling backend's `database/migrations/`.

@@ -429,7 +429,7 @@ export function buildRoutineProposal(params: {
   }
 
   if (params.exercises.length === 0) {
-    warnings.push("El catálogo local está vacío. Importa ejercicios o sincroniza ExerciseDB para mejorar la propuesta.");
+    warnings.push("El catálogo local está vacío. Añade ejercicios desde archivos de esta computadora para completar la propuesta.");
   }
 
   return {
