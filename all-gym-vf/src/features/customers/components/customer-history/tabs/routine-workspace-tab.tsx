@@ -24,10 +24,10 @@ import { TRAINING_LOCATION_OPTIONS } from "@/lib/training/options";
 import { formatSessionDuration } from "@/lib/training/profile-defaults";
 import type { CustomerRoutineWorkspace, RoutineRecord } from "@/lib/training/types";
 import {
-  approveRoutineDraft,
   archiveRoutine,
   generateRoutineProposal,
 } from "@/features/customers/actions/customer-routine-actions";
+import { updateCustomerRoutine } from "@/features/customers/lib/customer-routine-api";
 import {
   assignRoutineBlueprint,
   getAllRoutineBlueprints,
@@ -333,7 +333,10 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
 
     try {
       setIsApproving(true);
-      await approveRoutineDraft(workspace.draftRoutine.id);
+      await updateCustomerRoutine(customerId, workspace.draftRoutine.id, {
+        status: "active",
+        source: "admin",
+      });
       toast.success("Rutina aprobada y activada.");
       router.push(`/panel/clientes/${customerId}/rutina/activa`);
       router.refresh();

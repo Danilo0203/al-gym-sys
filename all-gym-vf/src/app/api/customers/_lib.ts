@@ -50,7 +50,7 @@ export async function proxyCustomersRequest(
   request: NextRequest,
   pathname: string,
   options: {
-    method: "GET" | "POST" | "PATCH";
+    method: "GET" | "POST" | "PATCH" | "DELETE";
     allowedSearchParams?: string[];
     withJsonBody?: boolean;
   },
@@ -77,7 +77,11 @@ export async function proxyCustomersRequest(
     cache: "no-store",
   });
 
-  return new NextResponse(await upstreamResponse.text(), {
+  const responseBody = [204, 205, 304].includes(upstreamResponse.status)
+    ? null
+    : await upstreamResponse.text();
+
+  return new NextResponse(responseBody, {
     status: upstreamResponse.status,
     headers: {
       "cache-control": "no-store",
