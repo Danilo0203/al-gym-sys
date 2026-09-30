@@ -188,7 +188,7 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
   const loadReplacementOptions = async (detail: RoutineDetailRecord) => {
     try {
       setIsLoadingSuggestions(true);
-      const result = await getRoutineExerciseReplacementOptions(detail.id);
+      const result = await getRoutineExerciseReplacementOptions(customerId, detail.id);
 
       if (replacementRequestRef.current !== detail.id) {
         return;

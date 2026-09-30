@@ -4,6 +4,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { serverGetCustomerRoutineWorkspace } from "@/features/customers/lib/customer-routine-server-api";
 import { saveRoutineAsBlueprint } from "@/features/routines/actions/blueprint-actions";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
@@ -134,12 +135,17 @@ function mapRoutineDetailRow(row: Record<string, unknown>): RoutineDetailRecord 
   };
 }
 
-async function requireAdminAccess() {
+async function requireLocalRoutineAccess() {
   const access = await getUserAccessContext();
   if (!access.isAuthenticated || !hasPermission(access, "customers.manage_routine") || !access.userId) {
     throw new Error("No autorizado");
   }
 
+  return access;
+}
+
+async function requireAdminAccess() {
+  const access = await requireLocalRoutineAccess();
   return {
     access,
     adminClient: createAdminClient(),
@@ -169,8 +175,7 @@ async function getNutritionContextForUser(adminClient: AdminSupabaseClient, user
   };
 }
 
-async function listExerciseCatalog(adminClient: AdminSupabaseClient): Promise<ExerciseCatalogItem[]> {
-  void adminClient;
+async function listExerciseCatalog(): Promise<ExerciseCatalogItem[]> {
   const cookieStore = await cookies();
   const cookieHeader = buildCookieHeader(cookieStore.getAll());
   const response = await fetchAuthBackend("/exercises", {
@@ -402,7 +407,7 @@ async function generateRoutineDraftInternal(params: {
   const proposal = buildRoutineProposal({
     trainingProfile,
     nutritionContext,
-    exercises: await listExerciseCatalog(params.adminClient),
+    exercises: await listExerciseCatalog(),
   });
 
   if (proposal.status === "pending_profile") {
@@ -652,35 +657,23 @@ export async function replaceRoutineExercise(detailId: number, exerciseId: numbe
   return { success: true };
 }
 
-export async function getRoutineExerciseReplacementOptions(detailId: number): Promise<{
+export async function getRoutineExerciseReplacementOptions(customerId: string, detailId: number): Promise<{
   success: true;
   data: {
     context: RoutineReplacementContext;
     groups: ExerciseReplacementGroup[];
   };
 }> {
-  const { adminClient } = await requireAdminAccess();
-
-  const { data: detailRow, error: detailError } = await adminClient
-    .from("routine_details")
-    .select("*, routines!inner(id, user_id, status)")
-    .eq("id", detailId)
-    .single();
-
-  if (detailError || !detailRow) {
-    throw new Error("No se encontró el detalle de rutina.");
-  }
-
-  const routine = Array.isArray(detailRow.routines) ? detailRow.routines[0] : detailRow.routines;
-  if (!routine?.user_id || routine.status !== "draft") {
+  await requireLocalRoutineAccess();
+  const [workspace, catalog] = await Promise.all([
+    serverGetCustomerRoutineWorkspace(customerId),
+    listExerciseCatalog(),
+  ]);
+  if (!workspace?.draftRoutine) {
     throw new Error("Solo puedes revisar sugerencias en una rutina en borrador.");
   }
-
-  const detail = mapRoutineDetailRow(detailRow as Record<string, unknown>);
-  const [trainingProfile, catalog] = await Promise.all([
-    fetchTrainingProfileInternal(adminClient, routine.user_id),
-    listExerciseCatalog(adminClient),
-  ]);
+  const detail = workspace.draftDetails.find((item) => item.id === detailId);
+  if (!detail) throw new Error("No se encontró el detalle de rutina.");
 
   const currentExercise =
     detail.exercise_id && Number.isFinite(detail.exercise_id)
@@ -691,7 +684,7 @@ export async function getRoutineExerciseReplacementOptions(detailId: number): Pr
     catalog,
     detail,
     currentExercise,
-    trainingProfile,
+    trainingProfile: workspace.trainingProfile,
     limitPerGroup: 6,
   });
 
@@ -711,8 +704,8 @@ export async function searchExerciseCatalog(filters: {
   equipment?: string;
   limit?: number;
 }) {
-  const { adminClient } = await requireAdminAccess();
-  const catalog = await listExerciseCatalog(adminClient);
+  await requireLocalRoutineAccess();
+  const catalog = await listExerciseCatalog();
 
   return {
     success: true,
@@ -741,7 +734,7 @@ export async function importExerciseFromProvider(_rawExercise: Record<string, un
 }
 
 export async function seedExerciseCatalog() {
-  await requireAdminAccess();
+  await requireLocalRoutineAccess();
   return {
     success: false,
     importedCount: 0,
@@ -790,7 +783,7 @@ async function getRoutineWorkspaceForUser(
     let mappedDetails: RoutineDetailRecord[] = (details || []).map((row: Record<string, unknown>) => mapRoutineDetailRow(row));
 
     if (mappedDetails.some((detail) => detail.exercise_name_snapshot)) {
-      mappedDetails = await hydrateRoutineDetailVisuals(mappedDetails, await listExerciseCatalog(adminClient));
+      mappedDetails = await hydrateRoutineDetailVisuals(mappedDetails, await listExerciseCatalog());
     }
 
     detailsByRoutineId = mappedDetails.reduce<Record<string, RoutineDetailRecord[]>>((accumulator, mapped: RoutineDetailRecord) => {
