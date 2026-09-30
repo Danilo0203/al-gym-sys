@@ -87,6 +87,7 @@ export async function getPlans(): Promise<Plan[]> {
   return parsed.data;
 }
 
+
 export async function getCustomerMembership(customerId: string): Promise<Membership | null> {
   const response = await fetchMembershipApi(`/api/customers/${customerId}/membership`, { method: "GET" });
   const parsed = await parseCustomerApiResponse(response, (value) => customerMembershipResponseSchema.parse(value));
