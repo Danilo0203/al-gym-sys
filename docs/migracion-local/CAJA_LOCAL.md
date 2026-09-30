@@ -12,6 +12,8 @@ La pantalla `/panel/caja` usa la API del backend local para el turno actual. La 
 | GET | `/cash/sessions/:id` | `cash.operate` u owner | Detalle del turno propio; owner puede consultar cualquier turno |
 | POST | `/cash/sessions/:id/close` | `cash.operate` u owner | Cierra con `countedAmount`, `notes` y `adminPassword` cuando corresponda |
 | POST | `/payments/membership` | `cash.operate` y `customers.manage_membership`, u owner | Crea o renueva una membresía, registra el pago y vincula el movimiento de caja en una transacción |
+| GET | `/payments/:id/reversal-context` | `cash.operate` u owner | Muestra el importe, estado, cliente y plan de un pago local |
+| POST | `/payments/:id/reverse` | `cash.operate`, `cash.reverse_payment` y `customers.manage_membership`, u owner | Reversa un pago de membresía y registra el reemplazo y ambos movimientos en una transacción |
 
 Los importes de entrada son no negativos y admiten dos decimales. El cierre devuelve error cuando hay diferencia sin observación. Un empleado necesita la contraseña de un admin u owner activo; admin, owner o quien tenga `cash.close_without_admin_password` pueden autorizarse a sí mismos. La ruta de cierre limita intentos. La API devuelve 401 sin sesión, 403 sin permiso y 400 en validaciones o reglas de caja.
 
@@ -21,4 +23,6 @@ Los importes de entrada son no negativos y admiten dos decimales. El cierre devu
 
 `POST /cash/sessions/:id/movements` acepta `movementType` (`manual_income` o `withdrawal`), `amount` positivo y `note` de 3 a 500 caracteres. Fija la categoría en `other` y el método en efectivo; usa `record_manual_cash_movement` para comprobar que la caja siga abierta y pertenezca al cajero (owner puede supervisar). La pantalla registra estos movimientos en la caja local y actualiza el efectivo esperado. Son movimientos operativos, no pagos de membresía ni ventas.
 
-**Pendiente:** conectar los formularios de cobro/renovación con esta API y migrar los demás efectos que esos formularios aún escriben por Supabase; venta/anulación de productos, correcciones y reversión de pagos. La interfaz de cobro todavía usa su ruta antigua: abrir una caja local no habilita esos cobros. La aceptación financiera requiere una operación completa desde la interfaz y conciliación de pagos, caja, stock y Resumen en la misma base.
+La corrección de un pago de membresía visible en caja usa `/payments/:id/reversal-context` y `/payments/:id/reverse`. La migración `0021_local_payment_reversal.sql` añade la política RLS necesaria para actualizar el estado del pago original. El backend exige un motivo, bloquea dos correcciones del mismo pago y conserva los importes originales en el historial. El movimiento de reverso incluye siempre el ID del pago en su nota para identificar la cadena desde el detalle de caja.
+
+**Pendiente:** conectar los formularios de cobro/renovación con la API local y migrar los demás efectos que esos formularios aún escriben por Supabase; venta y anulación de productos. La interfaz de cobro todavía usa su ruta antigua: abrir una caja local no habilita esos cobros. La aceptación financiera requiere una operación completa desde la interfaz y conciliación de pagos, caja, stock y Resumen en la misma base.

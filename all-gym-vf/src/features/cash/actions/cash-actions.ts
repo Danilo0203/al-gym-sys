@@ -345,10 +345,6 @@ function isPaymentMethodEnumTypeMismatch(error: unknown) {
   return message.includes('column "method" is of type payment_method') && message.includes("expression is of type text");
 }
 
-function isPaymentMethod(value: string | null | undefined): value is PaymentMethod {
-  return value === "cash" || value === "card" || value === "transfer";
-}
-
 async function requireCashAccess() {
   const access = await getUserAccessContext();
   if (!access.isAuthenticated || !access.userId || !hasPermission(access, "cash.operate")) {
@@ -372,9 +368,23 @@ async function localCashRequest(path: string, init?: RequestInit): Promise<Respo
   return fetchAuthBackend(`/cash${path}`, { ...init, headers, cache: "no-store" });
 }
 
+async function localPaymentsRequest(path: string, init?: RequestInit): Promise<Response> {
+  const cookieStore = await cookies();
+  const headers = new Headers(init?.headers);
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  if (init?.body) headers.set("content-type", "application/json");
+  return fetchAuthBackend(`/payments${path}`, { ...init, headers, cache: "no-store" });
+}
+
 async function localCashError(response: Response): Promise<Error> {
   const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
   return new Error(payload?.error?.message || "No se pudo completar la operación de caja");
+}
+
+async function localPaymentsError(response: Response): Promise<Error> {
+  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+  return new Error(payload?.error?.message || "No se pudo completar la operación del pago");
 }
 
 async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typeof requireCashAccess>>) {
@@ -551,101 +561,6 @@ async function createSubscriptionPaymentWithCashFallback(params: {
     cash_movement_id: movementRow?.id ?? null,
     session_link_status: movementRow?.session_link_status ?? null,
   } satisfies PaymentRpcResult;
-}
-
-async function reverseAndRecreatePaymentWithFallback(params: {
-  access: Awaited<ReturnType<typeof requireCashAccess>>;
-  input: ReversePaymentInput;
-}) {
-  const adminClient = createAdminClient();
-  const supabase = await createClient();
-  const session = await requireOperableOpenCashSession(params.access);
-
-  const { data: originalPayment, error: originalPaymentError } = await adminClient
-    .from("payments")
-    .select("id, subscription_id, user_id, amount_paid, method, status")
-    .eq("id", params.input.paymentId)
-    .single();
-
-  if (originalPaymentError || !originalPayment) {
-    throw originalPaymentError || new Error("Pago no encontrado");
-  }
-
-  if (originalPayment.status !== "posted") {
-    throw new Error("Solo se pueden revertir pagos publicados");
-  }
-
-  if (!isPaymentMethod(originalPayment.method)) {
-    throw new Error("El pago original no tiene un metodo valido");
-  }
-
-  const reversalCashEffect = originalPayment.method === "cash" ? (toNumber(originalPayment.amount_paid) || 0) * -1 : 0;
-  const reversalNote = params.input.note?.trim() || `Reverso administrativo del pago ${params.input.paymentId}`;
-
-  const { error: reversalMovementError } = await adminClient.from("cash_movements").insert({
-    cash_session_id: session.id,
-    movement_type: "void",
-    category: params.input.sourceCategory ?? "membership",
-    payment_method: originalPayment.method,
-    amount: toNumber(originalPayment.amount_paid) || 0,
-    cash_effect_amount: reversalCashEffect,
-    session_link_status: "assigned",
-    origin: "system",
-    source_subscription_id: originalPayment.subscription_id,
-    customer_id: originalPayment.user_id,
-    created_by_user_id: params.access.userId,
-    note: reversalNote,
-  });
-
-  if (reversalMovementError) {
-    throw reversalMovementError;
-  }
-
-  const { data: replacementPayment, error: replacementPaymentError } = await adminClient
-    .from("payments")
-    .insert({
-      subscription_id: originalPayment.subscription_id,
-      user_id: originalPayment.user_id,
-      amount_original: params.input.amountOriginal,
-      discount_amount: params.input.discountAmount,
-      amount_paid: params.input.amountPaid,
-      method: params.input.paymentMethod,
-      payment_date: new Date().toISOString(),
-      created_by_user_id: params.access.userId,
-      status: "posted",
-    })
-    .select("id")
-    .single();
-
-  if (replacementPaymentError || !replacementPayment) {
-    throw replacementPaymentError || new Error("No se pudo crear el pago corregido");
-  }
-
-  const { error: updateOriginalPaymentError } = await adminClient
-    .from("payments")
-    .update({
-      status: "reversed",
-      reversed_at: new Date().toISOString(),
-      reversed_by_user_id: params.access.userId,
-      replacement_payment_id: replacementPayment.id,
-      reversal_reason: params.input.reason.trim(),
-    })
-    .eq("id", params.input.paymentId);
-
-  if (updateOriginalPaymentError) {
-    throw updateOriginalPaymentError;
-  }
-
-  const { error: attachReplacementError } = await supabase.rpc("attach_payment_to_cash", {
-    p_payment_id: replacementPayment.id,
-    p_actor_user_id: params.access.userId,
-    p_source_category: params.input.sourceCategory ?? "membership",
-    p_note: params.input.note?.trim() || null,
-  });
-
-  if (attachReplacementError) {
-    throw attachReplacementError;
-  }
 }
 
 export async function getCashDashboardData(): Promise<CashDashboardData> {
@@ -1081,111 +996,38 @@ export async function runRenewSubscriptionWithPayment(params: {
 
 export async function getPaymentReversalContext(paymentId: string): Promise<CashPaymentReversalContext | null> {
   await requireCashAccess();
-
-  const adminClient = createAdminClient();
-  const { data: paymentRow, error: paymentError } = await adminClient
-    .from("payments")
-    .select("id, user_id, subscription_id, amount_original, discount_amount, amount_paid, method, payment_date, status")
-    .eq("id", paymentId)
-    .maybeSingle();
-
-  if (paymentError) {
-    throw toCashActionError(paymentError, "No se pudo cargar el contexto del pago");
-  }
-
-  if (!paymentRow) {
-    return null;
-  }
-
-  if (!isPaymentMethod(paymentRow.method)) {
-    throw new Error("El pago no tiene un metodo valido para reverso");
-  }
-
-  const [{ data: profileRow, error: profileError }, { data: subscriptionRow, error: subscriptionError }] = await Promise.all([
-    adminClient.from("profiles").select("id, full_name").eq("id", paymentRow.user_id).maybeSingle(),
-    paymentRow.subscription_id
-      ? adminClient.from("subscriptions").select("id, plan_id").eq("id", paymentRow.subscription_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-  ]);
-
-  if (profileError) {
-    throw toCashActionError(profileError, "No se pudo cargar el cliente del pago");
-  }
-
-  if (subscriptionError) {
-    throw toCashActionError(subscriptionError, "No se pudo cargar la suscripcion del pago");
-  }
-
-  let planName: string | null = null;
-  const planId =
-    subscriptionRow && typeof subscriptionRow === "object" && "plan_id" in subscriptionRow
-      ? subscriptionRow.plan_id
-      : null;
-
-  if (typeof planId === "number") {
-    const { data: planRow, error: planError } = await adminClient.from("plans").select("name").eq("id", planId).maybeSingle();
-    if (planError) {
-      throw toCashActionError(planError, "No se pudo cargar el plan del pago");
-    }
-
-    planName = planRow?.name || null;
-  }
-
-  return {
-    payment_id: paymentRow.id,
-    user_id: paymentRow.user_id,
-    user_name: profileRow?.full_name || "Cliente",
-    subscription_id: paymentRow.subscription_id,
-    plan_name: planName,
-    amount_original: toNumber(paymentRow.amount_original) || 0,
-    discount_amount: toNumber(paymentRow.discount_amount) || 0,
-    amount_paid: toNumber(paymentRow.amount_paid) || 0,
-    method: paymentRow.method,
-    payment_date: paymentRow.payment_date,
-    status: paymentRow.status || null,
-  };
+  const response = await localPaymentsRequest(`/${encodeURIComponent(paymentId)}/reversal-context`);
+  if (!response.ok) throw await localPaymentsError(response);
+  return await response.json() as CashPaymentReversalContext | null;
 }
 
 export async function reverseAndRecreatePayment(input: ReversePaymentInput) {
-  const access = await requireCashAccess();
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("reverse_and_recreate_payment", {
-    p_payment_id: input.paymentId,
-    p_amount_original: input.amountOriginal,
-    p_discount_amount: input.discountAmount,
-    p_amount_paid: input.amountPaid,
-    p_payment_method: input.paymentMethod,
-    p_reason: input.reason.trim(),
-    p_source_category: input.sourceCategory ?? "membership",
-    p_note: input.note?.trim() || null,
-    p_actor_user_id: access.userId,
+  await requireCashAccess();
+  const response = await localPaymentsRequest(`/${encodeURIComponent(input.paymentId)}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({
+      amountOriginal: input.amountOriginal,
+      discountAmount: input.discountAmount,
+      amountPaid: input.amountPaid,
+      paymentMethod: input.paymentMethod,
+      reason: input.reason.trim(),
+      sourceCategory: input.sourceCategory ?? "membership",
+      note: input.note?.trim() || undefined,
+    }),
   });
-
-  if (error) {
-    if (isPaymentMethodEnumTypeMismatch(error)) {
-      await reverseAndRecreatePaymentWithFallback({ access, input });
-
-      revalidatePath("/panel/caja");
-      revalidatePath("/panel/caja/historial");
-      revalidatePath("/panel/pagos");
-      revalidatePath("/panel/resumen");
-
-      return {
-        reversed_payment_id: input.paymentId,
-        replacement_payment_id: null,
-      };
-    }
-
-    throw toCashActionError(error, "No se pudo revertir el pago");
-  }
+  if (!response.ok) throw await localPaymentsError(response);
 
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
   revalidatePath("/panel/pagos");
   revalidatePath("/panel/resumen");
 
-  return data;
+  return await response.json() as {
+    reversed_payment_id: string;
+    replacement_payment_id: string;
+    reversal_movement_id: string;
+    replacement_movement_id: string;
+  };
 }
 
 export async function searchCashProducts(search: string): Promise<CashProductSearchResult[]> {

@@ -176,10 +176,12 @@ function getMovementDescription(movement: CashDashboardData["activityMovements"]
 
 function RecentMovementsCard({
   movements,
-  canReverseCash,
+  canReversePayment,
+  canVoidProductSale,
 }: {
   movements: CashDashboardData["activityMovements"];
-  canReverseCash: boolean;
+  canReversePayment: boolean;
+  canVoidProductSale: boolean;
 }) {
   const recentMovements = movements.slice(0, 8);
 
@@ -210,13 +212,13 @@ function RecentMovementsCard({
             </TableHeader>
             <TableBody>
               {recentMovements.map((movement) => {
-                const canReversePayment =
-                  canReverseCash &&
+                const showReversePayment =
+                  canReversePayment &&
                   movement.movement_type === "sale" &&
                   movement.source_payment_id &&
                   movement.source_payment_status === "posted";
-                const canReverseProductSale =
-                  canReverseCash &&
+                const showVoidProductSale =
+                  canVoidProductSale &&
                   movement.movement_type === "sale" &&
                   movement.source_product_sale_id &&
                   movement.source_product_sale_status === "posted";
@@ -243,7 +245,7 @@ function RecentMovementsCard({
                     <TableCell className="align-top font-medium">{formatMoney(movement.amount)}</TableCell>
                     <TableCell className="align-top font-medium">{formatMoney(movement.cash_effect_amount)}</TableCell>
                     <TableCell className="align-top text-right">
-                      {canReversePayment ? (
+                      {showReversePayment ? (
                         <ReversePaymentDialog
                           paymentId={movement.source_payment_id!}
                           sourceCategory={movement.category}
@@ -255,7 +257,7 @@ function RecentMovementsCard({
                             </Button>
                           }
                         />
-                      ) : canReverseProductSale ? (
+                      ) : showVoidProductSale ? (
                         <ReverseProductSaleDialog
                           productSaleId={movement.source_product_sale_id!}
                           saleNumber={movement.product_sale_number}
@@ -352,7 +354,10 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
   const { data: currentUser } = useCurrentUser();
   const canOperateCash = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("cash.operate"));
   const canConfigureRegister = Boolean(currentUser?.isOwner || currentUser?.role === "admin");
-  const canReverseCash = canOperateCash;
+  const canReversePayment = Boolean(currentUser?.isOwner || (
+    canOperateCash && currentUser?.permissions?.includes("cash.reverse_payment")
+    && currentUser?.permissions?.includes("customers.manage_membership")
+  ));
   const canManageMembership = Boolean(
     currentUser?.isOwner || currentUser?.permissions?.includes("customers.manage_membership"),
   );
@@ -621,7 +626,11 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
         </Alert>
       ) : null}
 
-      <RecentMovementsCard movements={data.activityMovements} canReverseCash={canReverseCash} />
+      <RecentMovementsCard
+        movements={data.activityMovements}
+        canReversePayment={canReversePayment}
+        canVoidProductSale={canOperateCash}
+      />
 
       {data.canOperateSession ? (
         <QuickProductSalePanel

@@ -379,10 +379,12 @@ function getRowTone(meta: MovementStoryMeta | null, movement: CashMovementView) 
 
 export function CashSessionDetailView({
   data,
-  canReverseMovements,
+  canReversePayment,
+  canVoidProductSale,
 }: {
   data: CashSessionDetailData;
-  canReverseMovements: boolean;
+  canReversePayment: boolean;
+  canVoidProductSale: boolean;
 }) {
   const { session, summary, movements } = data;
   const movementGroups = buildMovementDisplayGroups(movements);
@@ -501,8 +503,8 @@ export function CashSessionDetailView({
                     const stateBadge = getStateBadge(movement, meta);
                     const narrative = getMovementNarrative(movement, meta);
                     const reverseAction =
-                      canReverseMovements && movement.movement_type === "sale" ? (
-                        movement.source_payment_id && movement.source_payment_status === "posted" ? (
+                      movement.movement_type === "sale" ? (
+                        canReversePayment && movement.source_payment_id && movement.source_payment_status === "posted" ? (
                           <ReversePaymentDialog
                             paymentId={movement.source_payment_id!}
                             sourceCategory={movement.category}
@@ -514,7 +516,7 @@ export function CashSessionDetailView({
                               </Button>
                             }
                           />
-                        ) : movement.source_product_sale_id && movement.source_product_sale_status === "posted" ? (
+                        ) : canVoidProductSale && movement.source_product_sale_id && movement.source_product_sale_status === "posted" ? (
                           <ReverseProductSaleDialog
                             productSaleId={movement.source_product_sale_id!}
                             saleNumber={movement.product_sale_number}
