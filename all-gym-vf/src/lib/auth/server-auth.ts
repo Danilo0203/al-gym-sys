@@ -1,44 +1,44 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
+
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
-import { getAuthErrorMessage, parseAuthContext, parseJsonText, type AuthContext } from "@/lib/auth/contracts";
+import { authContextSchema, getAuthError, isJsonContentType, type AuthContext } from "@/lib/auth/contracts";
 
-async function fetchAuthContextFromCookieHeader(cookieHeader: string | null): Promise<AuthContext | null> {
-  let response: Response;
-
-  try {
-    response = await fetchAuthBackend("/auth/me", {
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
-    });
-  } catch (error) {
-    throw new Error(
-      `Could not reach local auth backend: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-
-  if (response.status === 401) {
-    return null;
-  }
-
-  const responseText = await response.text();
-
-  if (!response.ok) {
-    const payload = responseText.trim() ? parseJsonText(responseText, "Local auth backend") : null;
-    const errorMessage = payload ? getAuthErrorMessage(payload) : null;
-
-    throw new Error(
-      errorMessage
-        ? `Local auth backend rejected the session: ${errorMessage}`
-        : `Local auth backend rejected the session with status ${response.status}.`,
-    );
-  }
-
-  return parseAuthContext(parseJsonText(responseText, "Local auth backend"), "Local auth backend");
-}
-
-export const getServerAuthContext = cache(async (): Promise<AuthContext | null> => {
+async function fetchServerAuthContext(): Promise<AuthContext | null> {
   const cookieStore = await cookies();
   const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  const response = await fetchAuthBackend("/auth/me", {
+    method: "GET",
+    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+  });
 
-  return fetchAuthContextFromCookieHeader(cookieHeader);
-});
+  if (response.status === 401) return null;
+
+  if (!isJsonContentType(response.headers.get("content-type"))) {
+    throw new Error("El backend local devolvió una respuesta de sesión inválida.");
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("El backend local devolvió una respuesta de sesión inválida.");
+  }
+
+  if (!response.ok) {
+    const error = getAuthError(payload);
+    if (response.status === 403 && error?.code === "PROFILE_INACTIVE") {
+      throw new Error("Perfil inactivo");
+    }
+    throw new Error("No fue posible validar la sesión local.");
+  }
+
+  const parsed = authContextSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("El backend local devolvió un contrato de sesión inválido.");
+  }
+
+  return parsed.data;
+}
+
+export const getServerAuthContext = cache(fetchServerAuthContext);

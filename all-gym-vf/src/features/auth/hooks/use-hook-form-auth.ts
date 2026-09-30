@@ -5,12 +5,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
-import { loginWithLocalAuth } from "@/lib/auth/client-auth";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
+import { isValidPasswordLoginIdentifier, resolvePasswordSignInCredentials } from "@/lib/auth/identifiers";
+import { loginWithLocalAuth } from "@/lib/auth/client-auth";
 
 const formSchema = z.object({
-  email: z.string().trim().toLowerCase().email({
-    message: "Introduce un correo válido",
+  identifier: z.string().refine((value) => isValidPasswordLoginIdentifier(value), {
+    message: "Introduce un correo o teléfono válido",
   }),
   password: z.string().min(1, { message: "La contraseña es obligatoria" }),
 });
@@ -27,19 +28,29 @@ export function useHookFormAuth({ callbackUrl, onSuccessRedirect }: UseHookFormA
   const form = useForm<UserAuthFormValue>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: "",
+      identifier: "",
       password: "",
     },
   });
 
   const onSubmit = async (data: UserAuthFormValue) => {
     startTransition(async () => {
+      const credentials = resolvePasswordSignInCredentials(data.identifier, data.password);
+      if (!credentials) {
+        form.setError("identifier", { message: "Introduce un correo o teléfono válido" });
+        return;
+      }
+
+      if (typeof credentials.email !== "string") {
+        toast.error("El acceso con teléfono aún no está disponible en el backend local.");
+        return;
+      }
+
       try {
         const authContext = await loginWithLocalAuth({
-          email: data.email,
-          password: data.password,
+          email: credentials.email,
+          password: credentials.password,
         });
-
         toast.success(`¡Sesión iniciada correctamente!`);
         onSuccessRedirect(
           resolvePostLoginRoute({

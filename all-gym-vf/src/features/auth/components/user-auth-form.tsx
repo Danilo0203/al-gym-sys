@@ -18,9 +18,9 @@ export default function UserAuthForm() {
       <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-2">
         <FormInput
           control={form.control}
-          name="email"
-          label="Correo electrónico"
-          placeholder="Introduce tu correo..."
+          name="identifier"
+          label="Correo o teléfono"
+          placeholder="Introduce tu correo o teléfono..."
           disabled={loading}
         />
         <FormInput

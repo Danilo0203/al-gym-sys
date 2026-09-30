@@ -1,8 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { changePasswordWithLocalAuth, LocalAuthProxyError } from '@/lib/auth/client-auth';
+import { changePasswordWithLocalAuth } from '@/lib/auth/client-auth';
 import { getCurrentUser, updateProfile, ProfileData, UpdateProfileData } from '../actions/profile-actions';
 import { toast } from 'sonner';
 
@@ -35,7 +34,6 @@ export function useCurrentUser() {
  */
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
-  const router = useRouter();
 
   return useMutation({
     mutationFn: async (data: UpdateProfileData) => {
@@ -45,12 +43,8 @@ export function useUpdateProfile() {
       }
       return result;
     },
-    onSuccess: async (result) => {
-      if (result.data) {
-        queryClient.setQueryData(profileKeys.current(), result.data);
-      }
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.current() });
-      router.refresh();
       toast.success('Perfil actualizado correctamente');
     },
     onError: (error: Error) => {
@@ -67,12 +61,11 @@ export function useUpdatePassword() {
     mutationFn: async ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) => {
       await changePasswordWithLocalAuth({ currentPassword, newPassword });
     },
+    onSuccess: () => {
+      toast.success('Contraseña actualizada correctamente');
+      window.location.replace('/iniciar-sesion');
+    },
     onError: (error: Error) => {
-      if (error instanceof LocalAuthProxyError && error.status === 401) {
-        window.location.replace('/iniciar-sesion');
-        return;
-      }
-
       toast.error(error.message);
     },
   });

@@ -1,7 +1,8 @@
-import { fetchAuthBackend } from "@/lib/auth/backend-auth";
-import { getAuthErrorMessage, parseAuthContext, parseJsonText } from "@/lib/auth/contracts";
-import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
 import { NextResponse, type NextRequest } from "next/server";
+
+import { AuthBackendTransportError, fetchAuthBackend } from "@/lib/auth/backend-auth";
+import { authContextSchema, getAuthError, isJsonContentType } from "@/lib/auth/contracts";
+import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -11,61 +12,105 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
+  if (pathname.startsWith("/api/")) return response;
 
+  const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
   let authResponse: Response;
 
   try {
     authResponse = await fetchAuthBackend("/auth/me", {
-      headers: request.headers.get("cookie") ? { cookie: request.headers.get("cookie") as string } : undefined,
+      method: "GET",
+      headers: request.headers.get("cookie")
+        ? { cookie: request.headers.get("cookie") as string }
+        : undefined,
     });
   } catch (error) {
-    return new NextResponse(
-      error instanceof Error ? error.message : "No fue posible contactar el backend de autenticación local.",
-      { status: 503 },
+    if (!isProtectedArea) return response;
+
+    const isTimeout = error instanceof AuthBackendTransportError && error.kind === "timeout";
+    return NextResponse.json(
+      {
+        error: {
+          code: isTimeout ? "AUTH_BACKEND_TIMEOUT" : "AUTH_BACKEND_UNAVAILABLE",
+          message: isTimeout
+            ? "El servicio de autenticación tardó demasiado en responder."
+            : "El servicio de autenticación no está disponible.",
+        },
+      },
+      { status: isTimeout ? 504 : 503 },
     );
   }
 
   if (authResponse.status === 401) {
-    if (!isProtectedArea) {
-      return response;
-    }
+    if (!isProtectedArea) return response;
 
     const url = request.nextUrl.clone();
     url.pathname = "/iniciar-sesion";
     return NextResponse.redirect(url);
   }
 
-  const authResponseText = await authResponse.text();
-
-  if (!authResponse.ok) {
-    const payload = authResponseText.trim() ? parseJsonText(authResponseText, "Local auth backend") : null;
-    const errorMessage = payload ? getAuthErrorMessage(payload) : null;
-
-    return new NextResponse(errorMessage ?? "No fue posible validar la sesión local.", {
-      status: authResponse.status,
-    });
+  if (!isJsonContentType(authResponse.headers.get("content-type"))) {
+    return isProtectedArea
+      ? NextResponse.json(
+          { error: { code: "AUTH_BACKEND_ERROR", message: "No fue posible validar la sesión local." } },
+          { status: 502 },
+        )
+      : response;
   }
 
-  const authContext = parseAuthContext(parseJsonText(authResponseText, "Local auth backend"), "Local auth backend");
-  const roleSlug = authContext.authorization.roleSlug;
-  const role = parseUserRole(roleSlug);
-  const scope = authContext.authorization.scope;
-  const permissions = authContext.authorization.permissions;
-  const isOwner = authContext.authorization.isOwner;
+  let payload: unknown;
+  try {
+    payload = await authResponse.json();
+  } catch {
+    return isProtectedArea
+      ? NextResponse.json(
+          { error: { code: "AUTH_BACKEND_ERROR", message: "No fue posible validar la sesión local." } },
+          { status: 502 },
+        )
+      : response;
+  }
 
+  if (!authResponse.ok) {
+    const backendError = getAuthError(payload);
+    if (authResponse.status === 403 && backendError?.code === "PROFILE_INACTIVE") {
+      return NextResponse.json(
+        { error: { code: "PROFILE_INACTIVE", message: "Perfil inactivo" } },
+        { status: 403 },
+      );
+    }
+
+    return isProtectedArea
+      ? NextResponse.json(
+          { error: { code: "AUTH_BACKEND_ERROR", message: "No fue posible validar la sesión local." } },
+          { status: 502 },
+        )
+      : response;
+  }
+
+  const parsedContext = authContextSchema.safeParse(payload);
+  if (!parsedContext.success) {
+    return isProtectedArea
+      ? NextResponse.json(
+          { error: { code: "AUTH_BACKEND_ERROR", message: "No fue posible validar la sesión local." } },
+          { status: 502 },
+        )
+      : response;
+  }
+
+  const authContext = parsedContext.data;
+  const role = parseUserRole(authContext.authorization.roleSlug);
   const defaultRoute = resolvePostLoginRoute({
     role,
-    roleScope: scope,
-    permissions,
-    isOwner,
+    roleScope: authContext.authorization.scope,
+    permissions: authContext.authorization.permissions,
+    isOwner: authContext.authorization.isOwner,
   });
   const requestedPath = `${pathname}${request.nextUrl.search}`;
   const resolvedRequestedPath = resolvePostLoginRoute({
     role,
-    roleScope: scope,
-    permissions,
-    isOwner,
+    roleScope: authContext.authorization.scope,
+    permissions: authContext.authorization.permissions,
+    isOwner: authContext.authorization.isOwner,
     requestedPath,
   });
 
@@ -90,13 +135,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

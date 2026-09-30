@@ -83,7 +83,10 @@ export async function getCurrentClientProfileData(): Promise<ClientApiEnvelope<C
     phone: typeof profile?.phone === "string" ? profile.phone : null,
     birth_date: typeof profile?.birth_date === "string" ? profile.birth_date : null,
     gender: typeof profile?.gender === "string" ? profile.gender : null,
-    avatar_url: typeof profile?.avatar_url === "string" ? profile.avatar_url : null,
+    avatar_url:
+      typeof profile?.avatar_url === "string"
+        ? profile.avatar_url
+        : null,
     role: typeof profile?.role === "string" ? profile.role : authContext.authorization.roleSlug,
     created_at: typeof profile?.created_at === "string" ? profile.created_at : null,
     updated_at: typeof profile?.updated_at === "string" ? profile.updated_at : null,

@@ -9,5 +9,4 @@ export async function signOutCurrentUser() {
   });
 
   await logoutFromLocalAuth();
-  window.location.replace("/iniciar-sesion");
 }

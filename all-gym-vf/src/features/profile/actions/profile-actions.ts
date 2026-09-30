@@ -1,10 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
+
 import { getServerAuthContext } from '@/lib/auth/server-auth';
-import { canEditOwnProfile, PROFILE_EDIT_PERMISSION_KEYS } from '../lib/profile-permissions';
-import { LocalProfileHttpError, getLocalProfile, updateLocalProfile } from '../server/local-profile';
+import { LocalProfileError, getLocalProfile, updateLocalProfile } from '../server/local-profile';
 
 export interface ProfileData {
   id: string;
@@ -18,153 +17,87 @@ export interface ProfileData {
   roleName: string | null;
   permissions: string[];
   isOwner: boolean;
-  created_at: string | null;
+  created_at: string;
   updated_at: string | null;
 }
 
 export interface UpdateProfileData {
   full_name?: string;
   phone?: string;
-  birth_date?: string;
+  birth_date?: string | null;
   gender?: 'male' | 'female' | 'other';
 }
 
-function mapProfileBackendError(error: unknown): string {
-  if (error instanceof LocalProfileHttpError) {
-    switch (error.status) {
-      case 400:
-        return error.message || 'Datos inválidos para actualizar el perfil.';
-      case 401:
-        return 'Sesión inválida. Inicia sesión nuevamente.';
-      case 403:
-        return 'No tienes permiso para editar este perfil.';
-      case 404:
-        return 'Perfil no encontrado.';
-      default:
-        return error.message || `Error del backend local (${error.status}).`;
-    }
-  }
-
-  if (error instanceof Error && error.message.startsWith('Could not reach local profile backend:')) {
-    return 'No fue posible conectar con el backend local del perfil.';
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Error inesperado al procesar el perfil.';
+function profileErrorMessage(error: unknown): string {
+  if (error instanceof LocalProfileError) return error.message;
+  return 'Error inesperado al procesar el perfil';
 }
 
-/**
- * Get the currently authenticated user's profile data
- */
+function toProfileData(
+  profile: Awaited<ReturnType<typeof getLocalProfile>>,
+  authContext: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>,
+): ProfileData {
+  if (!profile.created_at) {
+    throw new LocalProfileError(502, 'INVALID_BACKEND_RESPONSE', 'El backend local devolvió un perfil inválido.');
+  }
+
+  return {
+    id: profile.id,
+    email: profile.email,
+    full_name: profile.full_name,
+    phone: profile.phone,
+    birth_date: profile.birth_date || null,
+    gender: profile.gender,
+    avatar_url: profile.avatar_url,
+    role: profile.role ?? authContext.authorization.roleSlug,
+    roleName: null,
+    permissions: authContext.authorization.permissions,
+    isOwner: authContext.authorization.isOwner,
+    created_at: profile.created_at,
+    updated_at: profile.updated_at,
+  };
+}
+
 export async function getCurrentUser(): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
     const authContext = await getServerAuthContext();
-
-    if (!authContext) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
-
-    const profile = await getLocalProfile();
+    if (!authContext) return { success: false, error: 'Usuario no autenticado' };
 
     return {
       success: true,
-      data: {
-        id: profile.id,
-        email: profile.email,
-        full_name: profile.full_name,
-        phone: profile.phone,
-        birth_date: profile.birth_date || null,
-        gender: profile.gender,
-        avatar_url: profile.avatar_url,
-        role: profile.role ?? authContext.authorization.roleSlug,
-        roleName: null,
-        permissions: authContext.authorization.permissions,
-        isOwner: authContext.authorization.isOwner,
-        created_at: profile.created_at,
-        updated_at: profile.updated_at,
-      }
+      data: toProfileData(await getLocalProfile(), authContext),
     };
   } catch (error) {
-    console.error('Error in getCurrentUser:', error);
-    return { success: false, error: mapProfileBackendError(error) };
+    console.error('Error loading local profile:', error instanceof LocalProfileError ? error.code : 'UNKNOWN');
+    return { success: false, error: profileErrorMessage(error) };
   }
 }
 
-/**
- * Update the currently authenticated user's profile
- */
 export async function updateProfile(
   data: UpdateProfileData,
 ): Promise<{ success: boolean; data?: ProfileData; error?: string }> {
   try {
-    const access = await getUserAccessContext();
-    if (!access.isAuthenticated) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
-    if (
-      !canEditOwnProfile(access.permissions, access.isOwner) &&
-      !PROFILE_EDIT_PERMISSION_KEYS.some((permission) => hasPermission(access, permission))
-    ) {
-      return { success: false, error: 'No autorizado para editar perfil' };
-    }
+    const authContext = await getServerAuthContext();
+    if (!authContext) return { success: false, error: 'Usuario no autenticado' };
 
-    if (!access.userId) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
+    const payload = {
+      ...(data.full_name !== undefined ? { full_name: data.full_name } : {}),
+      ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      ...(typeof data.birth_date === 'string' ? { birth_date: data.birth_date } : {}),
+      ...(data.gender !== undefined ? { gender: data.gender } : {}),
+    };
 
-    if (Object.keys(data).length === 0) {
+    if (Object.keys(payload).length === 0) {
       return { success: false, error: 'No hay cambios para actualizar.' };
     }
 
-    const authContext = await getServerAuthContext();
-    if (!authContext) {
-      return { success: false, error: 'Usuario no autenticado' };
-    }
-
-    const updatedProfile = await updateLocalProfile(data);
-
+    const profile = await updateLocalProfile(payload);
     revalidatePath('/panel/perfil');
     revalidatePath('/panel/perfil/[[...profile]]');
 
-    return {
-      success: true,
-      data: {
-        id: updatedProfile.id,
-        email: updatedProfile.email,
-        full_name: updatedProfile.full_name,
-        phone: updatedProfile.phone,
-        birth_date: updatedProfile.birth_date || null,
-        gender: updatedProfile.gender,
-        avatar_url: updatedProfile.avatar_url,
-        role: updatedProfile.role ?? authContext.authorization.roleSlug,
-        roleName: null,
-        permissions: authContext.authorization.permissions,
-        isOwner: authContext.authorization.isOwner,
-        created_at: updatedProfile.created_at,
-        updated_at: updatedProfile.updated_at,
-      },
-    };
+    return { success: true, data: toProfileData(profile, authContext) };
   } catch (error) {
-    console.error('Error in updateProfile:', error);
-    return { success: false, error: mapProfileBackendError(error) };
+    console.error('Error updating local profile:', error instanceof LocalProfileError ? error.code : 'UNKNOWN');
+    return { success: false, error: profileErrorMessage(error) };
   }
-}
-
-/**
- * Update the user's password
- */
-export async function updatePassword(
-  _currentPassword: string,
-  _newPassword: string
-): Promise<{ success: boolean; error?: string }> {
-  void _currentPassword;
-  void _newPassword;
-
-  return {
-    success: false,
-    error: 'El cambio de contraseña quedó deshabilitado mientras la autenticación use el backend local.',
-  };
 }

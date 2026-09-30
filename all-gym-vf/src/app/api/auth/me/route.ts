@@ -1,22 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { fetchAuthBackend, getSetCookieHeaders } from "@/lib/auth/backend-auth";
+import { type NextRequest } from "next/server";
+
+import { proxyAuthRequest } from "@/lib/auth/auth-proxy";
+import { authContextSchema } from "@/lib/auth/contracts";
 
 export async function GET(request: NextRequest) {
-  const upstreamResponse = await fetchAuthBackend("/auth/me", {
+  return proxyAuthRequest(request, {
+    pathname: "/auth/me",
     method: "GET",
-    headers: request.headers.get("cookie") ? { cookie: request.headers.get("cookie") as string } : undefined,
+    responseSchema: authContextSchema,
   });
-
-  const response = new NextResponse(await upstreamResponse.text(), {
-    status: upstreamResponse.status,
-    headers: {
-      "content-type": upstreamResponse.headers.get("content-type") ?? "application/json",
-    },
-  });
-
-  for (const cookie of getSetCookieHeaders(upstreamResponse.headers)) {
-    response.headers.append("set-cookie", cookie);
-  }
-
-  return response;
 }

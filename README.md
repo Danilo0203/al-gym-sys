@@ -1,6 +1,6 @@
 # All Gym Sys
 
-Sistema de gestion para gimnasio compuesto por una aplicacion web, un servicio de sincronizacion biometrica y una base de datos Supabase externa.
+Sistema de gestion para gimnasio compuesto por una aplicacion web, un backend local, un servicio de sincronizacion biometrica y una base de datos Supabase externa durante la migracion modular.
 
 Este README describe el estado actual del proyecto para desarrolladores: arquitectura, carpetas, variables de entorno, ejecucion local, despliegue con Docker Compose y consideraciones para instalarlo en una PC Windows dentro de una red local.
 
@@ -14,7 +14,7 @@ El sistema esta dividido en tres piezas principales:
 | Sync biometrico | `gym-sync-server` | Servidor Express que integra el sistema con relojes biometricos ZKTeco y guarda eventos de asistencia en Supabase. |
 | Orquestacion local | `docker-compose.yml` | Levanta los servicios `web`, `sync` y `cloudflared` en una red Docker local. |
 
-Supabase funciona como backend externo para Auth, PostgreSQL y datos operativos del gimnasio. La app web usa claves publicas de Supabase en cliente/SSR y la `SUPABASE_SERVICE_ROLE_KEY` solo en codigo de servidor.
+La autenticacion y las sesiones de la app web usan el backend local mediante un proxy server-side de Next.js. Supabase sigue atendiendo los modulos operativos que aun no han sido migrados; la `SUPABASE_SERVICE_ROLE_KEY` se mantiene solo en codigo de servidor.
 
 ## Estructura de Carpetas
 
@@ -85,6 +85,7 @@ Variables usadas por el contenedor `web`.
 NODE_ENV=production
 PORT=3000
 HOSTNAME=0.0.0.0
+ALGYM_BACKEND_URL=http://host.docker.internal:4000
 NEXT_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=TU_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY=TU_SERVICE_ROLE_KEY
@@ -97,6 +98,8 @@ NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY=false
 ```
 
 Referencia: `deploy/env/web.env.example`.
+
+`ALGYM_BACKEND_URL` es exclusivamente server-side. No debe renombrarse con el prefijo `NEXT_PUBLIC_`. En Docker debe apuntar a un nombre o direccion alcanzable desde el contenedor `web`; el Compose local publica `host.docker.internal` para un backend ejecutado en el host.
 
 ### `deploy/env/sync.env`
 
@@ -131,6 +134,7 @@ npm run dev
 ```
 
 La app queda disponible normalmente en `http://localhost:3000`.
+Para autenticacion local, configura `ALGYM_BACKEND_URL=http://127.0.0.1:4000` en `all-gym-vf/.env.local`.
 
 Comandos utiles:
 
@@ -274,9 +278,8 @@ Archivos actuales:
 - `20260512_void_product_sale_from_cash_session.sql`
 - `20260513005245_cash_close_authorization.sql`
 
-La app depende de Supabase para:
+La app depende del backend local para autenticacion, sesiones, autorizacion y perfil actual. Supabase permanece temporalmente para:
 
-- Autenticacion y sesiones.
 - Datos de clientes, usuarios, roles y membresias.
 - Pagos, caja e inventario.
 - Rutinas y ejercicios.

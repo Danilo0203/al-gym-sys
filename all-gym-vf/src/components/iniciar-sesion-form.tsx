@@ -8,12 +8,14 @@ import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/f
 import { Input } from "@/components/ui/input";
 import { PASSWORD_RECOVERY_ENABLED, OAUTH_LOGIN_ENABLED } from "@/lib/auth/feature-flags";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
-import { loginWithLocalAuth } from "@/lib/auth/client-auth";
+import { resolvePasswordSignInCredentials } from "@/lib/auth/identifiers";
+import { LocalAuthProxyError, loginWithLocalAuth } from "@/lib/auth/client-auth";
+import { createBrowserClient } from "@supabase/ssr";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,25 +24,72 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setIsLoading(true);
 
     try {
-      const context = await loginWithLocalAuth({
-        email,
-        password,
+      const credentials = resolvePasswordSignInCredentials(identifier, password);
+      if (!credentials) {
+        toast.error("Ingresa un correo o teléfono válido");
+        return;
+      }
+
+      if (typeof credentials.email !== "string") {
+        toast.error("El acceso con teléfono aún no está disponible en el backend local.");
+        return;
+      }
+
+      const authContext = await loginWithLocalAuth({
+        email: credentials.email,
+        password: credentials.password,
       });
+      const displayName = authContext.user.profile.fullName.trim() || "usuario";
 
-      toast.success(`¡Bienvenido de nuevo ${context.user.profile.fullName || "usuario"}!`);
-
+      toast.success(`¡Bienvenido de nuevo ${displayName}!`);
       window.location.assign(
         resolvePostLoginRoute({
-          role: parseUserRole(context.authorization.roleSlug),
-          roleScope: context.authorization.scope,
-          permissions: context.authorization.permissions,
-          isOwner: context.authorization.isOwner,
+          role: parseUserRole(authContext.authorization.roleSlug),
+          roleScope: authContext.authorization.scope,
+          permissions: authContext.authorization.permissions,
+          isOwner: authContext.authorization.isOwner,
         }),
       );
     } catch (error) {
       console.error("[login] sign-in failure", error);
-      toast.error(error instanceof Error ? error.message : "Error al iniciar sesión");
+      toast.error(
+        error instanceof LocalAuthProxyError && error.code === "INVALID_CREDENTIALS"
+          ? "Credenciales incorrectas"
+          : error instanceof Error
+            ? error.message
+            : "Error al iniciar sesión",
+      );
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (!OAUTH_LOGIN_ENABLED) {
+      toast.error("El acceso con Google está deshabilitado en este despliegue.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY!,
+      );
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        toast.error("Error con Google: " + error.message);
+        setIsLoading(false);
+      }
+    } catch {
+      toast.error("Error al iniciar sesión con Google");
       setIsLoading(false);
     }
   };
@@ -61,7 +110,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     <Button
                       variant="outline"
                       type="button"
-                      onClick={() => toast.error("El acceso con Google está deshabilitado en esta versión.")}
+                      onClick={handleGoogleLogin}
                       disabled={isLoading}
                       className="w-full"
                     >
@@ -80,14 +129,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                 </>
               ) : null}
               <Field>
-                <FieldLabel htmlFor="email">Correo electrónico</FieldLabel>
+                <FieldLabel htmlFor="identifier">Correo o teléfono</FieldLabel>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@email.com"
+                  id="identifier"
+                  type="text"
+                  placeholder="tu@email.com o 12345678"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   disabled={isLoading}
                 />
               </Field>

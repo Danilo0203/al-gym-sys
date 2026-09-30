@@ -39,9 +39,7 @@ function unauthenticatedAccessContext(): UserAccessContext {
 }
 
 export function toUserAccessContext(context: AuthContext | null): UserAccessContext {
-  if (!context) {
-    return unauthenticatedAccessContext();
-  }
+  if (!context) return unauthenticatedAccessContext();
 
   const roleSlug = context.authorization.roleSlug;
   const role = parseUserRole(roleSlug);
@@ -60,6 +58,5 @@ export function toUserAccessContext(context: AuthContext | null): UserAccessCont
 }
 
 export async function getUserAccessContext(): Promise<UserAccessContext> {
-  const context = await getServerAuthContext();
-  return toUserAccessContext(context);
+  return toUserAccessContext(await getServerAuthContext());
 }

@@ -10,6 +10,8 @@ services:
         NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY: ${NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY:-false}
     env_file:
       - ./deploy/env/web.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       sync:
         condition: service_healthy

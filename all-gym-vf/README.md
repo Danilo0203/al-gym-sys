@@ -12,7 +12,7 @@ Este proyecto es una aplicación web full-stack diseñada para centralizar la ad
 - **👥 Gestión de Clientes:** Listado completo de socios con búsqueda avanzada, filtrado y edición de perfiles.
 - **💳 Sistema de Pagos:** Registro y seguimiento de transacciones, exportación a Excel y estados de cuenta.
 - **📋 Planes y Membresías:** Configuración y administración de diferentes niveles de suscripción.
-- **🔐 Autenticación Segura:** Manejo de sesiones y roles mediante Supabase Auth (SSR).
+- **🔐 Autenticación Segura:** Manejo de sesiones y autorización mediante el backend local de ALGYM.
 - **🌗 Modo Oscuro/Claro:** Interfaz adaptativa con soporte total para temas.
 - **⌨️ Barra de Comandos (KBar):** Navegación ultrarrápida mediante atajos de teclado.
 
@@ -51,8 +51,11 @@ Para ejecutar este proyecto localmente, asegúrate de tener las siguientes varia
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
-NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key_de_supabase
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=tu_publishable_key_de_supabase
+ALGYM_BACKEND_URL=http://127.0.0.1:4000
 ```
+
+`ALGYM_BACKEND_URL` solo se usa en el servidor de Next.js. No uses una variante `NEXT_PUBLIC_` para esta URL.
 
 ## 🚀 Inicio Rápido
 
