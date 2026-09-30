@@ -1,38 +1,30 @@
-# Runbook Windows: Docker Compose local + Cloudflare Tunnel
+# Runbook Windows: estado de la instalacion local
 
-## 1. Preparar la PC del gimnasio
-- Instalar Docker Desktop y habilitar WSL2.
-- Activar inicio automático de Docker Desktop al encender Windows.
-- Confirmar que la PC tenga IP fija o reserva DHCP si el reloj biométrico apunta a esta máquina.
+La instalacion completa sin internet sigue en migracion. PostgreSQL y `algym-local-backend` se ejecutan hoy en la PC anfitriona; Docker Compose levanta la web y el sync. Antes de instalar en otra PC, completar y validar `P5-01` a `P6-03` de `PLAN_MIGRACION_LOCAL.md`.
 
-## 2. Configurar variables
-- Editar [`deploy/env/web.env`](/Users/danilo0203/Desarrollo/all-gym-sys/deploy/env/web.env) con las credenciales de Supabase y el token del sync.
-- Editar [`deploy/env/sync.env`](/Users/danilo0203/Desarrollo/all-gym-sys/deploy/env/sync.env) con `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SYNC_API_TOKEN` y la IP del reloj en `ZK_DEVICE_IP`.
-- Dejar [`deploy/env/cloudflared.env`](/Users/danilo0203/Desarrollo/all-gym-sys/deploy/env/cloudflared.env) con `TUNNEL_URL=http://web:3000` para Quick Tunnel.
-- Rotar la `SUPABASE_SERVICE_ROLE_KEY` antes de usar este despliegue.
+## Preparar la PC
 
-## 3. Levantar el stack
-- Abrir PowerShell en `/Users/danilo0203/Desarrollo/all-gym-sys`.
-- Ejecutar `docker compose up -d --build`.
-- Revisar `docker compose ps`.
-- Validar la app local en `http://127.0.0.1:3000`.
-- Leer la URL pública del túnel con `docker compose logs cloudflared --tail 50`.
+- Instalar PostgreSQL, Node.js 24 y Docker Desktop con WSL2.
+- Dar a la PC una IP fija o reserva DHCP si el reloj biometrico le enviara marcajes.
+- Restaurar una copia verificada de `algym` local y aplicar las migraciones del backend, incluida `0017_sync_local_role.sql`.
+- Configurar `algym_app` para el backend y `algym_sync` para el servicio biometrico con claves locales distintas.
 
-## 4. Operación diaria
-- Reiniciar servicios: `docker compose restart`.
-- Ver logs web: `docker compose logs -f web`.
-- Ver logs sync: `docker compose logs -f sync`.
-- Ver logs túnel: `docker compose logs -f cloudflared`.
-- Apagar el stack: `docker compose down`.
-- Actualizar imágenes y app: `docker compose up -d --build`.
+## Variables
 
-## 5. Reinicio automático en Windows
-- Confirmar que Docker Desktop abra al iniciar sesión.
-- Crear una tarea en Programador de tareas que ejecute:
-  `powershell.exe -ExecutionPolicy Bypass -Command "cd 'C:\ruta\all-gym-sys'; docker compose up -d"`
-- Configurar la tarea para correr al iniciar sesión del operador o al arrancar la máquina.
+- Configurar el backend desde `algym-local-backend/.env.example` y ejecutar `pnpm build && pnpm start` en la PC.
+- Configurar `deploy/env/web.env` con `ALGYM_BACKEND_URL` apuntando al backend local y el token `GYM_SYNC_API_TOKEN`. Algunos modulos web aun necesitan variables de Supabase; consultar el plan antes de operar sin internet.
+- Configurar `deploy/env/sync.env` desde `deploy/env/sync.env.example`: `DB_NAME=algym`, `DB_USER=algym_sync`, clave local, `SYNC_API_TOKEN` y datos del reloj. Los tokens de web y sync deben coincidir.
+- El puerto 8080 escucha solo en localhost por defecto. Si el reloj envia marcajes desde otra maquina, establecer `SYNC_BIND_HOST` en la IP de esta PC y permitir el puerto en el firewall de la red privada.
 
-## 6. Cambio de URL temporal del túnel
-- Si Quick Tunnel genera una URL nueva, ejecutar `docker compose logs cloudflared --tail 50`.
-- Compartir la nueva URL al cliente final.
-- Si el cambio de URL afecta callbacks o enlaces externos, mantener `NEXT_PUBLIC_ENABLE_OAUTH_LOGIN=false` y `NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY=false` hasta migrar a dominio fijo.
+## Arranque y comprobacion
+
+Desde la raiz de `al-gym-sys`:
+
+```powershell
+docker compose up -d --build
+docker compose ps
+```
+
+Comprobar `http://127.0.0.1:8080/health/ready` y `http://127.0.0.1:3000`. Revisar `docker compose logs -f sync` y `docker compose logs -f web` si falla alguna comprobacion. El reloj real y los flujos pendientes deben probarse antes de considerar completa la instalacion.
+
+`cloudflared` es opcional y requiere `docker compose --profile remote-access up -d cloudflared`; no forma parte de la operacion sin internet.

@@ -37,6 +37,12 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./deploy/env/sync.env
+    environment:
+      DB_HOST: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${SYNC_BIND_HOST:-127.0.0.1}:8080:8080"
     restart: unless-stopped
     healthcheck:
       test:
@@ -44,7 +50,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:8080/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:8080/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 10s

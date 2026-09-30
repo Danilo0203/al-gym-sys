@@ -1,6 +1,6 @@
 # All Gym Sys
 
-Sistema de gestion para gimnasio compuesto por una aplicacion web, un backend local, un servicio de sincronizacion biometrica y una base de datos Supabase externa durante la migracion modular.
+Sistema de gestion para gimnasio compuesto por una aplicacion web, un backend local, un servicio de sincronizacion biometrica y PostgreSQL local. Algunos modulos de la web todavia usan Supabase durante la migracion.
 
 Este README describe el estado actual del proyecto para desarrolladores: arquitectura, carpetas, variables de entorno, ejecucion local, despliegue con Docker Compose y consideraciones para instalarlo en una PC Windows dentro de una red local.
 
@@ -11,7 +11,7 @@ El sistema esta dividido en tres piezas principales:
 | Pieza | Ruta | Descripcion |
 | --- | --- | --- |
 | App web | `all-gym-vf` | Aplicacion Next.js 16 con React 19 para administrar clientes, pagos, caja, planes, rutinas, inventario, roles, usuarios y asistencias. |
-| Sync biometrico | `gym-sync-server` | Servidor Express que integra el sistema con relojes biometricos ZKTeco y guarda eventos de asistencia en Supabase. |
+| Sync biometrico | `gym-sync-server` | Servidor Express que integra relojes biometricos ZKTeco con PostgreSQL local mediante el rol `algym_sync`. |
 | Orquestacion local | `docker-compose.yml` | Levanta `web` y `sync` en una red Docker local; `cloudflared` requiere el perfil opcional `remote-access`. |
 
 La autenticacion y las sesiones de la app web usan el backend local mediante un proxy server-side de Next.js. Supabase sigue atendiendo los modulos operativos que aun no han sido migrados; la `SUPABASE_SERVICE_ROLE_KEY` se mantiene solo en codigo de servidor.
@@ -104,17 +104,20 @@ Variables usadas por el contenedor `sync`.
 ```env
 PORT=8080
 SYNC_API_TOKEN=TOKEN_INTERNO_COMPARTIDO_CON_WEB
-SUPABASE_URL=https://TU_PROYECTO.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=TU_SERVICE_ROLE_KEY
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=algym
+DB_USER=algym_sync
+DB_PASSWORD=CLAVE_LOCAL_ALEATORIA
 ZK_DEVICE_IP=IP_DEL_RELOJ_ZKTECO
 ZK_DEVICE_PORT=4370
 ZK_DEVICE_TIMEOUT=5000
 ZK_DEVICE_INPORT=5200
 ZK_REGISTRY_CODE=1
 ZK_SUCCESS_RETURNS=0
+ZK_TIME_UTC_OFFSET=-06:00
 COMMAND_LOCK_MS=25000
 DEVICE_RECONCILE_COOLDOWN_MS=120000
-ATTENDANCE_TABLE=attendance_logs
 ```
 
 Referencia: `deploy/env/sync.env.example`.
@@ -145,10 +148,10 @@ npm run lint
 ```bash
 cd gym-sync-server
 npm install
-node index.js
+node --env-file=../deploy/env/sync.env index.js
 ```
 
-El servicio expone `GET /health` en el puerto configurado por `PORT`, por defecto `8080`.
+Antes de arrancar, aplicar `database/migrations/0017_sync_local_role.sql` del repositorio hermano `algym-local-backend`, configurar una clave para `algym_sync` en PostgreSQL local y poner la misma clave en `deploy/env/sync.env`. El token `SYNC_API_TOKEN` debe coincidir con `GYM_SYNC_API_TOKEN` de la web. El servicio expone `GET /health/ready` en el puerto `8080`; responde 200 solo si PostgreSQL esta disponible. `npm test` usa exclusivamente `algym_test`.
 
 ## Ejecucion con Docker Compose
 
@@ -158,6 +161,8 @@ Desde la raiz del proyecto:
 docker compose up -d --build
 docker compose ps
 ```
+
+El contenedor `sync` conecta con PostgreSQL instalado en la computadora mediante `host.docker.internal` y publica `8080` solo en `127.0.0.1` por defecto. Para un reloj de la red local, configurar `SYNC_BIND_HOST` con la IP de la computadora y comprobar la conectividad del dispositivo. PostgreSQL y el backend aun se ejecutan en el host: incorporarlos a Compose sigue pendiente en `P5-01` de `PLAN_MIGRACION_LOCAL.md`.
 
 Ver logs:
 
@@ -196,12 +201,7 @@ ports:
   - "3000:3000"
 ```
 
-El servicio `sync` actualmente no publica puerto hacia el host. Si el reloj ZKTeco envia eventos a la PC por red local, agregar:
-
-```yaml
-ports:
-  - "8080:8080"
-```
+El servicio `sync` publica `8080` solo en `127.0.0.1` de forma predeterminada. Si el reloj ZKTeco envia eventos desde la red local, definir `SYNC_BIND_HOST` con la IP de la PC antes de iniciar Compose.
 
 Tambien se debe permitir el trafico en Firewall de Windows solo para red privada.
 
@@ -217,7 +217,7 @@ Flujo recomendado para una PC del gimnasio:
 4. Configurar `.env`, `deploy\env\web.env` y `deploy\env\sync.env`.
 5. Ajustar puertos para red local si otras maquinas usaran el sistema.
 6. Dar IP fija o reserva DHCP a la PC.
-7. Levantar el stack:
+7. Preparar PostgreSQL y el backend local en la PC, aplicar las migraciones y levantar web/sync:
 
 ```powershell
 cd C:\all-gym-sys
@@ -275,11 +275,12 @@ Archivos actuales:
 
 La app depende del backend local para autenticacion, sesiones, autorizacion y perfil actual. Supabase permanece temporalmente para:
 
-- Datos de clientes, usuarios, roles y membresias.
-- Pagos, caja e inventario.
-- Rutinas y ejercicios.
-- Registros de asistencia en `attendance_logs`.
-- Operaciones administrativas mediante `SUPABASE_SERVICE_ROLE_KEY` en servidor.
+- Algunos flujos de clientes, usuarios y roles que aun no se migran.
+- Alta/correccion de pagos, caja e inventario.
+- Generacion/asignacion de rutinas y otras acciones pendientes.
+- Operaciones pendientes de la web que todavia usan `SUPABASE_SERVICE_ROLE_KEY` en servidor.
+
+El sync, las asistencias y los historiales de clientes ya leen PostgreSQL local. El avance y los pendientes por flujo estan en `PLAN_MIGRACION_LOCAL.md`.
 
 Reglas de seguridad:
 
@@ -331,16 +332,16 @@ docker compose down
 ### El servicio sync no esta saludable
 
 - Revisar `docker compose logs -f sync`.
-- Confirmar `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en `deploy/env/sync.env`.
+- Confirmar `DB_NAME=algym`, `DB_USER=algym_sync`, su clave local y la migracion `0017` en PostgreSQL de la PC.
 - Confirmar que `PORT=8080`.
-- Probar `GET /health` dentro de la red donde este publicado el servicio.
+- Probar `GET /health/ready` en `http://127.0.0.1:8080`.
 
 ### No llegan asistencias del reloj
 
 - Confirmar `ZK_DEVICE_IP`, `ZK_DEVICE_PORT` y conectividad hacia el reloj.
-- Si el reloj hace push hacia la PC, publicar `8080:8080`.
+- Si el reloj hace push hacia la PC, configurar `SYNC_BIND_HOST` con la IP de la PC y permitir el puerto `8080` en el firewall de la red privada.
 - Revisar que el reloj apunte a la IP fija de la PC.
-- Confirmar que la tabla `attendance_logs` exista y que el valor `ATTENDANCE_TABLE` coincida.
+- Confirmar que `public.attendance_logs` exista en `algym` local y que `/health/ready` responda 200.
 
 ### La app no sincroniza clientes con el reloj
 
@@ -353,6 +354,7 @@ docker compose down
 
 - El README interno de `all-gym-vf` describe la app web, pero no representa todo el sistema ni la instalacion Windows.
 - El stack Docker actual esta preparado para uso local en la misma PC; para red local requiere publicar `3000:3000`.
-- El servicio `sync` requiere publicar `8080:8080` si el reloj ZKTeco envia datos hacia la PC.
+- El servicio `sync` requiere configurar `SYNC_BIND_HOST` si el reloj ZKTeco envia datos desde otra maquina de la red.
+- PostgreSQL y el backend siguen ejecutandose fuera de Compose; `P5-01` documenta su integracion pendiente.
 - Antes de instalar a un cliente, revisar y rotar secretos reales.
 - Conviene mantener `ops/windows-runbook.md` alineado con cualquier cambio futuro de Docker o puertos.

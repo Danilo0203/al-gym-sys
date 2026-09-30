@@ -1,7 +1,8 @@
 require("dotenv").config();
+const { timingSafeEqual } = require("node:crypto");
 const express = require("express");
 const bodyParser = require("body-parser");
-const { createClient } = require("@supabase/supabase-js");
+const { createLocalDbFromEnvironment } = require("./local-db");
 const ZKAttendanceClient = require("zk-attendance-sdk");
 
 const app = express();
@@ -14,9 +15,8 @@ const SUCCESS_RETURNS = new Set(
     .map((v) => v.trim())
     .filter(Boolean),
 );
-const ATTLOG_TABLE = process.env.ATTLOG_TABLE || "";
-const ATTENDANCE_TABLE = process.env.ATTENDANCE_TABLE || "attendance_logs";
 const API_TOKEN = process.env.SYNC_API_TOKEN || "";
+const ZK_TIME_UTC_OFFSET = process.env.ZK_TIME_UTC_OFFSET || "-06:00";
 const ZK_DEVICE_IP = String(process.env.ZK_DEVICE_IP || "").trim();
 const ZK_DEVICE_PORT = Number(process.env.ZK_DEVICE_PORT || 4370);
 const ZK_DEVICE_TIMEOUT = Number(process.env.ZK_DEVICE_TIMEOUT || 5000);
@@ -26,11 +26,14 @@ const ZK_DEFAULT_AUTHORIZE_TIMEZONE_ID = Number(process.env.ZK_DEFAULT_AUTHORIZE
 const ZK_DEFAULT_AUTHORIZE_DOOR_ID = Number(process.env.ZK_DEFAULT_AUTHORIZE_DOOR_ID || 1);
 const DEVICE_RECONCILE_COOLDOWN_MS = Number(process.env.DEVICE_RECONCILE_COOLDOWN_MS || 120000);
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env");
-}
+const db = createLocalDbFromEnvironment();
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+if (!API_TOKEN || API_TOKEN === "TU_SYNC_API_TOKEN") {
+  throw new Error("SYNC_API_TOKEN debe configurarse para las rutas administrativas del sync");
+}
+if (!/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(ZK_TIME_UTC_OFFSET)) {
+  throw new Error("ZK_TIME_UTC_OFFSET debe tener formato ±HH:MM");
+}
 
 // ZKTeco ADMS manda texto plano en distintos content-type según firmware.
 // Algunas tablas de consulta devuelven payloads grandes, así que ampliamos el límite.
@@ -50,10 +53,6 @@ function nowTime() {
   return new Date().toLocaleTimeString();
 }
 
-function todayDateString() {
-  return new Date().toISOString().split("T")[0];
-}
-
 function parsePushVersion(value) {
   const normalized = String(value || "")
     .trim()
@@ -65,7 +64,8 @@ function parsePushVersion(value) {
 function toIsoOrNull(value) {
   if (!value) return null;
   const normalized = String(value).replace(" ", "T");
-  const date = new Date(normalized);
+  const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
+  const date = new Date(explicitZone ? normalized : `${normalized}${ZK_TIME_UTC_OFFSET}`);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
 }
@@ -110,8 +110,10 @@ function parseJsonBody(raw) {
 
 function parseIntOrNull(value) {
   if (value == null || value === "") return null;
-  const n = Number.parseInt(String(value), 10);
-  return Number.isFinite(n) ? n : null;
+  const raw = String(value).trim();
+  if (!/^-?\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n >= -2147483648 && n <= 2147483647 ? n : null;
 }
 
 function parsePositiveBiometricIdOrNull(value) {
@@ -237,7 +239,7 @@ function parseAttlogLine(rawLine, sn) {
     offset = 1;
   }
 
-  const biometricId = parseIntOrNull(tokens[offset]);
+  const biometricId = parsePositiveBiometricIdOrNull(tokens[offset]);
   if (biometricId == null) return null;
 
   const firstTimestampToken = tokens[offset + 1] || "";
@@ -285,7 +287,7 @@ function parseAccessEventLine(rawLine, sn) {
   if (!line || !line.includes("=")) return null;
 
   const fields = parseTabbedKvLine(line);
-  const biometricId = parseIntOrNull(fields.pin);
+  const biometricId = parsePositiveBiometricIdOrNull(fields.pin);
   const punchTime = toIsoOrNull(fields.time);
 
   if (biometricId == null || !punchTime) return null;
@@ -305,11 +307,11 @@ function parseAccessEventLine(rawLine, sn) {
 }
 
 function isAuthorizedApiRequest(req) {
-  if (!API_TOKEN) return true;
   const auth = String(req.headers.authorization || "");
   const fromHeader = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
-  const fromQuery = String(req.query.token || "").trim();
-  return fromHeader === API_TOKEN || fromQuery === API_TOKEN;
+  const expected = Buffer.from(API_TOKEN);
+  const actual = Buffer.from(fromHeader);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 function parseQueryLimit(value, fallback = 200, min = 1, max = 1000) {
@@ -361,14 +363,14 @@ async function resolveDeviceSyncProfile(params) {
   const biometricId = parsePositiveBiometricIdOrNull(params.biometricId);
 
   if (customerId && (biometricId == null || !fullName)) {
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("biometric_id, full_name")
-      .eq("id", customerId)
-      .single();
-
-    if (error) {
-      return { ok: false, status: 404, error: "profile_not_found", details: error.message };
+    let profile;
+    try {
+      profile = await db.findProfile(customerId);
+    } catch (error) {
+      return { ok: false, status: 500, error: "profile_query_failed", details: error.message };
+    }
+    if (!profile) {
+      return { ok: false, status: 404, error: "profile_not_found" };
     }
 
     const resolvedBiometricId = parsePositiveBiometricIdOrNull(profile?.biometric_id);
@@ -415,8 +417,9 @@ async function queueUserRegistration(params) {
     },
   ];
 
-  const { error } = await supabase.from("device_commands").insert(commandsToQueue);
-  if (error) {
+  try {
+    await db.insertCommands(commandsToQueue);
+  } catch (error) {
     return { queued: false, error: error.message };
   }
 
@@ -438,8 +441,9 @@ async function queueDeviceCommands(params) {
     executed: false,
   }));
 
-  const { error } = await supabase.from("device_commands").insert(rows);
-  if (error) {
+  try {
+    await db.insertCommands(rows);
+  } catch (error) {
     return { queued: false, error: error.message };
   }
 
@@ -464,73 +468,40 @@ async function queueUserDeletion(params) {
 }
 
 async function expirePastDueSubscriptions() {
-  const today = todayDateString();
-
-  const { data, error } = await supabase
-    .from("subscriptions")
-    .update({ status: "expired" })
-    .eq("status", "active")
-    .lt("end_date", today)
-    .select("id, user_id, end_date");
-
-  if (error) {
+  try {
+    return await db.expirePastDueSubscriptions();
+  } catch (error) {
     console.error("❌ Error actualizando suscripciones vencidas:", error.message);
-    return [];
+    throw error;
   }
-
-  return data || [];
 }
 
 async function loadProfilesForDeviceReconcile() {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, role, full_name, biometric_id, is_active")
-    .eq("role", "client")
-    .not("biometric_id", "is", null);
-
-  if (error) {
+  try {
+    return await db.loadProfilesForReconcile();
+  } catch (error) {
     console.error("❌ Error consultando perfiles para reconciliación:", error.message);
-    return [];
+    throw error;
   }
-
-  return data || [];
 }
 
 async function loadActiveSubscriptionUserIds() {
-  const today = todayDateString();
-  const { data, error } = await supabase.from("subscriptions").select("user_id, end_date").eq("status", "active");
-
-  if (error) {
+  try {
+    return await db.loadActiveSubscriptionUserIds();
+  } catch (error) {
     console.error("❌ Error consultando suscripciones activas para reconciliación:", error.message);
-    return new Set();
+    throw error;
   }
-
-  const activeUserIds = new Set();
-
-  for (const subscription of data || []) {
-    if (!subscription?.user_id) continue;
-    if (!subscription.end_date || String(subscription.end_date) >= today) {
-      activeUserIds.add(subscription.user_id);
-    }
-  }
-
-  return activeUserIds;
 }
 
 async function loadPendingCommandSet(deviceId) {
-  const { data, error } = await supabase
-    .from("device_commands")
-    .select("command")
-    .eq("device_id", deviceId)
-    .eq("executed", false)
-    .limit(5000);
-
-  if (error) {
+  try {
+    const commands = await db.loadPendingCommandSet(deviceId);
+    return new Set(commands.map(normalizeCommandForDedupe));
+  } catch (error) {
     console.error(`❌ Error consultando comandos pendientes para reconciliación (${deviceId}):`, error.message);
-    return new Set();
+    throw error;
   }
-
-  return new Set((data || []).map((row) => normalizeCommandForDedupe(row.command)));
 }
 
 function buildDesiredCommandsForProfile(profile, shouldEnable) {
@@ -612,10 +583,7 @@ async function reconcileDeviceUsers(deviceId) {
   }
 
   if (rowsToInsert.length > 0) {
-    const { error } = await supabase.from("device_commands").insert(rowsToInsert);
-    if (error) {
-      throw new Error(error.message || "device_reconcile_insert_failed");
-    }
+    await db.insertCommands(rowsToInsert);
   }
 
   return {
@@ -726,8 +694,8 @@ async function registerUserDirectOnClock(params) {
 
 app.use((req, _res, next) => {
   const sn = pickSn(req);
-  if (!req.originalUrl.includes("ATTLOG") && !req.originalUrl.includes("cdata")) {
-    console.log(`\n📨 [${nowTime()}] ${req.method} ${req.originalUrl} (SN: ${sn})`);
+  if (!req.path.includes("cdata")) {
+    console.log(`\n📨 [${nowTime()}] ${req.method} ${req.path} (SN: ${sn})`);
   }
   next();
 });
@@ -803,18 +771,7 @@ app.get("/iclock/getrequest", async (req, res) => {
       return res.send("OK");
     }
 
-    const { data: pendingRows, error } = await supabase
-      .from("device_commands")
-      .select("id, device_id, command, executed, created_at")
-      .eq("device_id", sn)
-      .eq("executed", false)
-      .order("created_at", { ascending: true })
-      .limit(20);
-
-    if (error) {
-      console.error(`❌ Error consultando cola de comandos (${sn}):`, error.message);
-      return res.send("OK");
-    }
+    const pendingRows = await db.listPendingCommands(sn);
 
     if (!pendingRows || pendingRows.length === 0) {
       return res.send("OK");
@@ -849,12 +806,10 @@ app.get("/iclock/getrequest", async (req, res) => {
 
     if (skipped.length > 0) {
       for (const row of skipped) {
-        const { error: skipError } = await supabase
-          .from("device_commands")
-          .update({ executed: true, return_code: row.reason })
-          .eq("id", row.id);
-        if (skipError) {
-          console.warn(`⚠️ Error marcando omitido id=${row.id} (${sn}):`, skipError.message);
+        try {
+          await db.markCommandExecuted(row.id, row.reason, sn);
+        } catch (error) {
+          console.warn(`⚠️ Error marcando omitido id=${row.id} (${sn}):`, error.message);
         }
       }
       console.log(
@@ -869,11 +824,11 @@ app.get("/iclock/getrequest", async (req, res) => {
     inflightByDevice.set(sn, { commandId: data.id, sentAt: Date.now() });
     inflightByCommandId.set(data.id, sn);
 
-    console.log(`🚀 [${nowTime()}] ENVIANDO COMANDO id=${data.id} -> ${data.command}`);
+    console.log(`🚀 [${nowTime()}] ENVIANDO COMANDO id=${data.id} SN=${sn}`);
     return res.send(`C:${data.id}:${data.command}`);
   } catch (error) {
     console.error("❌ Exception en /iclock/getrequest:", error);
-    return res.send("OK");
+    return res.status(503).send("ERROR");
   }
 });
 
@@ -891,18 +846,15 @@ app.post("/iclock/devicecmd", async (req, res) => {
     const commandId = Number(String(rawId || "").match(/\d+/)?.[0]);
     const returnCode = rawReturn != null ? String(rawReturn).trim() : "";
 
-    console.log(`🧐 [${nowTime()}] devicecmd SN=${sn} ID=${rawId} Return=${returnCode} body='${req.body || ""}'`);
+    console.log(`🧐 [${nowTime()}] devicecmd SN=${sn} ID=${rawId} Return=${returnCode}`);
 
     if (!Number.isFinite(commandId)) {
       return res.send("OK");
     }
 
-    const { error } = await supabase
-      .from("device_commands")
-      .update({ executed: true, return_code: returnCode })
-      .eq("id", commandId);
-    if (error) {
-      console.error(`❌ No se pudo marcar ejecutado id=${commandId}:`, error.message);
+    const updated = await db.markCommandExecuted(commandId, returnCode, sn);
+    if (!updated) {
+      console.warn(`⚠️ Confirmación sin comando pendiente id=${commandId} SN=${sn}`);
     } else if (!returnCode || SUCCESS_RETURNS.has(returnCode)) {
       console.log(`✅ [${nowTime()}] Comando confirmado id=${commandId} Return=${returnCode || "0"}`);
     } else {
@@ -910,7 +862,7 @@ app.post("/iclock/devicecmd", async (req, res) => {
     }
 
     const lockedSn = inflightByCommandId.get(commandId);
-    if (lockedSn) {
+    if (updated && lockedSn === sn) {
       inflightByDevice.delete(lockedSn);
       inflightByCommandId.delete(commandId);
     }
@@ -918,7 +870,7 @@ app.post("/iclock/devicecmd", async (req, res) => {
     return res.send("OK");
   } catch (error) {
     console.error("❌ Exception en /iclock/devicecmd:", error);
-    return res.send("OK");
+    return res.status(503).send("ERROR");
   }
 });
 
@@ -931,9 +883,9 @@ app.post("/iclock/cdata", async (req, res) => {
     const payload = String(req.body || "").trim();
 
     if (!payload) return res.send("OK");
-
-    // Log the full payload so we can inspect the EXACT table structure device uses natively
-    console.log(`\n\n=== RAW CDATA PUSH (SN: ${sn}) ===\n${payload}\n=================================\n`);
+    if (typeof sn !== "string" || sn === "Unknown" || !sanitizeText(sn, 80)) {
+      return res.status(400).send("ERROR");
+    }
 
     const lines = payload
       .split("\n")
@@ -947,20 +899,11 @@ app.post("/iclock/cdata", async (req, res) => {
     if (attlogLines.length > 0) {
       console.log(`📥 [${nowTime()}] ATTLOG recibido SN=${sn} registros=${attlogLines.length}`);
 
-      if (ATTLOG_TABLE) {
-        const rows = attlogLines.map((raw_line) => ({
-          device_id: sn,
-          raw_line,
-          received_at: new Date().toISOString(),
-        }));
-
-        const { error } = await supabase.from(ATTLOG_TABLE).insert(rows);
-        if (error) {
-          console.error(`❌ Error insertando ATTLOG en '${ATTLOG_TABLE}':`, error.message);
-        }
+      const parsedRows = attlogLines.map((line) => parseAttlogLine(line, sn));
+      if (parsedRows.some((row) => !row)) {
+        console.error(`❌ ATTLOG inválido SN=${sn}; el reloj debe reintentar el lote`);
+        return res.status(503).send("ERROR");
       }
-
-      const parsedRows = attlogLines.map((line) => parseAttlogLine(line, sn)).filter(Boolean);
       if (parsedRows.length > 0) {
         const upsertPayload = parsedRows.map((row) => ({
           device_id: row.device_id,
@@ -975,23 +918,18 @@ app.post("/iclock/cdata", async (req, res) => {
           created_at: row.created_at,
         }));
 
-        const { error: upsertError } = await supabase
-          .from(ATTENDANCE_TABLE)
-          .upsert(upsertPayload, { onConflict: "device_id,biometric_id,punch_time,status1,status2" });
-
-        if (upsertError) {
-          const { error: insertError } = await supabase.from(ATTENDANCE_TABLE).insert(upsertPayload);
-          if (insertError) {
-            console.error(`❌ Error guardando ATTLOG parseado en '${ATTENDANCE_TABLE}':`, insertError.message);
-          }
-        }
+        await db.insertAttendance(upsertPayload);
       }
     }
 
     if (accessEventLines.length > 0) {
       console.log(`📥 [${nowTime()}] ACCESS EVENT recibido SN=${sn} registros=${accessEventLines.length}`);
 
-      const parsedRows = accessEventLines.map((line) => parseAccessEventLine(line, sn)).filter(Boolean);
+      const parsedRows = accessEventLines.map((line) => parseAccessEventLine(line, sn));
+      if (parsedRows.some((row) => !row)) {
+        console.error(`❌ ACCESS EVENT inválido SN=${sn}; el reloj debe reintentar el lote`);
+        return res.status(503).send("ERROR");
+      }
       if (parsedRows.length > 0) {
         const upsertPayload = parsedRows.map((row) => ({
           device_id: row.device_id,
@@ -1006,23 +944,14 @@ app.post("/iclock/cdata", async (req, res) => {
           created_at: row.created_at,
         }));
 
-        const { error: upsertError } = await supabase
-          .from(ATTENDANCE_TABLE)
-          .upsert(upsertPayload, { onConflict: "device_id,biometric_id,punch_time,status1,status2" });
-
-        if (upsertError) {
-          const { error: insertError } = await supabase.from(ATTENDANCE_TABLE).insert(upsertPayload);
-          if (insertError) {
-            console.error(`❌ Error guardando ACCESS EVENT en '${ATTENDANCE_TABLE}':`, insertError.message);
-          }
-        }
+        await db.insertAttendance(upsertPayload);
       }
     }
 
     return res.send("OK");
   } catch (error) {
     console.error("❌ Exception en /iclock/cdata:", error);
-    return res.send("OK");
+    return res.status(503).send("ERROR");
   }
 });
 
@@ -1067,27 +996,15 @@ app.get("/api/attendance", async (req, res) => {
     const limit = parseQueryLimit(req.query.limit, 200, 1, 1000);
     const dateFrom = sanitizeText(req.query.date_from, 25);
     const dateTo = sanitizeText(req.query.date_to, 25);
+    if ((dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) ||
+        (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo))) {
+      return res.status(400).json({ error: "invalid_date_filter" });
+    }
     const deviceId = sanitizeText(req.query.device_id, 80);
     const biometricId = parseIntOrNull(req.query.biometric_id);
 
-    let query = supabase
-      .from(ATTENDANCE_TABLE)
-      .select("device_id,biometric_id,punch_time,status1,status2,status3,status4,status5,raw_line,created_at")
-      .order("punch_time", { ascending: false })
-      .limit(limit);
-
-    if (deviceId) query = query.eq("device_id", deviceId);
-    if (biometricId != null) query = query.eq("biometric_id", biometricId);
-    if (dateFrom) query = query.gte("punch_time", dateFrom);
-    if (dateTo) query = query.lte("punch_time", dateTo);
-
-    const { data, error } = await query;
-    if (error) {
-      console.error("❌ Error consultando asistencia:", error.message);
-      return res.status(500).json({ error: "attendance_query_failed", details: error.message });
-    }
-
-    return res.json({ data: data || [] });
+    const data = await db.listAttendance({ limit, deviceId, biometricId, dateFrom, dateTo });
+    return res.json({ data });
   } catch (error) {
     console.error("❌ Exception en /api/attendance:", error);
     return res.status(500).json({ error: "attendance_exception" });
@@ -1105,23 +1022,9 @@ app.get("/api/device-commands", async (req, res) => {
     const deviceId = sanitizeText(req.query.device_id, 80);
     const executedRaw = sanitizeText(req.query.executed, 10);
 
-    let query = supabase
-      .from("device_commands")
-      .select("id,device_id,command,executed,return_code,created_at")
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (deviceId) query = query.eq("device_id", deviceId);
-    if (executedRaw === "true") query = query.eq("executed", true);
-    if (executedRaw === "false") query = query.eq("executed", false);
-
-    const { data, error } = await query;
-    if (error) {
-      console.error("❌ Error consultando device_commands:", error.message);
-      return res.status(500).json({ error: "device_commands_query_failed", details: error.message });
-    }
-
-    return res.json({ data: data || [] });
+    const executed = executedRaw === "true" ? true : executedRaw === "false" ? false : null;
+    const data = await db.listDeviceCommands({ limit, deviceId, executed });
+    return res.json({ data });
   } catch (error) {
     console.error("❌ Exception en /api/device-commands:", error);
     return res.status(500).json({ error: "device_commands_exception" });
@@ -1284,15 +1187,9 @@ app.post("/api/device-users/query", async (req, res) => {
       biometricId: resolved.biometricId,
     });
 
-    const { error } = await supabase.from("device_commands").insert([
-      {
-        device_id: deviceId,
-        command,
-        executed: false,
-      },
-    ]);
-
-    if (error) {
+    try {
+      await db.insertCommands([{ device_id: deviceId, command, executed: false }]);
+    } catch (error) {
       return res.status(500).json({ success: false, queued: false, error: error.message });
     }
 
@@ -1447,6 +1344,25 @@ app.get("/health", (_req, res) => {
   res.send("OK");
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 SERVIDOR LISTO EN PUERTO ${PORT}`);
+app.get("/health/ready", async (_req, res) => {
+  try {
+    await db.ready();
+    res.status(200).send("OK");
+  } catch {
+    res.status(503).send("ERROR");
+  }
 });
+
+if (require.main === module) {
+  db.ready()
+    .then(() => app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 SERVIDOR LISTO EN PUERTO ${PORT}`);
+    }))
+    .catch((error) => {
+      console.error("No se pudo iniciar sync con PostgreSQL local:", error.message);
+      process.exitCode = 1;
+      void db.close();
+    });
+}
+
+module.exports = { app, db, parseAttlogLine, parseAccessEventLine };

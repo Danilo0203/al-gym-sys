@@ -85,9 +85,9 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 
 **Puerta:** el reloj registra marcajes y recibe comandos con el VPS/Supabase inaccesibles.
 
-- [ ] `P4-01` Sustituir el cliente Supabase de `gym-sync-server/index.js` por API o conexión local con permisos mínimos. Mantener el protocolo ZKTeco y deduplicación de eventos.
-- [ ] `P4-02` Migrar cola, confirmaciones y reintentos de `device_commands`; probar registro, desactivación, consulta y reconciliación de usuarios del reloj.
-- [ ] `P4-03` Conectar `/panel/asistencias` y los historiales de clientes a los marcajes locales; comprobar zona horaria, identificador biométrico y reglas de acceso por membresía.
+- [x] `P4-01` Sync usa PostgreSQL local con el rol limitado `algym_sync`; ya no carga el SDK de Supabase. El protocolo iClock y la deduplicación (también con estados nulos) pasaron las pruebas de integración. La prueba con el dispositivo real sigue en `P4-04`.
+- [x] `P4-02` Cola, confirmaciones por SN y reintentos de `device_commands` usan PostgreSQL local. Registro, desactivación, consulta y reconciliación pasaron en `algym_test`.
+- [x] `P4-03` `/panel/asistencias` consulta el sync local; los historiales de clientes consultan el backend local. Fechas y filtros se interpretan en `America/Guatemala`; las pruebas cubren ID biométrico y vencimiento de membresía. Falta aceptación visual sin red en `P6-03`.
 - [ ] `P4-04` Probar con reloj real o, si no está disponible, dejar identificada la prueba de hardware como pendiente; un simulador no cierra esta casilla.
 
 ## Fase 5 — Operación local reproducible
@@ -136,5 +136,6 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | P2-05 | Hecho: OAuth y recuperación opcional deshabilitados | Codex | Web formulario de login, rutas `/auth/*`, Dockerfile y Compose | `pnpm test` 134/134 incluye login local; lint/typecheck/build web. GET de recuperación respondió 200 con aviso; callback OAuth respondió 307 a `oauth_disabled`; pantalla de login solo ofrece correo/contraseña. | Recuperación por correo no disponible; el cambio de contraseña autenticado permanece |
 | P3-04 | Hecho: plantillas locales | Codex | Backend `131fad6`, migración `0016`; web `message-actions.ts` | `pnpm test` 134/134 incluye sesión, permisos, RLS y CRUD; backend typecheck/build, web lint/typecheck/build. Respaldo `/private/tmp/algym-before-messages-0016.dump` verificado; migración aplicada a `algym` local con una plantilla existente preservada; endpoint vivo sin sesión respondió 401. | Falta prueba integral de interfaz sin red externa |
 | P5-05 | Enlaces de WhatsApp reemplazados por copia local | Codex | Diálogo de clientes y tablero de vencimientos | No quedan referencias a `wa.me` ni a la apertura de WhatsApp en `all-gym-vf/src`; lint, typecheck y build web. | Pendientes otros caminos remotos y prueba integral sin red |
+| P4-01 a P4-03 | Sync local integrado; reloj físico pendiente | Codex | Backend migración `0017`; web `gym-sync-server`, panel de asistencias | `npm test` 4/4 con PostgreSQL `algym_test`, backend `pnpm test` 134/134, web lint/typecheck/build. Respaldo `/private/tmp/algym-before-sync-0017.dump` verificado; `0017` aplicada a `algym`. Contenedor sync saludable en `127.0.0.1:8080`, lectura autenticada de asistencia local 200 y sin token 401. | `P4-04` requiere reloj real; `P5-01` aún no incluye PostgreSQL/backend en Compose |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.
