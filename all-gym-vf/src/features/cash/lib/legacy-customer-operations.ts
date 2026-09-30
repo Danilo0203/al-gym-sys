@@ -81,7 +81,7 @@ export async function submitLegacyCashCustomer(
     throw new Error("Edita el cliente desde el módulo de clientes.");
   }
 
-  await createCashCustomer(customerPayload);
+  return createCashCustomer(customerPayload);
 }
 
 export async function renewLegacyCashCustomer(

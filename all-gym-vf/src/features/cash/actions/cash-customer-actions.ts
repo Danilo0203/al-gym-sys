@@ -12,6 +12,7 @@ import {
   buildCashCustomerCreatePayload,
   buildCashCustomerRenewalPayload,
 } from "@/features/cash/lib/local-customer-intake";
+import { registerLocalCustomerOnClock } from "@/features/cash/lib/local-device-sync";
 
 async function cashMutation(path: string, payload: unknown) {
   const cookieHeader = buildCookieHeader((await cookies()).getAll());
@@ -32,11 +33,12 @@ function refreshCashViews(customerId?: string) {
   revalidatePath("/panel/caja/historial");
 }
 
-export async function createCashCustomer(data: CreateCustomerData): Promise<void> {
+export async function createCashCustomer(data: CreateCustomerData) {
   const payload = buildCashCustomerCreatePayload(data);
   const response = await cashMutation("/customers", payload);
   const customer = await parseCustomerApiResponse(response, (body) => customerDetailSchema.parse(body));
   refreshCashViews(customer.id);
+  return { deviceSync: await registerLocalCustomerOnClock(customer.id) };
 }
 
 export async function renewCashCustomer(customerId: string, data: RenewSubscriptionData) {
@@ -45,7 +47,7 @@ export async function renewCashCustomer(customerId: string, data: RenewSubscript
     const response = await cashMutation("/payments/membership", payload);
     await parseCustomerApiResponse(response, (body) => body);
     refreshCashViews(customerId);
-    return { success: true, deviceSync: { pending: true } };
+    return { success: true, deviceSync: await registerLocalCustomerOnClock(customerId) };
   } catch (error) {
     return {
       success: false,

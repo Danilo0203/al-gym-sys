@@ -656,7 +656,9 @@ interface UseHookFormCustomerSheetParams {
     customerId: string | null,
     values: CustomerSheetFormValues,
     context: { entrypoint: "cash"; suggestedBasePrice?: number },
-  ) => Promise<void>;
+  ) => Promise<{
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
+  }>;
 }
 
 export function useHookFormCustomerSheet({
@@ -1055,13 +1057,19 @@ export function useHookFormCustomerSheet({
         throw new Error("La operación heredada de Caja no está disponible.");
       }
 
-      await legacySubmit(isEditing && customer?.id ? customer.id : null, values, {
+      const result = await legacySubmit(isEditing && customer?.id ? customer.id : null, values, {
         entrypoint: "cash",
         suggestedBasePrice: membershipPricing?.suggestedBasePrice,
       });
       router.refresh();
       setOpen(false);
-      toast.warning("Cliente y cobro guardados localmente. Rutina y acceso al reloj pendientes.");
+      if (result.deviceSync?.method === "direct" && result.deviceSync.synced) {
+        toast.success("Cliente y cobro guardados localmente; acceso al reloj habilitado. Rutina pendiente.");
+      } else if (result.deviceSync?.queued) {
+        toast.success("Cliente y cobro guardados localmente; acceso al reloj en cola. Rutina pendiente.");
+      } else {
+        toast.warning("Cliente y cobro guardados localmente. Rutina y acceso al reloj pendientes.");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No fue posible guardar el cliente.");
     } finally {
@@ -1196,7 +1204,7 @@ interface UseHookFormRenewSubscriptionParams {
   ) => Promise<{
     success: boolean;
     error?: string;
-    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; pending?: boolean };
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
   }>;
 }
 
@@ -1513,8 +1521,10 @@ export function useHookFormRenewSubscription({
           toast.warning("Suscripción renovada localmente. Acceso al reloj pendiente de sincronización.");
         } else if (deviceSynced === false) {
           toast.warning("Suscripción renovada, pero falló la sincronización con el reloj.");
-        } else if (deviceSynced === true) {
+        } else if (deviceSync?.method === "direct" && deviceSynced === true) {
           toast.success("Suscripción renovada y acceso habilitado en el reloj.");
+        } else if (deviceSync?.queued) {
+          toast.success("Suscripción renovada; acceso al reloj en cola.");
         } else {
           toast.success("Suscripción renovada exitosamente");
         }

@@ -58,7 +58,9 @@ interface CustomerFormSheetProps {
     customerId: string | null,
     values: CustomerSheetFormValues,
     context: { entrypoint: "cash"; suggestedBasePrice?: number },
-  ) => Promise<void>;
+  ) => Promise<{
+    deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
+  }>;
 }
 
 export function CustomerFormSheet({
