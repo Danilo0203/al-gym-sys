@@ -130,6 +130,15 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
         },
       },
       {
+        accessorKey: "is_active",
+        header: "ESTADO",
+        cell: ({ row }) => (
+          <Badge variant={row.original.is_active ? "success" : "secondary"}>
+            {row.original.is_active ? "Activo" : "Inactivo"}
+          </Badge>
+        ),
+      },
+      {
         accessorKey: "created_at",
         header: ({ column }) => <DataTableColumnHeader column={column} title="FECHA DE CREACIÓN" />,
         cell: ({ row }) => {
@@ -219,8 +228,8 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Está seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Eliminará permanentemente al usuario{" "}
-              <span className="font-bold">{userToDelete?.email}</span>.
+              Se desactivará la cuenta de <span className="font-bold">{userToDelete?.email}</span>
+              {" "}y se cerrarán sus sesiones. Se conservará su historial.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

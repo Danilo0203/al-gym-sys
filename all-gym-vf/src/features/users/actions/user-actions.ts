@@ -1,17 +1,20 @@
 "use server";
 
-import { INTERNAL_USER_ROLES, isInternalRole, parseUserRole } from "@/lib/auth/role-utils";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { UserRole } from "@/types";
-import { ExtendedColumnSort } from "@/types/data-table";
+
+import { INTERNAL_USER_ROLES, isInternalRole } from "@/lib/auth/role-utils";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
+import type { UserRole } from "@/types";
+import type { ExtendedColumnSort } from "@/types/data-table";
 
 export interface UserData {
   id: string;
   email: string;
   full_name: string | null;
   role: UserRole;
+  is_active: boolean;
   created_at: string;
   last_sign_in_at?: string | null;
 }
@@ -28,48 +31,7 @@ export interface UpdateUserData {
   full_name?: string;
   role?: UserRole;
   password?: string;
-}
-
-type AuthUserRecord = {
-  id: string;
-  email: string | null;
-  created_at: string;
-  user_metadata?: Record<string, unknown> | null;
-  raw_user_meta_data?: Record<string, unknown> | null;
-};
-
-function normalizeRole(value: unknown): UserRole {
-  return parseUserRole(value) ?? "client";
-}
-
-function ensureInternalUserRole(role: UserRole): { ok: true } | { ok: false; error: string } {
-  if (isInternalRole(role)) {
-    return { ok: true };
-  }
-
-  return { ok: false, error: "Los clientes se administran desde el módulo de Clientes." };
-}
-
-async function listAllAuthUsers(adminClient: ReturnType<typeof createAdminClient>): Promise<AuthUserRecord[]> {
-  const perPage = 1000;
-  const users: AuthUserRecord[] = [];
-  let page = 1;
-
-  while (true) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const pageUsers = (data.users ?? []) as AuthUserRecord[];
-    users.push(...pageUsers);
-
-    if (pageUsers.length < perPage) break;
-    page += 1;
-  }
-
-  return users;
+  is_active?: boolean;
 }
 
 export interface RoleOption {
@@ -77,40 +39,38 @@ export interface RoleOption {
   name: string;
 }
 
-/**
- * Get available roles for the user form dropdown.
- * Only panel-scoped roles + client are returned.
- * Owner role is only included for users with the right permission.
- */
+type BackendError = { error?: { message?: string } };
+
+async function backendHeaders(): Promise<Headers> {
+  const cookieHeader = buildCookieHeader((await cookies()).getAll());
+  const headers = new Headers({ "content-type": "application/json" });
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  return headers;
+}
+
+async function responseError(response: Response, fallback: string): Promise<string> {
+  const body = (await response.json().catch(() => null)) as BackendError | null;
+  return body?.error?.message || fallback;
+}
+
 export async function getAvailableRoles(): Promise<{ success: boolean; data?: RoleOption[]; error?: string }> {
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-
-    const adminClient = createAdminClient();
-    const { data, error } = await adminClient
-      .from("roles")
-      .select("slug, name, scope")
-      .eq("scope", "panel")
-      .order("name", { ascending: true });
-
-    if (error) return { success: false, error: error.message };
-
+    if (!hasPermission(access, "users.view")) return { success: false, error: "No autorizado" };
+    const response = await fetchAuthBackend("/users/roles", { headers: await backendHeaders() });
+    if (!response.ok) return { success: false, error: await responseError(response, "Error al obtener roles") };
+    const payload = (await response.json()) as { data?: RoleOption[] };
     return {
       success: true,
-      data: (data as Array<RoleOption & { scope?: string | null }>).filter((role) =>
-        INTERNAL_USER_ROLES.includes(role.slug as (typeof INTERNAL_USER_ROLES)[number]),
-      ),
+      data: (payload.data ?? []).filter((role) =>
+        INTERNAL_USER_ROLES.includes(role.slug as (typeof INTERNAL_USER_ROLES)[number])),
     };
   } catch {
     return { success: false, error: "Error al obtener roles" };
   }
 }
 
-/**
- * Get all users from the profiles table
- * Note: specific columns are selected to avoid over-fetching
- */
 export async function getUsers(params?: {
   sort?: ExtendedColumnSort<UserData>[] | null;
   role?: string | string[] | null;
@@ -123,243 +83,93 @@ export async function getUsers(params?: {
       return { success: false, error: "No autorizado: Se requiere permiso users.view" };
     }
 
-    const { sort, role, full_name } = params || {};
-
-    // Use Admin Client to bypass RLS and ensure we get all users
-    const adminClient = createAdminClient();
-    const [profilesResult, authUsers, rolesResult] = await Promise.all([
-      adminClient.from("profiles").select("id, full_name, role, created_at"),
-      listAllAuthUsers(adminClient),
-      adminClient.from("roles").select("slug, name"),
+    const headers = await backendHeaders();
+    const [usersResponse, rolesResponse] = await Promise.all([
+      fetchAuthBackend("/users", { headers }),
+      fetchAuthBackend("/users/roles", { headers }),
     ]);
-
-    const { data: profiles, error: profilesError } = profilesResult;
-
-    if (profilesError) {
-      console.error("Error fetching profiles:", profilesError);
-      return { success: false, error: profilesError.message };
+    if (!usersResponse.ok || !rolesResponse.ok) {
+      return { success: false, error: "Error al obtener usuarios" };
     }
+    const usersPayload = (await usersResponse.json()) as { data?: UserData[] };
+    const rolesPayload = (await rolesResponse.json()) as { data?: RoleOption[] };
+    const users = (usersPayload.data ?? []).filter((user) => isInternalRole(user.role));
+    const roleNameMap = Object.fromEntries((rolesPayload.data ?? []).map((role) => [role.slug, role.name]));
+    const { sort, role, full_name } = params || {};
+    const selectedRoles = role ? (Array.isArray(role) ? role : role.split(",")) : [];
+    const query = full_name?.trim().toLocaleLowerCase("es-GT") || "";
+    const filtered = users.filter((user) =>
+      (selectedRoles.length === 0 || selectedRoles.includes(user.role)) &&
+      (!query || `${user.full_name ?? ""} ${user.email}`.toLocaleLowerCase("es-GT").includes(query)));
 
-    // 2. Get Auth Users to get emails
-    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
-
-    // 2. Merge Auth + profile data so users without a profile still appear
-    const combinedData = authUsers.map((authUser) => {
-      const profile = profilesById.get(authUser.id);
-      const metadata = authUser.user_metadata ?? authUser.raw_user_meta_data ?? {};
-      const fullName =
-        profile?.full_name ??
-        (typeof metadata.full_name === "string" && metadata.full_name.trim() ? metadata.full_name : null);
-
-      return {
-        id: authUser.id,
-        email: authUser.email || "Sin email",
-        full_name: fullName,
-        role: normalizeRole(profile?.role ?? metadata.role),
-        created_at: profile?.created_at ?? authUser.created_at,
-      };
-    });
-
-    const filteredData = combinedData.filter((user) => {
-      if (!isInternalRole(user.role)) {
-        return false;
-      }
-
-      if (role) {
-        const roles = typeof role === "string" ? role.split(",") : Array.isArray(role) ? role : [role];
-        if (roles.length > 0 && !roles.includes(user.role)) {
-          return false;
-        }
-      }
-
-      if (full_name) {
-        const search = full_name.toLowerCase();
-        const haystack = `${user.full_name ?? ""} ${user.email}`.toLowerCase();
-        if (!haystack.includes(search)) return false;
-      }
-
-      return true;
-    });
-
-    const sortComparators: Record<string, (a: UserData, b: UserData, desc: boolean) => number> = {
-      full_name: (a, b, desc) =>
-        (a.full_name ?? a.email).localeCompare(b.full_name ?? b.email, undefined, { sensitivity: "base" }) *
-        (desc ? -1 : 1),
-      role: (a, b, desc) => a.role.localeCompare(b.role) * (desc ? -1 : 1),
-      created_at: (a, b, desc) =>
-        (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * (desc ? -1 : 1),
+    const comparators: Record<string, (a: UserData, b: UserData) => number> = {
+      full_name: (a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, "es-GT", { sensitivity: "base" }),
+      role: (a, b) => a.role.localeCompare(b.role),
+      created_at: (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     };
-
-    const sortedData = [...filteredData];
-    if (sort && sort.length > 0) {
-      sortedData.sort((a, b) => {
-        for (const s of sort) {
-          const comparator = sortComparators[s.id];
-          if (!comparator) continue;
-          const result = comparator(a, b, s.desc);
-          if (result !== 0) return result;
-        }
-        return 0;
-      });
-    } else {
-      sortedData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
-    const roleNameMap: Record<string, string> = {};
-    if (rolesResult.data) {
-      for (const r of rolesResult.data as { slug: string; name: string }[]) {
-        if (INTERNAL_USER_ROLES.includes(r.slug as (typeof INTERNAL_USER_ROLES)[number])) {
-          roleNameMap[r.slug] = r.name;
-        }
+    filtered.sort((a, b) => {
+      for (const item of sort ?? []) {
+        const comparator = comparators[item.id];
+        if (!comparator) continue;
+        const value = comparator(a, b) * (item.desc ? -1 : 1);
+        if (value !== 0) return value;
       }
-    }
-
-    return { success: true, data: sortedData as UserData[], roleNameMap };
-  } catch (error) {
-    console.error("Error in getUsers:", error);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    return { success: true, data: filtered, roleNameMap };
+  } catch {
     return { success: false, error: "Error al obtener usuarios" };
   }
 }
 
-/**
- * Create a new user using Supabase Admin API
- */
 export async function createUser(data: CreateUserData): Promise<{ success: boolean; error?: string }> {
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "users.create")) {
-      return { success: false, error: "No autorizado: Se requiere permiso users.create" };
-    }
-    const roleValidation = ensureInternalUserRole(data.role);
-    if (!roleValidation.ok) {
-      return { success: false, error: roleValidation.error };
-    }
-    const adminClient = createAdminClient();
-    const { data: authUser, error: authError } = await adminClient.auth.admin.createUser({
-      email: data.email,
-      password: data.password || "tempPassword123!", // Provide a default if not set? Or require it.
-      email_confirm: true,
-      user_metadata: {
-        full_name: data.full_name,
-        role: data.role, // Store role in metadata too for easy access
-      },
+    if (!hasPermission(access, "users.create")) return { success: false, error: "No autorizado" };
+    if (!isInternalRole(data.role)) return { success: false, error: "Los clientes se administran desde Clientes" };
+    if (!data.password) return { success: false, error: "La contraseña es obligatoria" };
+    const response = await fetchAuthBackend("/users", {
+      method: "POST", headers: await backendHeaders(), body: JSON.stringify(data),
     });
-
-    if (authError) {
-      console.error("Error creating auth user:", authError);
-      return { success: false, error: authError.message };
-    }
-
-    if (!authUser.user) {
-      return { success: false, error: "No se pudo crear el usuario" };
-    }
-
-    // 2. Update profile with role (trigger creates the row, we just update)
-    // IMPORTANT: 'email' column does not exist in profiles table
-    const { error: profileError } = await adminClient
-      .from("profiles")
-      .update({
-        full_name: data.full_name,
-        role: data.role,
-      })
-      .eq("id", authUser.user.id);
-
-    if (profileError) {
-      // If update fails, maybe the row doesn't exist yet (trigger delay).
-      // In that case, we might insert it, but usually triggers are fast.
-      console.error("Error updating profile role:", profileError);
-      // Try insert if update failed (though trigger should handle it)
-    }
-
+    if (!response.ok) return { success: false, error: await responseError(response, "No se pudo crear el usuario") };
     revalidatePath("/panel/usuarios");
     return { success: true };
-  } catch (error) {
-    console.error("Error in createUser:", error);
-    return { success: false, error: "Error inesperado al crear usuario" };
+  } catch {
+    return { success: false, error: "Error de conexión con el backend local" };
   }
 }
 
-/**
- * Update a user
- */
 export async function updateUser(data: UpdateUserData): Promise<{ success: boolean; error?: string }> {
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "users.update")) {
-      return { success: false, error: "No autorizado: Se requiere permiso users.update" };
-    }
-    if (data.role) {
-      const roleValidation = ensureInternalUserRole(data.role);
-      if (!roleValidation.ok) {
-        return { success: false, error: roleValidation.error };
-      }
-    }
-    const adminClient = createAdminClient();
-    const updateData: Pick<UpdateUserData, "full_name" | "role"> = {};
-    if (data.full_name) updateData.full_name = data.full_name;
-    if (data.role) updateData.role = data.role;
-
-    if (Object.keys(updateData).length > 0) {
-      const { error: profileError } = await adminClient.from("profiles").update(updateData).eq("id", data.id);
-
-      if (profileError) {
-        return { success: false, error: profileError.message };
-      }
-    }
-
-    // 2. Update Auth password if provided
-    if (data.password) {
-      const { error: passwordError } = await adminClient.auth.admin.updateUserById(data.id, {
-        password: data.password,
-      });
-
-      if (passwordError) {
-        return { success: false, error: passwordError.message };
-      }
-    }
-
-    // Required to sync metadata if we rely on it
-    if (data.full_name || data.role) {
-      await adminClient.auth.admin.updateUserById(data.id, {
-        user_metadata: { full_name: data.full_name, role: data.role },
-      });
-    }
-
+    if (!hasPermission(access, "users.update")) return { success: false, error: "No autorizado" };
+    if (data.role && !isInternalRole(data.role)) return { success: false, error: "Rol no válido" };
+    const { id, ...body } = data;
+    const response = await fetchAuthBackend(`/users/${encodeURIComponent(id)}`, {
+      method: "PATCH", headers: await backendHeaders(), body: JSON.stringify(body),
+    });
+    if (!response.ok) return { success: false, error: await responseError(response, "No se pudo actualizar el usuario") };
     revalidatePath("/panel/usuarios");
     return { success: true };
-  } catch (error) {
-    console.error("Error in updateUser:", error);
-    return { success: false, error: "Error inesperado al actualizar usuario" };
+  } catch {
+    return { success: false, error: "Error de conexión con el backend local" };
   }
 }
 
-/**
- * Delete a user
- */
 export async function deleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
-    if (!hasPermission(access, "users.delete")) {
-      return { success: false, error: "No autorizado: Se requiere permiso users.delete" };
-    }
-
-    const adminClient = createAdminClient();
-
-    // Delete from Auth; the profile row will cascade depending on FK setup.
-    const { error } = await adminClient.auth.admin.deleteUser(userId);
-
-    if (error) {
-      console.error("Error deleting user:", error);
-      return { success: false, error: error.message };
-    }
-
+    if (!hasPermission(access, "users.delete")) return { success: false, error: "No autorizado" };
+    const response = await fetchAuthBackend(`/users/${encodeURIComponent(userId)}`, {
+      method: "DELETE", headers: await backendHeaders(),
+    });
+    if (!response.ok) return { success: false, error: await responseError(response, "No se pudo eliminar el usuario") };
     revalidatePath("/panel/usuarios");
     return { success: true };
-  } catch (error) {
-    console.error("Error in deleteUser:", error);
-    return { success: false, error: "Error inesperado al eliminar usuario" };
+  } catch {
+    return { success: false, error: "Error de conexión con el backend local" };
   }
 }

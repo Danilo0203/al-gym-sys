@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Button } from "@/components/ui/button";
 import { FormInput } from "@/components/forms/form-input";
 import { FormSelect } from "@/components/forms/form-select";
+import { FormSwitch } from "@/components/forms/form-switch";
 import { type UserData, getAvailableRoles, type RoleOption } from "../actions/user-actions";
 import { useHookFormUsers } from "../hooks/use-hook-form-users";
 
@@ -64,6 +65,12 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
                   disabled={isEditing}
                 />
               </div>
+              {isEditing && (
+                <div className="pl-4">
+                  <FormSwitch control={form.control} name="is_active" label="Acceso activo"
+                    description="Al desactivar, se cierran las sesiones y se impide el inicio de sesión." />
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -90,7 +97,7 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
                   name="password"
                   label={isEditing ? "Nueva contraseña" : "Contraseña"}
                   type="password"
-                  placeholder={isEditing ? "(Sin cambios)" : "Mínimo 6 caracteres"}
+                  placeholder={isEditing ? "(Sin cambios)" : "Mínimo 8 caracteres"}
                 />
               </div>
             </div>

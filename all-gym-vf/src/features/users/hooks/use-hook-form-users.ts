@@ -15,11 +15,12 @@ const userFormSchema = z.object({
   role: z.enum(INTERNAL_USER_ROLES, {
     message: "Selecciona un rol válido",
   }),
+  is_active: z.boolean(),
   password: z.string().optional(),
 });
 
 const createSchema = userFormSchema.extend({
-  password: z.string().min(6, { message: "Mínimo 6 caracteres" }),
+  password: z.string().min(8, { message: "Mínimo 8 caracteres" }),
 });
 
 const editSchema = userFormSchema;
@@ -42,6 +43,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
       email: "",
       full_name: "",
       role: "employee",
+      is_active: true,
       password: "",
     },
   });
@@ -52,6 +54,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
         email: user?.email || "",
         full_name: user?.full_name || "",
         role: user?.role && isInternalRole(user.role) ? user.role : "employee",
+        is_active: user?.is_active ?? true,
         password: "",
       });
     }
@@ -61,10 +64,15 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
     startTransition(async () => {
       try {
         if (isEditing && user) {
+          if (values.password && values.password.length < 8) {
+            form.setError("password", { message: "Mínimo 8 caracteres" });
+            return;
+          }
           const result = await updateUser({
             id: user.id,
             full_name: values.full_name,
             role: values.role as UserRole,
+            is_active: values.is_active,
             password: values.password || undefined,
           });
 
