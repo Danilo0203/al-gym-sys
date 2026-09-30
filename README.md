@@ -12,7 +12,7 @@ El sistema esta dividido en tres piezas principales:
 | --- | --- | --- |
 | App web | `all-gym-vf` | Aplicacion Next.js 16 con React 19 para administrar clientes, pagos, caja, planes, rutinas, inventario, roles, usuarios y asistencias. |
 | Sync biometrico | `gym-sync-server` | Servidor Express que integra el sistema con relojes biometricos ZKTeco y guarda eventos de asistencia en Supabase. |
-| Orquestacion local | `docker-compose.yml` | Levanta los servicios `web`, `sync` y `cloudflared` en una red Docker local. |
+| Orquestacion local | `docker-compose.yml` | Levanta `web` y `sync` en una red Docker local; `cloudflared` requiere el perfil opcional `remote-access`. |
 
 La autenticacion y las sesiones de la app web usan el backend local mediante un proxy server-side de Next.js. Supabase sigue atendiendo los modulos operativos que aun no han sido migrados; la `SUPABASE_SERVICE_ROLE_KEY` se mantiene solo en codigo de servidor.
 
@@ -71,8 +71,6 @@ Docker Compose lee variables de este archivo para argumentos de build de la app 
 COMPOSE_PROJECT_NAME=all-gym-local
 NEXT_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=TU_PUBLISHABLE_KEY
-NEXT_PUBLIC_ENABLE_OAUTH_LOGIN=false
-NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY=false
 ```
 
 Referencia: `deploy/.env.example`.
@@ -93,8 +91,6 @@ GYM_SYNC_SERVER_URL=http://sync:8080
 GYM_SYNC_API_TOKEN=TOKEN_INTERNO_COMPARTIDO_CON_SYNC
 DEFAULT_ZK_DEVICE_SN=SERIAL_DEL_RELOJ
 EXERCISEDB_RAPIDAPI_KEY=TU_RAPIDAPI_KEY
-NEXT_PUBLIC_ENABLE_OAUTH_LOGIN=false
-NEXT_PUBLIC_ENABLE_PASSWORD_RECOVERY=false
 ```
 
 Referencia: `deploy/env/web.env.example`.
@@ -168,7 +164,6 @@ Ver logs:
 ```bash
 docker compose logs -f web
 docker compose logs -f sync
-docker compose logs -f cloudflared
 ```
 
 Reiniciar servicios:
