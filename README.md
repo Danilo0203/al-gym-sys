@@ -12,7 +12,7 @@ El sistema esta dividido en tres piezas principales:
 | --- | --- | --- |
 | App web | `all-gym-vf` | Aplicacion Next.js 16 con React 19 para administrar clientes, pagos, caja, planes, rutinas, inventario, roles, usuarios y asistencias. |
 | Sync biometrico | `gym-sync-server` | Servidor Express que integra relojes biometricos ZKTeco con PostgreSQL local mediante el rol `algym_sync`. |
-| Orquestacion local | `docker-compose.yml` | Levanta `web` y `sync` en una red Docker local; `cloudflared` requiere el perfil opcional `remote-access`. |
+| Orquestacion local | `docker-compose.yml` | Levanta `web`, `backend` y `sync` en una red Docker local con PostgreSQL del host; ofrece PostgreSQL en contenedor mediante el perfil opcional `container-db`. `cloudflared` requiere el perfil `remote-access`. |
 
 La autenticacion y las sesiones de la app web usan el backend local mediante un proxy server-side de Next.js. Supabase sigue atendiendo los modulos operativos que aun no han sido migrados; la `SUPABASE_SERVICE_ROLE_KEY` se mantiene solo en codigo de servidor.
 
@@ -65,7 +65,7 @@ No guardar llaves reales en documentacion ni en commits. Antes de vender o insta
 
 ### `.env` en la raiz
 
-Docker Compose lee variables de este archivo para argumentos de build de la app web.
+Docker Compose puede leer variables de este archivo para los argumentos de build de la app web. Los comandos de esta guia usan `--env-file deploy/env/web.env`, por lo que no requieren una copia adicional en la raiz.
 
 ```env
 COMPOSE_PROJECT_NAME=all-gym-local
@@ -83,7 +83,7 @@ Variables usadas por el contenedor `web`.
 NODE_ENV=production
 PORT=3000
 HOSTNAME=0.0.0.0
-ALGYM_BACKEND_URL=http://host.docker.internal:4000
+ALGYM_BACKEND_URL=http://backend:4000
 NEXT_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=TU_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY=TU_SERVICE_ROLE_KEY
@@ -95,7 +95,7 @@ EXERCISEDB_RAPIDAPI_KEY=TU_RAPIDAPI_KEY
 
 Referencia: `deploy/env/web.env.example`.
 
-`ALGYM_BACKEND_URL` es exclusivamente server-side. No debe renombrarse con el prefijo `NEXT_PUBLIC_`. En Docker debe apuntar a un nombre o direccion alcanzable desde el contenedor `web`; el Compose local publica `host.docker.internal` para un backend ejecutado en el host.
+`ALGYM_BACKEND_URL` es exclusivamente server-side. No debe renombrarse con el prefijo `NEXT_PUBLIC_`. Compose lo establece en `http://backend:4000` dentro de la red local; `deploy/env/web.env` puede conservar otro valor para uso fuera de Compose.
 
 ### `deploy/env/sync.env`
 
@@ -158,16 +158,17 @@ Antes de arrancar, aplicar `database/migrations/0017_sync_local_role.sql` del re
 Desde la raiz del proyecto:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file deploy/env/web.env up -d --build
 docker compose ps
 ```
 
-El contenedor `sync` conecta con PostgreSQL instalado en la computadora mediante `host.docker.internal` y publica `8080` solo en `127.0.0.1` por defecto. Para un reloj de la red local, configurar `SYNC_BIND_HOST` con la IP de la computadora y comprobar la conectividad del dispositivo. PostgreSQL y el backend aun se ejecutan en el host: incorporarlos a Compose sigue pendiente en `P5-01` de `PLAN_MIGRACION_LOCAL.md`.
+`backend` y `sync` conectan con PostgreSQL instalado en la computadora mediante `host.docker.internal`. El backend publica `4001` y sync `8080` solo en `127.0.0.1` por defecto. El backend requiere `../algym-local-backend/.env` y almacena archivos en `../algym-local-backend/data/media`. Para un reloj de la red local, configurar `SYNC_BIND_HOST` con la IP de la computadora y comprobar la conectividad del dispositivo. El perfil `container-db` levanta una segunda instancia aislada de PostgreSQL; no cambia automaticamente la base de los servicios ni sustituye la base en uso. Ver [STACK_LOCAL.md](docs/migracion-local/STACK_LOCAL.md).
 
 Ver logs:
 
 ```bash
 docker compose logs -f web
+docker compose logs -f backend
 docker compose logs -f sync
 ```
 
@@ -213,15 +214,15 @@ Flujo recomendado para una PC del gimnasio:
 
 1. Instalar Docker Desktop y habilitar WSL2.
 2. Configurar Docker Desktop para iniciar con Windows.
-3. Copiar el proyecto a una ruta estable, por ejemplo `C:\all-gym-sys`.
-4. Configurar `.env`, `deploy\env\web.env` y `deploy\env\sync.env`.
+3. Copiar ambos repositorios como carpetas hermanas, por ejemplo `C:\all-gym-sys` y `C:\algym-local-backend`.
+4. Configurar `.env`, `deploy\env\web.env`, `deploy\env\sync.env` y `C:\algym-local-backend\.env`.
 5. Ajustar puertos para red local si otras maquinas usaran el sistema.
 6. Dar IP fija o reserva DHCP a la PC.
-7. Preparar PostgreSQL y el backend local en la PC, aplicar las migraciones y levantar web/sync:
+7. Preparar PostgreSQL local en la PC, aplicar las migraciones y levantar web/backend/sync:
 
 ```powershell
 cd C:\all-gym-sys
-docker compose up -d --build
+docker compose --env-file deploy/env/web.env up -d --build
 docker compose ps
 ```
 
@@ -230,7 +231,7 @@ docker compose ps
 10. Crear una tarea en el Programador de tareas para ejecutar el stack al iniciar Windows:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -Command "cd 'C:\all-gym-sys'; docker compose up -d"
+powershell.exe -ExecutionPolicy Bypass -Command "cd 'C:\all-gym-sys'; docker compose --env-file deploy/env/web.env up -d"
 ```
 
 ## Integracion con ZKTeco
@@ -296,7 +297,7 @@ Reglas de seguridad:
 docker compose ps
 
 # Reconstruir despues de cambios
-docker compose up -d --build
+docker compose --env-file deploy/env/web.env up -d --build
 
 # Ver logs de la app web
 docker compose logs -f web
@@ -327,7 +328,7 @@ docker compose down
 
 - Confirmar que existe `.env` en la raiz.
 - Confirmar que `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` tienen valor.
-- Ejecutar `docker compose up -d --build` desde la raiz del proyecto.
+- Ejecutar `docker compose --env-file deploy/env/web.env up -d --build` desde la raiz del proyecto.
 
 ### El servicio sync no esta saludable
 
@@ -355,6 +356,6 @@ docker compose down
 - El README interno de `all-gym-vf` describe la app web, pero no representa todo el sistema ni la instalacion Windows.
 - El stack Docker actual esta preparado para uso local en la misma PC; para red local requiere publicar `3000:3000`.
 - El servicio `sync` requiere configurar `SYNC_BIND_HOST` si el reloj ZKTeco envia datos desde otra maquina de la red.
-- PostgreSQL y el backend siguen ejecutandose fuera de Compose; `P5-01` documenta su integracion pendiente.
+- Compose incluye el backend. PostgreSQL sigue en el host por defecto; el perfil `container-db` aun requiere un corte controlado antes de convertirse en la base operativa.
 - Antes de instalar a un cliente, revisar y rotar secretos reales.
 - Conviene mantener `ops/windows-runbook.md` alineado con cualquier cambio futuro de Docker o puertos.
