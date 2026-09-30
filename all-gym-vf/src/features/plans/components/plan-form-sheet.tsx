@@ -15,7 +15,7 @@ import { FormSwitch } from "@/components/forms/form-switch";
 import { IconPlus, IconLoader2 } from "@tabler/icons-react";
 import { useState } from "react";
 import type { SubmitHandler } from "react-hook-form";
-import { Plan } from "../actions/plan-actions";
+import type { Plan } from "@/features/customers/lib/local-memberships";
 import { PlanFormValues, useHookFormPlans } from "../hooks/use-hook-form-plans";
 
 interface PlanFormSheetProps {

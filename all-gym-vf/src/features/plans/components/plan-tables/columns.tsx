@@ -1,7 +1,7 @@
 'use client';
 
 import { ColumnDef } from '@tanstack/react-table';
-import { Plan } from '../../actions/plan-actions';
+import type { Plan } from '@/features/customers/lib/local-memberships';
 import { CellAction } from './cell-action';
 import { Badge } from '@/components/ui/badge';
 import { DataTableColumnHeader } from '@/components/ui/table/data-table-column-header';

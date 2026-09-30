@@ -6,7 +6,6 @@ import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
 import { revalidatePath } from 'next/cache';
 
 import type { Plan } from "@/features/customers/lib/local-memberships";
-export type { Plan };
 
 export type CreatePlanData = Omit<Plan, 'id' | 'description'> & { description?: string | null };
 export type UpdatePlanData = Partial<CreatePlanData>;

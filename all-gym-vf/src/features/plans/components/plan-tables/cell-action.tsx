@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
-import { Plan, deletePlan } from '../../actions/plan-actions';
+import { deletePlan } from '../../actions/plan-actions';
+import type { Plan } from '@/features/customers/lib/local-memberships';
 import { AlertModal } from '@/components/modal/alert-modal';
 import { PlanFormSheet } from '../plan-form-sheet';
 import { toast } from 'sonner';

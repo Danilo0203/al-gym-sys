@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plan } from "../actions/plan-actions";
+import type { Plan } from "@/features/customers/lib/local-memberships";
 import { useCreatePlan, useUpdatePlan } from "./use-plans";
 
 const requiredPositiveInteger = (fieldName: string) =>

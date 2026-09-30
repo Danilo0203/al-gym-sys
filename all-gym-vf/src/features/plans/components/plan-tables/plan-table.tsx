@@ -5,7 +5,7 @@ import { DataTableToolbar } from '@/components/ui/table/data-table-toolbar';
 import { useDataTable } from '@/hooks/use-data-table';
 import { parseAsInteger, useQueryState } from 'nuqs';
 import { columns } from './columns';
-import { Plan } from '../../actions/plan-actions';
+import type { Plan } from '@/features/customers/lib/local-memberships';
 import { useMemo } from 'react';
 
 interface PlanTableProps {
