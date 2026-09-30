@@ -26,7 +26,7 @@ ExerciseDB/RapidAPI y Cloudflare Tunnel son dependencias externas distintas de H
 - [x] `B-01` Ambas ramas `codex/local-unified-test` existen y apuntan a los repositorios correctos.
 - [x] `B-02` El backend ofrece autenticación/sesiones, perfil y Resumen local (`src/modules/auth`, `profile`, `dashboard`).
 - [x] `B-03` El backend ofrece clientes, historial, salud, membresías y operaciones de rutinas (`src/modules/customers`, `memberships`, `customer-routines`). **Esto no afirma que todas las pantallas de esos dominios hayan dejado Supabase.**
-- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0012_plans_local_writes.sql`; la aplicación de cada una en una instalación concreta requiere comprobación aparte.
+- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0014_exercise_editor_routine_visibility.sql`; `0012` a `0014` están aplicadas en `algym` local, con respaldo previo a `0013`.
 - [ ] `B-05` Prueba integral sin conexión al VPS/Supabase. Pendiente; es la puerta final de este plan.
 
 ## Paquetes paralelos y dependencias
@@ -75,7 +75,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 
 **Puerta:** catálogo, imágenes y rutinas se leen y modifican localmente; ninguna acción activa requiere Storage o Edge Functions de Supabase.
 
-- [ ] `P3-01` Migrar catálogo de ejercicios, preferencias, búsqueda y plantillas desde `src/features/exercises/actions`, `src/features/routines/actions` y `src/app/panel/ejercicios/page.tsx`. Probar generación, edición, asignación y vista del socio.
+- [ ] `P3-01` Migrar catálogo de ejercicios, preferencias, búsqueda y plantillas desde `src/features/exercises/actions`, `src/features/routines/actions` y `src/app/panel/ejercicios/page.tsx`. La pantalla de catálogo y el alta manual con imagen ya usan API/archivos locales; faltan búsqueda para rutinas, generación, asignación, vista del socio y rutas de importación antiguas.
 - [ ] `P3-02` Completar los caminos de generación/importación de `src/features/customers/actions/customer-routine-actions.ts`; sustituir `functions.invoke("exercise-catalog-provider")` por un servicio local o un catálogo local.
 - [ ] `P3-03` Migrar imágenes de productos y ejercicios desde Supabase Storage al almacenamiento decidido en `P0-03`; copiar archivos, reescribir URL y comprobar integridad y permisos.
 - [ ] `P3-04` Migrar plantillas de mensajes y cualquier consulta/escritura restante de `src/features/messages/actions/message-actions.ts`.
@@ -125,8 +125,9 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | B-01 a B-04 | Base verificada por código y rama | — | `codex/local-unified-test` en ambos repos | Rutas y migraciones indicadas arriba; no equivale a aceptación integral | Estado inicial |
 | P0-01 | Hecho | Codex | `al-gym-sys` `ecae278` | Inventario por módulo y operación en `docs/migracion-local/INVENTARIO.md` | 2026-09-29 |
 | P1-01 | Implementado; falta puerta offline | Codex | Backend `e4cbfda`; web `ecae278` | Backend: `pnpm typecheck`, `pnpm test` 128/128, `pnpm build`; web: lint enfocado, `npx tsc --noEmit`, `npm run build`. Respaldo local en `/private/tmp/algym-before-plans-0012.dump`; migración aplicada a `algym`; `POST /plans` sin sesión respondió 401. | Falta lectura/escritura con red externa bloqueada |
-| P0-03 | Diseño y API de archivos; falta conexión al catálogo | Codex | Backend `457db7e`; web `src/app/api/media` y `docs/migracion-local/ALMACENAMIENTO_LOCAL.md` | DB local: 0 ejercicios, 0 productos, sin `storage.objects`; web pública: 4 iconos PWA. API de subida/lectura local: suite backend 131/131; build web. | Faltan inventario remoto, ruta de archivos, volumen y respaldo |
+| P0-03 | Diseño, API y alta manual de ejercicios | Codex | Backend `457db7e`, `0c846e5`; web `src/app/api/media`, `src/features/exercises` y `docs/migracion-local/ALMACENAMIENTO_LOCAL.md` | DB local: 0 ejercicios, 0 productos, sin `storage.objects`; web pública: 4 iconos PWA. API de subida/lectura local; alta manual conecta imagen en disco y fila local. | Faltan inventario remoto, ruta de archivos, productos, volumen y respaldo |
 | P0-04 | Hecho | Codex | Backend `6f2a793` | `pnpm test` 130/130 en `algym_test`; `DB_HOST` y `PGHOST` remotos rechazados antes de recrear DB; roles sintéticos `admin`, `employee`, `owner`, `trainer`, `client`. | 2026-09-29 |
 | P1-02 | Listado local implementado; resto pendiente | Codex | Backend `6f2a793`; web `src/features/payments/actions/get-payments.ts` | GET `/payments`: filtros, orden, paginación, 401/403; suite backend 130/130; lint, typecheck y build web. | Faltan alta, detalle, corrección, reversión y puerta offline |
+| P3-01 | Catálogo web y alta manual locales; resto pendiente | Codex | Backend `0c846e5` y migraciones `0013`/`0014`; web `src/features/exercises` | Suite backend 132/132, incluyendo imagen en disco, edición y nombre histórico en rutina; web lint, typecheck y build. Respaldo `/private/tmp/algym-before-exercises-0013.dump`, políticas aplicadas a `algym`, GET sin sesión 401. | Catálogo local real vacío; faltan datos, rutinas, portal y prueba sin red |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.

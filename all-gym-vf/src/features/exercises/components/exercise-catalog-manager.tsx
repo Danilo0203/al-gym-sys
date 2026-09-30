@@ -58,6 +58,7 @@ interface ExerciseCatalogManagerProps {
 }
 
 const PROVIDER_SEARCH_PAGE_SIZE = 12;
+const EXTERNAL_PROVIDER_ENABLED = false;
 const PROVIDER_SEARCH_HISTORY_LIMIT = 5;
 const PROVIDER_SEARCH_HISTORY_STORAGE_KEY = "exercise-provider-search-history";
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -206,7 +207,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
 
   const providerSearchQuery = useInfiniteQuery({
     queryKey: ["exercise-provider-search", providerCommittedQuery, providerSearchVersion],
-    enabled: isCreateDialogOpen && createSource === "provider" && providerCommittedQuery.trim().length > 0,
+    enabled: EXTERNAL_PROVIDER_ENABLED && isCreateDialogOpen && createSource === "provider" && providerCommittedQuery.trim().length > 0,
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       searchExerciseProvider({
@@ -705,7 +706,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
           <DialogHeader className="border-border border-b px-6 pt-6 pb-4">
             <DialogTitle>Nuevo ejercicio</DialogTitle>
             <DialogDescription>
-              Crea un ejercicio local subiendo una imagen propia o eligiendo un GIF de ExerciseDB.
+              Crea un ejercicio con una imagen de tu computadora. Se guardará en el equipo local.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -769,9 +770,9 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                   }}
                   className="space-y-4"
                 >
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-1">
                     <TabsTrigger value="upload">Subir imagen</TabsTrigger>
-                    <TabsTrigger value="provider">Elegir de ExerciseDB</TabsTrigger>
+                    {EXTERNAL_PROVIDER_ENABLED ? <TabsTrigger value="provider">Elegir de ExerciseDB</TabsTrigger> : null}
                   </TabsList>
 
                   <TabsContent value="upload" className="space-y-4">
@@ -1138,7 +1139,7 @@ function ExerciseCard({
   const isStoredLocally = isExerciseStoredLocally(exercise);
   const providerLabel = getProviderLabel(exercise.provider, isStoredLocally);
   const tags = [...exercise.body_parts, ...exercise.target_muscles, ...exercise.equipments].filter(Boolean).slice(0, 3);
-  const canSaveMediaLocally = Boolean(exercise.image_url) && !isStoredLocally;
+  const canSaveMediaLocally = EXTERNAL_PROVIDER_ENABLED && Boolean(exercise.image_url) && !isStoredLocally;
   const previewImageUrl = exercise.image_url ?? undefined;
   const canShowPreview = Boolean(previewImageUrl) && (!exercise.is_preview_hidden || showHiddenPreview);
 
@@ -1367,7 +1368,8 @@ function isExerciseStoredLocally(exercise: ExerciseCatalogItem) {
 
   return Boolean(
     exercise.image_url &&
-    (exercise.image_url.startsWith("data:image/") ||
+    (exercise.image_url.startsWith("/api/media/exercises/") ||
+      exercise.image_url.startsWith("data:image/") ||
       exercise.image_url.includes("/storage/v1/object/public/exercises/")),
   );
 }

@@ -2,9 +2,11 @@
 
 import sharp from "sharp";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { buildExerciseSlug } from "@/lib/training/catalog";
 import { resolveExerciseImageUrl } from "@/lib/training/exercise-media";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -107,37 +109,13 @@ async function ensureAdminAccess(permission: string = "exercises.view") {
   return null;
 }
 
-async function buildUniqueExerciseSlug(adminClient: ReturnType<typeof createAdminClient>, name: string) {
-  const baseSlug = buildExerciseSlug({ name }) || "manual-exercise";
-
-  const { data, error } = await adminClient
-    .from("exercises")
-    .select("slug")
-    .like("slug", `${baseSlug}%`);
-
-  if (error) {
-    throw error;
-  }
-
-  const usedSlugs = new Set(
-    (data ?? [])
-      .map((row) => (typeof row.slug === "string" ? row.slug : null))
-      .filter((slug): slug is string => Boolean(slug)),
-  );
-
-  if (!usedSlugs.has(baseSlug)) {
-    return baseSlug;
-  }
-
-  let nextSuffix = 2;
-  while (usedSlugs.has(`${baseSlug}-${nextSuffix}`)) {
-    nextSuffix += 1;
-  }
-
-  return `${baseSlug}-${nextSuffix}`;
+async function getLocalHeaders() {
+  const cookieStore = await cookies();
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  return cookieHeader ? { cookie: cookieHeader } : undefined;
 }
 
-async function fileToStoredImageDataUrl(uploadedFile: File) {
+async function fileToProcessedImageBuffer(uploadedFile: File) {
   if (!uploadedFile || uploadedFile.size === 0) {
     throw new Error("Selecciona una imagen para el ejercicio.");
   }
@@ -161,7 +139,7 @@ async function fileToStoredImageDataUrl(uploadedFile: File) {
       .webp({ quality: 82 })
       .toBuffer();
 
-    return `data:image/webp;base64,${outputBuffer.toString("base64")}`;
+    return outputBuffer;
   } catch (error) {
     console.error("Error processing exercise image:", error);
     throw new Error("No se pudo procesar la imagen seleccionada.");
@@ -186,33 +164,13 @@ export async function updateExerciseCatalogItem(input: {
       };
     }
 
-    const adminClient = createAdminClient();
     const nextDisplayName = parsedInput.data.displayName;
-    const [{ error: exerciseError }, { error: routineDetailsError }] = await Promise.all([
-      adminClient
-        .from("exercises")
-        .update({
-          name: nextDisplayName,
-          display_name: nextDisplayName,
-        })
-        .eq("id", parsedInput.data.exerciseId),
-      adminClient
-        .from("routine_details")
-        .update({
-          exercise_name_snapshot: nextDisplayName,
-        })
-        .eq("exercise_id", parsedInput.data.exerciseId),
-    ]);
-
-    if (exerciseError) {
-      console.error("Error updating exercise catalog item:", exerciseError);
-      return { success: false, error: "No se pudo actualizar el nombre del ejercicio." };
-    }
-
-    if (routineDetailsError) {
-      console.error("Error syncing exercise name with routine details:", routineDetailsError);
-      return { success: false, error: "El nombre se actualizó, pero no se pudo sincronizar en las rutinas." };
-    }
+    const response = await fetchAuthBackend(`/exercises/${parsedInput.data.exerciseId}`, {
+      method: "PATCH",
+      headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
+      body: JSON.stringify({ displayName: nextDisplayName }),
+    });
+    if (!response.ok) return { success: false, error: "No se pudo actualizar el nombre del ejercicio." };
 
     revalidatePath("/panel/ejercicios");
     revalidatePath("/panel/clientes");
@@ -249,7 +207,6 @@ export async function updateExerciseCatalogPreferences(input: {
       };
     }
 
-    const adminClient = createAdminClient();
     const updates: Record<string, boolean> = {};
 
     if (typeof parsedInput.data.isFavorite === "boolean") {
@@ -260,10 +217,16 @@ export async function updateExerciseCatalogPreferences(input: {
       updates.is_preview_hidden = parsedInput.data.isPreviewHidden;
     }
 
-    const { error } = await adminClient.from("exercises").update(updates).eq("id", parsedInput.data.exerciseId);
+    const response = await fetchAuthBackend(`/exercises/${parsedInput.data.exerciseId}`, {
+      method: "PATCH",
+      headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
+      body: JSON.stringify({
+        ...(updates.is_favorite !== undefined ? { isFavorite: updates.is_favorite } : {}),
+        ...(updates.is_preview_hidden !== undefined ? { isPreviewHidden: updates.is_preview_hidden } : {}),
+      }),
+    });
 
-    if (error) {
-      console.error("Error updating exercise catalog preferences:", error);
+    if (!response.ok) {
       return { success: false, error: "No se pudieron actualizar las preferencias del ejercicio." };
     }
 
@@ -433,17 +396,12 @@ export async function archiveStarterPackExercises(): Promise<ExerciseCatalogMuta
       return { success: false, error: authError };
     }
 
-    const adminClient = createAdminClient();
-    const { error } = await adminClient
-      .from("exercises")
-      .update({
-        is_active: false,
-      })
-      .eq("provider", "starter_pack")
-      .eq("is_active", true);
+    const response = await fetchAuthBackend("/exercises/archive-starter", {
+      method: "POST",
+      headers: await getLocalHeaders(),
+    });
 
-    if (error) {
-      console.error("Error archiving starter pack exercises:", error);
+    if (!response.ok) {
       return { success: false, error: "No se pudieron ocultar los ejercicios iniciales." };
     }
 
@@ -484,42 +442,32 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
       return { success: false, error: "Selecciona una imagen para el ejercicio." };
     }
 
-    const imageUrl = await fileToStoredImageDataUrl(rawImage);
-    const adminClient = createAdminClient();
-    const slug = await buildUniqueExerciseSlug(adminClient, parsedName.data);
-    const now = new Date().toISOString();
+    const image = await fileToProcessedImageBuffer(rawImage);
+    const uploadResponse = await fetchAuthBackend("/media/exercises", {
+      method: "POST",
+      headers: { ...(await getLocalHeaders()), "content-type": "image/webp" },
+      body: new Uint8Array(image),
+    });
+    if (!uploadResponse.ok) {
+      return { success: false, error: "No se pudo guardar la imagen en el equipo local." };
+    }
+    const uploadPayload: unknown = await uploadResponse.json();
+    const imageUrl = isRecord(uploadPayload) && typeof uploadPayload.url === "string"
+      ? uploadPayload.url
+      : null;
+    if (!imageUrl) return { success: false, error: "La API local devolvió una imagen inválida." };
 
-    const { error } = await adminClient.from("exercises").insert({
-      slug,
-      name: parsedName.data,
-      display_name: parsedName.data,
-      display_name_es: null,
-      provider: "custom_local",
-      provider_item_id: null,
-      body_parts: [],
-      target_muscles: [],
-      secondary_muscles: [],
-      equipments: [],
-      exercise_type: "custom",
-      instructions: [],
-      tips: [],
-      keywords: [],
-      variations: [],
-      image_url: imageUrl,
-      video_url: null,
-      description: null,
-      raw_payload: {
-        source: "manual_upload",
-        uploaded_at: now,
+    const createResponse = await fetchAuthBackend("/exercises", {
+      method: "POST",
+      headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
+      body: JSON.stringify({
+        name: parsedName.data,
+        image_url: imageUrl,
         original_file_name: rawImage.name,
-        original_mime_type: rawImage.type,
-      },
-      last_synced_at: now,
-      is_active: true,
+      }),
     });
 
-    if (error) {
-      console.error("Error creating exercise catalog item:", error);
+    if (!createResponse.ok) {
       return { success: false, error: "No se pudo guardar el ejercicio nuevo." };
     }
 

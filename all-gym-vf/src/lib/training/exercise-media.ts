@@ -60,6 +60,7 @@ export function isExerciseMediaStoredLocally(url: string | null | undefined) {
   if (!normalizedUrl) return false;
 
   return (
+    normalizedUrl.startsWith("/api/media/exercises/") ||
     normalizedUrl.startsWith("data:image/") ||
     normalizedUrl.includes("/storage/v1/object/public/exercises/")
   );
