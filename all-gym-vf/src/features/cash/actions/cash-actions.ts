@@ -20,17 +20,6 @@ export type MovementCategory = "membership" | "product" | "enrollment" | "servic
 type SessionLinkStatus = "assigned" | "out_of_session";
 type CashHistorySortItem = { id: string; desc: boolean };
 
-interface ProductInventoryRow {
-  id: string;
-  name: string;
-  sku: string | null;
-  barcode: string | null;
-  image_url: string | null;
-  sale_price: number | string;
-  stock_quantity: number | string;
-  is_active: boolean;
-}
-
 interface PlanFinancialRow {
   id: number;
   price: number | string;
@@ -252,12 +241,6 @@ export interface CashPaymentReversalContext {
   method: PaymentMethod;
   payment_date: string;
   status: string | null;
-}
-
-function toNumber(value: number | string | null | undefined) {
-  if (value === null || value === undefined) return null;
-  const normalized = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(normalized) ? normalized : null;
 }
 
 function getErrorMessage(error: unknown) {
@@ -886,35 +869,10 @@ export async function searchCashProducts(search: string): Promise<CashProductSea
   if (!access.isOwner && !access.permissions.includes("inventory.sell")) {
     throw new Error("No autorizado para vender productos");
   }
-
-  const adminClient = createAdminClient();
-  const normalizedSearch = search.trim();
-  let query = adminClient
-    .from("product_inventory_overview")
-    .select("id, name, sku, barcode, image_url, sale_price, stock_quantity, is_active")
-    .eq("is_active", true);
-
-  if (normalizedSearch.length > 0) {
-    const escapedSearch = normalizedSearch.replace(/[,%]/g, " ").trim();
-    query = query.or(`name.ilike.%${escapedSearch}%,sku.ilike.%${escapedSearch}%,barcode.ilike.%${escapedSearch}%`);
-  }
-
-  const { data, error } = await query.order("name", { ascending: true }).limit(12);
-
-  if (error) {
-    throw toCashActionError(error, "No se pudieron buscar productos");
-  }
-
-  return ((data as ProductInventoryRow[] | null) || []).map((product) => ({
-    id: product.id,
-    name: product.name,
-    sku: product.sku,
-    barcode: product.barcode,
-    image_url: product.image_url,
-    sale_price: toNumber(product.sale_price) || 0,
-    stock_quantity: toNumber(product.stock_quantity) || 0,
-    is_active: product.is_active,
-  }));
+  const query = new URLSearchParams({ search: search.trim() });
+  const response = await localCashRequest(`/products/search?${query.toString()}`);
+  if (!response.ok) throw await localCashError(response);
+  return await response.json() as CashProductSearchResult[];
 }
 
 export async function sellProductsFromCashSession(params: {
@@ -929,21 +887,15 @@ export async function sellProductsFromCashSession(params: {
 
   await requireOperableOpenCashSession(access);
 
-  const rpcItems = params.items.map((item) => ({
-    product_id: item.productId,
-    quantity: item.quantity,
-  }));
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("sell_products_from_cash_session", {
-    p_items: rpcItems,
-    p_payment_method: params.paymentMethod,
-    p_note: params.note?.trim() || null,
+  const response = await localCashRequest("/products/sales", {
+    method: "POST",
+    body: JSON.stringify({
+      items: params.items,
+      paymentMethod: params.paymentMethod,
+      note: params.note?.trim() || null,
+    }),
   });
-
-  if (error) {
-    throw toCashActionError(error, "No se pudo vender productos");
-  }
+  if (!response.ok) throw await localCashError(response);
 
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
@@ -951,13 +903,7 @@ export async function sellProductsFromCashSession(params: {
   revalidatePath("/panel/inventario/movimientos");
   revalidatePath("/panel/resumen");
 
-  const result = (data || {}) as Partial<CashProductSaleResult>;
-  return {
-    product_sale_id: String(result.product_sale_id || ""),
-    sale_number: String(result.sale_number || ""),
-    cash_movement_id: String(result.cash_movement_id || ""),
-    total_amount: Number(result.total_amount || 0),
-  };
+  return await response.json() as CashProductSaleResult;
 }
 
 export async function voidProductSaleFromCashSession(params: {
@@ -967,15 +913,13 @@ export async function voidProductSaleFromCashSession(params: {
   const access = await requireCashAccess();
   await requireOperableOpenCashSession(access);
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("void_product_sale_from_cash_session", {
-    p_product_sale_id: params.productSaleId,
-    p_note: params.note?.trim() || null,
-  });
-
-  if (error) {
-    throw toCashActionError(error, "No se pudo anular la venta");
-  }
+  const response = await localCashRequest(
+    `/products/sales/${encodeURIComponent(params.productSaleId)}/void`, {
+      method: "POST",
+      body: JSON.stringify({ note: params.note?.trim() || null }),
+    },
+  );
+  if (!response.ok) throw await localCashError(response);
 
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
@@ -983,10 +927,5 @@ export async function voidProductSaleFromCashSession(params: {
   revalidatePath("/panel/inventario/movimientos");
   revalidatePath("/panel/resumen");
 
-  const result = (data || {}) as Partial<CashProductSaleVoidResult>;
-  return {
-    product_sale_id: String(result.product_sale_id || ""),
-    cash_movement_id: String(result.cash_movement_id || ""),
-    inventory_movement_count: Number(result.inventory_movement_count || 0),
-  };
+  return await response.json() as CashProductSaleVoidResult;
 }
