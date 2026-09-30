@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 import { toCashActionError } from "@/features/cash/lib/cash-module-errors";
 import type { TrainingProfileInput } from "@/lib/training/types";
 import { normalizeGraceDays } from "@/lib/subscriptions/grace-period";
+import { customerDetailSchema, customerHistoryResponseSchema, customerListResponseSchema } from "@/features/customers/lib/local-customers";
+import { customerRoutineWorkspaceSchema } from "@/features/customers/lib/local-customer-routine";
 
 
 type SessionStatus = "open" | "closed" | "closed_with_difference" | "cancelled";
@@ -17,23 +19,6 @@ type MovementType = "sale" | "manual_income" | "withdrawal" | "refund" | "adjust
 export type MovementCategory = "membership" | "product" | "enrollment" | "service" | "other";
 type SessionLinkStatus = "assigned" | "out_of_session";
 type CashHistorySortItem = { id: string; desc: boolean };
-
-interface CashSessionRow {
-  id: string;
-  session_number: string;
-  cash_register_id: string;
-  opened_by_user_id: string;
-  closed_by_user_id: string | null;
-  opened_at: string;
-  closed_at: string | null;
-  opening_amount: number | string;
-  expected_amount: number | string | null;
-  counted_amount: number | string | null;
-  difference_amount: number | string | null;
-  status: SessionStatus;
-  notes: string | null;
-  created_at: string;
-}
 
 interface ProductInventoryRow {
   id: string;
@@ -44,59 +29,6 @@ interface ProductInventoryRow {
   sale_price: number | string;
   stock_quantity: number | string;
   is_active: boolean;
-}
-
-interface CashCustomerRow {
-  id: string;
-  full_name: string | null;
-  phone: string | null;
-  plan_name: string | null;
-  subscription_status: string | null;
-  subscription_start_date: string | null;
-  subscription_end_date: string | null;
-  subscription_grace_days?: number | null;
-  subscription_access_until?: string | null;
-  is_active: boolean | null;
-}
-
-interface CustomerProfileRow {
-  id: string;
-  birth_date: string | null;
-  gender: "male" | "female" | "other" | null;
-  injuries: string | null;
-  medical_notes: string | null;
-}
-
-interface BodyAssessmentRow {
-  user_id: string;
-  date: string;
-  weight_kg: number | string | null;
-  height_cm: number | string | null;
-  body_type: string | null;
-  diet_type: string | null;
-  activity_level: string | null;
-  body_fat_percentage: number | string | null;
-  muscle_mass_kg: number | string | null;
-  chest: number | string | null;
-  waist: number | string | null;
-  hip: number | string | null;
-  arm_right: number | string | null;
-  arm_left: number | string | null;
-  leg_right: number | string | null;
-  leg_left: number | string | null;
-}
-
-interface TrainingProfileRow extends TrainingProfileInput {
-  user_id: string;
-  is_complete: boolean | null;
-}
-
-interface PaymentSummaryRow {
-  user_id: string;
-  payment_date: string;
-  amount_paid: number | string | null;
-  method: PaymentMethod | null;
-  status?: string | null;
 }
 
 interface PlanFinancialRow {
@@ -377,6 +309,14 @@ async function localPaymentsRequest(path: string, init?: RequestInit): Promise<R
   return fetchAuthBackend(`/payments${path}`, { ...init, headers, cache: "no-store" });
 }
 
+async function localCustomersRequest(path: string, init?: RequestInit): Promise<Response> {
+  const cookieStore = await cookies();
+  const headers = new Headers(init?.headers);
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  return fetchAuthBackend(`/customers${path}`, { ...init, headers, cache: "no-store" });
+}
+
 async function localCashError(response: Response): Promise<Error> {
   const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
   return new Error(payload?.error?.message || "No se pudo completar la operación de caja");
@@ -387,54 +327,22 @@ async function localPaymentsError(response: Response): Promise<Error> {
   return new Error(payload?.error?.message || "No se pudo completar la operación del pago");
 }
 
+async function localCustomersError(response: Response): Promise<Error> {
+  const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+  return new Error(payload?.error?.message || "No se pudo cargar el cliente local");
+}
+
 async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typeof requireCashAccess>>) {
-  const access = accessArg ?? (await requireCashAccess());
-  const adminClient = createAdminClient();
-  const { data: sessionRows, error } = await adminClient
-    .from("cash_sessions")
-    .select("*")
-    .eq("opened_by_user_id", access.userId)
-    .eq("status", "open")
-    .order("opened_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    throw toCashActionError(error, "Error al validar sesion operativa de caja");
-  }
-
-  const session = (sessionRows as CashSessionRow[] | null)?.[0] || null;
+  if (!accessArg) await requireCashAccess();
+  const response = await localCashRequest("/dashboard");
+  if (!response.ok) throw await localCashError(response);
+  const dashboard = await response.json() as CashDashboardData;
+  const session = dashboard.currentSession;
   if (!session) {
     throw new Error("Abre una caja antes de registrar cobros desde este modulo.");
   }
 
   return session;
-}
-
-function buildLatestPaymentMap(rows: PaymentSummaryRow[] | null | undefined) {
-  const latestPaymentMap = new Map<
-    string,
-    {
-      payment_date: string;
-      amount_paid: number | null;
-      method: PaymentMethod | null;
-    }
-  >();
-
-  for (const row of rows || []) {
-    if (row.status && row.status !== "posted") {
-      continue;
-    }
-
-    if (!latestPaymentMap.has(row.user_id)) {
-      latestPaymentMap.set(row.user_id, {
-        payment_date: row.payment_date,
-        amount_paid: toNumber(row.amount_paid),
-        method: row.method,
-      });
-    }
-  }
-
-  return latestPaymentMap;
 }
 
 async function createSubscriptionPaymentWithCashFallback(params: {
@@ -588,182 +496,124 @@ export async function ensureDefaultCashRegister(): Promise<EnsureCashRegisterRes
 
 export async function searchCashCustomers(search: string): Promise<CashCustomerSearchResult[]> {
   await requireOperableOpenCashSession();
-  const adminClient = createAdminClient();
+  const query = new URLSearchParams({ page: "1", page_size: "12", sort: "full_name" });
   const normalizedSearch = search.trim();
-  let query = adminClient
-    .from("customer_overview")
-    .select("id, full_name, phone, plan_name, subscription_status, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
-    .eq("role", "client");
+  if (normalizedSearch) query.set("search", normalizedSearch);
 
-  if (normalizedSearch.length > 0) {
-    const escapedSearch = normalizedSearch.replace(/[,%]/g, " ").trim();
-    query = query.or(`full_name.ilike.%${escapedSearch}%,phone.ilike.%${escapedSearch}%`);
-  }
+  const response = await localCustomersRequest(`?${query.toString()}`);
+  if (!response.ok) throw await localCustomersError(response);
+  const customers = customerListResponseSchema.parse(await response.json()).data;
 
-  const { data: customerRows, error } = await query
-    .order("is_active", { ascending: false })
-    .order("subscription_end_date", { ascending: true, nullsFirst: false })
-    .order("full_name", { ascending: true })
-    .limit(12);
-
-  if (error) {
-    throw new Error("No se pudo buscar clientes");
-  }
-
-  const customers = (customerRows as CashCustomerRow[] | null) || [];
-  if (customers.length === 0) {
-    return [];
-  }
-
-  const customerIds = customers.map((customer) => customer.id);
-  const { data: paymentRows, error: paymentError } = await adminClient
-    .from("payments")
-    .select("user_id, payment_date, amount_paid, method, status")
-    .in("user_id", customerIds)
-    .order("payment_date", { ascending: false });
-
-  if (paymentError) {
-    throw new Error("No se pudo cargar el ultimo pago del cliente");
-  }
-
-  const latestPaymentMap = buildLatestPaymentMap(paymentRows as PaymentSummaryRow[] | null | undefined);
-
-  return customers.map((customer) => {
-    const latestPayment = latestPaymentMap.get(customer.id);
-    return {
-      id: customer.id,
-      full_name: customer.full_name || "Cliente",
-      phone: customer.phone,
-      plan_name: customer.plan_name,
-      subscription_status: customer.subscription_status,
-      subscription_end_date: customer.subscription_end_date,
-      subscription_grace_days: customer.subscription_grace_days ?? null,
-      subscription_access_until: customer.subscription_access_until ?? null,
-      is_active: customer.is_active !== false,
-      last_payment_date: latestPayment?.payment_date || null,
-      last_payment_amount: latestPayment?.amount_paid ?? null,
-      last_payment_method: latestPayment?.method ?? null,
-    };
-  });
+  return customers.map((customer) => ({
+    id: customer.id,
+    full_name: customer.full_name,
+    phone: customer.phone,
+    plan_name: customer.current_membership?.plan_name ?? null,
+    subscription_status: customer.membership_status,
+    subscription_end_date: customer.current_membership?.end_date ?? null,
+    subscription_grace_days: customer.current_membership?.grace_days ?? null,
+    subscription_access_until: customer.current_membership?.access_until ?? null,
+    is_active: customer.is_active,
+    last_payment_date: null,
+    last_payment_amount: null,
+    last_payment_method: null,
+  }));
 }
 
 export async function getCashCustomerSummary(customerId: string): Promise<CashCustomerSummary | null> {
-  await requireOperableOpenCashSession();
-  const adminClient = createAdminClient();
+  const access = await requireCashAccess();
+  await requireOperableOpenCashSession(access);
 
-  const [
-    { data: customerRow, error: customerError },
-    { data: profileRow, error: profileError },
-    { data: assessmentRow, error: assessmentError },
-    { data: trainingProfileRow, error: trainingProfileError },
-    { data: paymentRows, error: paymentError },
-  ] = await Promise.all([
-    adminClient
-      .from("customer_overview")
-      .select("id, full_name, phone, plan_name, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, is_active")
-      .eq("role", "client")
-      .eq("id", customerId)
-      .maybeSingle(),
-    adminClient.from("profiles").select("id, birth_date, gender, injuries, medical_notes").eq("id", customerId).maybeSingle(),
-    adminClient
-      .from("body_assessments")
-      .select(
-        "user_id, date, weight_kg, height_cm, body_type, diet_type, activity_level, body_fat_percentage, muscle_mass_kg, chest, waist, hip, arm_right, arm_left, leg_right, leg_left",
-      )
-      .eq("user_id", customerId)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    adminClient.from("training_profiles").select("*").eq("user_id", customerId).maybeSingle(),
-    adminClient
-      .from("payments")
-      .select("user_id, payment_date, amount_paid, method, status")
-      .eq("user_id", customerId)
-      .order("payment_date", { ascending: false })
-      .limit(20),
-  ]);
+  const customerResponse = await localCustomersRequest(`/${encodeURIComponent(customerId)}`);
+  if (customerResponse.status === 404) return null;
+  if (!customerResponse.ok) throw await localCustomersError(customerResponse);
+  const customer = customerDetailSchema.parse(await customerResponse.json());
 
-  if (customerError) {
-    throw new Error("No se pudo cargar el cliente");
-  }
-  if (profileError) {
-    throw new Error("No se pudo cargar el perfil del cliente");
-  }
-  if (assessmentError) {
-    console.error("Cash customer summary assessment warning:", assessmentError);
-  }
-  if (trainingProfileError) {
-    console.error("Cash customer summary training profile warning:", trainingProfileError);
-  }
-  if (paymentError) {
-    throw new Error("No se pudo cargar el ultimo pago del cliente");
+  const historyQuery = new URLSearchParams({
+    attendance_limit: "1",
+    heatmap_days: "1",
+    memberships_page_size: "1",
+    payments_page_size: "1",
+    assessments_page_size: "1",
+  });
+  const historyResponse = await localCustomersRequest(
+    `/${encodeURIComponent(customerId)}/history?${historyQuery.toString()}`,
+  );
+  if (!historyResponse.ok) throw await localCustomersError(historyResponse);
+  const history = customerHistoryResponseSchema.parse(await historyResponse.json());
+
+  let trainingProfile: TrainingProfileInput | null = null;
+  if (access.isOwner || access.permissions?.includes("customers.manage_routine")) {
+    const routineResponse = await localCustomersRequest(`/${encodeURIComponent(customerId)}/routine`);
+    if (!routineResponse.ok) throw await localCustomersError(routineResponse);
+    const workspace = customerRoutineWorkspaceSchema.parse(await routineResponse.json());
+    const training = workspace.trainingProfile;
+    trainingProfile = training
+      ? {
+          primary_goal: training.primary_goal,
+          secondary_goal: training.secondary_goal,
+          focus_areas: training.focus_areas,
+          experience_level: training.experience_level,
+          days_per_week: training.days_per_week,
+          session_minutes: training.session_minutes,
+          training_location: training.training_location,
+          equipment_available: training.equipment_available,
+          activity_level: training.activity_level,
+          cardio_preference: training.cardio_preference,
+          exercise_preferences: training.exercise_preferences,
+          exercise_dislikes: training.exercise_dislikes,
+          injuries_or_pain: training.injuries_or_pain,
+          restricted_movements: training.restricted_movements,
+          parq_requires_attention: training.parq_requires_attention,
+          medical_clearance_notes: training.medical_clearance_notes,
+        }
+      : null;
   }
 
-  const customer = customerRow as CashCustomerRow | null;
-  if (!customer) {
-    return null;
-  }
-
-  const profile = profileRow as CustomerProfileRow | null;
-  const assessment = assessmentRow as BodyAssessmentRow | null;
-  const trainingProfile = trainingProfileRow as TrainingProfileRow | null;
-  const latestPayment = buildLatestPaymentMap(paymentRows as PaymentSummaryRow[] | null | undefined).get(customerId);
+  const membership = customer.current_membership;
+  const payment = history.payments?.data[0];
+  const assessment = history.assessments?.data[0];
+  const paymentMethod = payment?.method;
+  const lastPaymentMethod = paymentMethod === "cash" || paymentMethod === "card" || paymentMethod === "transfer"
+    ? paymentMethod
+    : null;
 
   return {
     id: customer.id,
-    full_name: customer.full_name || "Cliente",
+    full_name: customer.full_name,
     phone: customer.phone,
-    plan_name: customer.plan_name,
-    subscription_status: customer.subscription_status,
-    subscription_start_date: customer.subscription_start_date,
-    subscription_end_date: customer.subscription_end_date,
-    subscription_grace_days: customer.subscription_grace_days ?? null,
-    subscription_access_until: customer.subscription_access_until ?? null,
-    is_active: customer.is_active !== false,
-    birth_date: profile?.birth_date || null,
-    gender: profile?.gender || null,
-    last_payment_date: latestPayment?.payment_date || null,
-    last_payment_amount: latestPayment?.amount_paid ?? null,
-    last_payment_method: latestPayment?.method ?? null,
+    plan_name: membership?.plan_name ?? null,
+    subscription_status: customer.membership_status,
+    subscription_start_date: membership?.start_date ?? null,
+    subscription_end_date: membership?.end_date ?? null,
+    subscription_grace_days: membership?.grace_days ?? null,
+    subscription_access_until: membership?.access_until ?? null,
+    is_active: customer.is_active,
+    birth_date: customer.birth_date,
+    gender: customer.gender,
+    last_payment_date: payment?.payment_date ?? null,
+    last_payment_amount: payment?.amount_paid ?? null,
+    last_payment_method: lastPaymentMethod,
     last_assessment: assessment
       ? {
-          weight_kg: toNumber(assessment.weight_kg) || 0,
-          height_cm: toNumber(assessment.height_cm) || 0,
+          weight_kg: assessment.weight_kg ?? 0,
+          height_cm: assessment.height_cm ?? 0,
           body_type: assessment.body_type || "mesomorph",
           diet_type: assessment.diet_type || undefined,
           activity_level: trainingProfile?.activity_level || assessment.activity_level || undefined,
-          body_fat_percentage: toNumber(assessment.body_fat_percentage),
-          muscle_mass: toNumber(assessment.muscle_mass_kg),
-          chest_cm: toNumber(assessment.chest),
-          waist_cm: toNumber(assessment.waist),
-          hip_cm: toNumber(assessment.hip),
-          arm_right_cm: toNumber(assessment.arm_right),
-          arm_left_cm: toNumber(assessment.arm_left),
-          leg_right_cm: toNumber(assessment.leg_right),
-          leg_left_cm: toNumber(assessment.leg_left),
-          injuries: profile?.injuries || undefined,
+          body_fat_percentage: assessment.body_fat_percentage,
+          muscle_mass: assessment.muscle_mass_kg,
+          chest_cm: assessment.chest,
+          waist_cm: assessment.waist,
+          hip_cm: assessment.hip,
+          arm_right_cm: assessment.arm_right,
+          arm_left_cm: assessment.arm_left,
+          leg_right_cm: assessment.leg_right,
+          leg_left_cm: assessment.leg_left,
+          injuries: customer.injuries || undefined,
         }
       : null,
-    training_profile: trainingProfile
-      ? {
-          primary_goal: trainingProfile.primary_goal ?? null,
-          secondary_goal: trainingProfile.secondary_goal ?? null,
-          focus_areas: trainingProfile.focus_areas ?? [],
-          experience_level: trainingProfile.experience_level ?? null,
-          days_per_week: trainingProfile.days_per_week ?? null,
-          session_minutes: trainingProfile.session_minutes ?? null,
-          training_location: trainingProfile.training_location ?? null,
-          equipment_available: trainingProfile.equipment_available ?? [],
-          activity_level: trainingProfile.activity_level ?? null,
-          cardio_preference: trainingProfile.cardio_preference ?? null,
-          exercise_preferences: trainingProfile.exercise_preferences ?? null,
-          exercise_dislikes: trainingProfile.exercise_dislikes ?? null,
-          injuries_or_pain: trainingProfile.injuries_or_pain ?? null,
-          restricted_movements: trainingProfile.restricted_movements ?? [],
-          parq_requires_attention: trainingProfile.parq_requires_attention ?? null,
-          medical_clearance_notes: trainingProfile.medical_clearance_notes ?? profile?.medical_notes ?? null,
-        }
-      : null,
+    training_profile: trainingProfile,
   };
 }
 
