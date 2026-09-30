@@ -908,6 +908,23 @@ export async function closeCashSession(
   revalidatePath("/panel/resumen");
 }
 
+export async function recordManualCashMovement(
+  sessionId: string,
+  movementType: "manual_income" | "withdrawal",
+  amount: number,
+  note: string,
+) {
+  await requireCashAccess();
+  const response = await localCashRequest(`/sessions/${encodeURIComponent(sessionId)}/movements`, {
+    method: "POST",
+    body: JSON.stringify({ movementType, amount, note }),
+  });
+  if (!response.ok) throw await localCashError(response);
+  revalidatePath("/panel/caja");
+  revalidatePath("/panel/caja/historial");
+  revalidatePath(`/panel/caja/historial/${sessionId}`);
+}
+
 export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
   customerId: string;
   planId?: number;

@@ -12,11 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
-import { closeCashSession, ensureDefaultCashRegister, type CashDashboardData, openCashSession } from "@/features/cash/actions/cash-actions";
+import { closeCashSession, ensureDefaultCashRegister, type CashDashboardData, openCashSession, recordManualCashMovement } from "@/features/cash/actions/cash-actions";
 import { CashCustomerPaymentDialog } from "@/features/cash/components/cash-customer-payment-dialog";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { QuickProductSalePanel } from "@/features/cash/components/quick-product-sale-panel";
@@ -363,6 +364,10 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
   const [closingNote, setClosingNote] = useState("");
   const [closePassword, setClosePassword] = useState("");
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [movementDialogOpen, setMovementDialogOpen] = useState(false);
+  const [movementType, setMovementType] = useState<"manual_income" | "withdrawal">("manual_income");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementNote, setMovementNote] = useState("");
   const canCloseWithoutPassword = Boolean(
     currentUser?.isOwner ||
     currentUser?.role === "admin" ||
@@ -460,6 +465,26 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
       setClosingNote("");
       setClosePassword("");
     }, "Caja cerrada correctamente");
+  };
+
+  const onRecordMovement = () => {
+    if (!data.currentSession) return;
+    const amount = Number(movementAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || Math.abs(Math.round(amount * 100) - amount * 100) > 1e-8) {
+      toast.error("Ingresa un monto mayor a cero con hasta dos decimales.");
+      return;
+    }
+    if (movementNote.trim().length < 3) {
+      toast.error("Describe el motivo del movimiento.");
+      return;
+    }
+
+    handleAction(async () => {
+      await recordManualCashMovement(data.currentSession!.id, movementType, amount, movementNote.trim());
+      setMovementDialogOpen(false);
+      setMovementAmount("");
+      setMovementNote("");
+    }, "Movimiento registrado en la caja local");
   };
 
   if (!data.currentSession) {
@@ -610,6 +635,18 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
           <CardDescription>Accesos operativos que requieren modal o confirmación.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {data.canOperateSession && (
+            <QuickActionCard
+              title="Ingreso o retiro manual"
+              description="Registra efectivo operativo con motivo y responsable en esta sesión."
+            >
+              <Button className="w-full" variant="outline" onClick={() => setMovementDialogOpen(true)}>
+                <IconArrowsExchange className="h-4 w-4" />
+                Registrar movimiento
+              </Button>
+            </QuickActionCard>
+          )}
+
           {canOperateCash && (
             <QuickActionCard
               title="Registro de nuevo cliente"
@@ -662,6 +699,44 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
       </Card>
 
       <OpenSessionSupervisorCard sessions={data.supervisedOpenSessions} />
+
+      <Dialog open={movementDialogOpen} onOpenChange={setMovementDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Movimiento manual de efectivo</DialogTitle>
+            <DialogDescription>
+              El ingreso suma efectivo esperado y el retiro lo resta. El movimiento queda asociado a tu caja abierta.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Tipo</p>
+              <Select value={movementType} onValueChange={(value) => setMovementType(value as typeof movementType)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual_income">Ingreso manual</SelectItem>
+                  <SelectItem value="withdrawal">Retiro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Monto en efectivo</p>
+              <Input type="number" min="0.01" step="0.01" value={movementAmount}
+                onChange={(event) => setMovementAmount(event.target.value)} placeholder="0.00" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Motivo</p>
+              <Textarea rows={3} maxLength={500} value={movementNote}
+                onChange={(event) => setMovementNote(event.target.value)}
+                placeholder="Describe por qué registras este movimiento" />
+            </div>
+            <Button className="w-full" disabled={isPending || !movementAmount || !movementNote.trim()}
+              onClick={onRecordMovement}>
+              Registrar en caja
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={closeDialogOpen}
