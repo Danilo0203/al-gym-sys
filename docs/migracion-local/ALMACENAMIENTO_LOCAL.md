@@ -20,7 +20,7 @@
 - La API local acepta `POST /media/exercises` y `POST /media/products` con sesión y permiso de alta o edición, limita el cuerpo a 5 MB, verifica la firma de PNG/JPEG/WebP/GIF y guarda el archivo por SHA-256 bajo `LOCAL_MEDIA_ROOT` (valor por defecto `./data/media`).
 - `GET /media/{tipo}/{archivo}` requiere sesión, verifica el hash y sirve el archivo. Next.js expone la URL relativa `/api/media/{tipo}/{archivo}` y reenvía la sesión a la API, de modo que el navegador no necesita conocer el puerto del backend.
 - La prueba sintética subió y leyó una imagen PNG desde un directorio temporal, confirmó rechazo sin sesión o permiso y rechazo de datos que no son imagen.
-- La creación manual de ejercicios ya sube la imagen comprimida a esta API y guarda su URL relativa en `public.exercises` de PostgreSQL local. La búsqueda y selección de ejercicios para rutinas ya consultan el catálogo local; sus demás escrituras siguen pendientes. Los productos y las imágenes de ejercicios existentes aún no están conectados. El directorio aún no figura como volumen en Compose ni tiene respaldo automático.
+- La creación manual de ejercicios ya sube la imagen comprimida a esta API y guarda su URL relativa en `public.exercises` de PostgreSQL local. La búsqueda y selección de ejercicios para rutinas ya consultan el catálogo local; sus demás escrituras siguen pendientes. Los productos y las imágenes de ejercicios existentes aún no están conectados. El directorio aún no figura como volumen en Compose. Existe un respaldo manual de DB y media con hashes (`backend/database/scripts/backup_local_database.sh`), pero aún no hay programación ni prueba con archivos reales.
 
 ## Importación pendiente
 
