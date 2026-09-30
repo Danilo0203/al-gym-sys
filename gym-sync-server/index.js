@@ -527,7 +527,7 @@ function buildDesiredCommandsForProfile(profile, shouldEnable) {
   ];
 }
 
-async function reconcileDeviceUsers(deviceId) {
+async function reconcileDeviceUsers(deviceId, customerId = null) {
   const sanitizedDeviceId = sanitizeText(deviceId, 80);
   if (!sanitizedDeviceId || sanitizedDeviceId === "Unknown") {
     return {
@@ -542,12 +542,19 @@ async function reconcileDeviceUsers(deviceId) {
     };
   }
 
-  const [expiredSubscriptions, profiles, activeSubscriptionUserIds, pendingCommandSet] = await Promise.all([
+  const [expiredSubscriptions, allProfiles, activeSubscriptionUserIds, pendingCommandSet] = await Promise.all([
     expirePastDueSubscriptions(),
     loadProfilesForDeviceReconcile(),
     loadActiveSubscriptionUserIds(),
     loadPendingCommandSet(sanitizedDeviceId),
   ]);
+  const profiles = customerId
+    ? allProfiles.filter((profile) => profile.id === customerId)
+    : allProfiles;
+
+  if (customerId && profiles.length === 0) {
+    return { success: false, reason: "profile_not_found" };
+  }
 
   const rowsToInsert = [];
   let enabledUsers = 0;
@@ -1328,7 +1335,15 @@ app.post("/api/device-users/reconcile", async (req, res) => {
       return res.status(400).json({ success: false, error: "missing_device_id" });
     }
 
-    const result = await reconcileDeviceUsers(deviceId);
+    const customerId = payload.customer_id == null ? null : String(payload.customer_id).trim();
+    if (customerId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) {
+      return res.status(400).json({ success: false, error: "invalid_customer_id" });
+    }
+
+    const result = await reconcileDeviceUsers(deviceId, customerId);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
     return res.json({
       success: true,
       ...result,

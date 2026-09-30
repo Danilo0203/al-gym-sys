@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { reconcileCustomerMutation } from "../../../_device-sync";
 import { proxyCustomersRequest } from "../../../_lib";
 
 interface RouteContext {
@@ -7,8 +8,9 @@ interface RouteContext {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
-  return proxyCustomersRequest(request, `/customers/${id}/membership/status`, {
+  const response = await proxyCustomersRequest(request, `/customers/${id}/membership/status`, {
     method: "PATCH",
     withJsonBody: true,
   });
+  return reconcileCustomerMutation(response, id);
 }

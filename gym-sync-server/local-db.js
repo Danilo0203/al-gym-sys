@@ -58,7 +58,8 @@ function createLocalDb(pool) {
       const result = await pool.query(
         `UPDATE public.subscriptions SET status = 'expired'
          WHERE status = 'active'
-           AND end_date < (now() AT TIME ZONE 'America/Guatemala')::date
+           AND public.subscription_access_until(end_date, grace_days)
+               < (now() AT TIME ZONE 'America/Guatemala')::date
          RETURNING id, user_id, end_date`,
       );
       return result.rows;
@@ -74,7 +75,9 @@ function createLocalDb(pool) {
       const result = await pool.query(
         `SELECT DISTINCT user_id FROM public.subscriptions
          WHERE status = 'active'
-           AND end_date >= (now() AT TIME ZONE 'America/Guatemala')::date`,
+           AND start_date <= (now() AT TIME ZONE 'America/Guatemala')::date
+           AND public.subscription_access_until(end_date, grace_days)
+               >= (now() AT TIME ZONE 'America/Guatemala')::date`,
       );
       return new Set(result.rows.map((row) => row.user_id));
     },

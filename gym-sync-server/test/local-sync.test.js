@@ -11,8 +11,9 @@ const password = randomBytes(24).toString("hex");
 const token = randomBytes(24).toString("hex");
 const deviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const reconcileDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
+const targetedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const firstReconcileBiometricId = 700000 + (randomBytes(4).readUInt32BE(0) % 100000);
-const reconcileBiometricIds = [firstReconcileBiometricId, firstReconcileBiometricId + 1];
+const reconcileBiometricIds = Array.from({ length: 6 }, (_, index) => firstReconcileBiometricId + index);
 const customerIds = [];
 let planId = null;
 let server;
@@ -65,9 +66,9 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
   if (sync) await sync.db.close();
-  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}');
+  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}', '${targetedDeviceId}');
     DELETE FROM public.device_commands
-      WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}')
+      WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}', '${targetedDeviceId}')
          OR command ~ 'Pin=(${reconcileBiometricIds.join("|")})([^0-9]|$)';
     DELETE FROM public.subscriptions WHERE user_id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
     DELETE FROM public.profiles WHERE id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
@@ -179,30 +180,65 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
   planId = Number(adminSql(`INSERT INTO public.plans (name, price, duration_days)
     VALUES ('ZZTEST SYNC ${randomUUID()}', 100, 30) RETURNING id;`));
   assert.ok(planId > 0);
-  for (const [index, endDate] of ["current_date + 5", "current_date - 1"].entries()) {
+  const cases = [
+    { startDate: "current_date - 20", endDate: "current_date + 5", active: true },
+    { startDate: "current_date - 20", endDate: "current_date - 4", active: true },
+    { startDate: "current_date - 20", endDate: "current_date - 1", active: true },
+    { startDate: null, endDate: null, active: true },
+    { startDate: "current_date + 1", endDate: "current_date + 30", active: true },
+    { startDate: "current_date - 20", endDate: "current_date + 5", active: false },
+  ];
+  for (const [index, { startDate, endDate, active }] of cases.entries()) {
     const id = randomUUID();
     customerIds.push(id);
     adminSql(`INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
       VALUES ('${id}', '${id}@sync.test.local', '{}'::jsonb, now(), now());
       INSERT INTO public.profiles (id, full_name, phone, birth_date, role, biometric_id, is_active)
-      VALUES ('${id}', 'ZZTEST SYNC ${index}', '', DATE '1990-01-01', 'client', ${reconcileBiometricIds[index]}, true);
-      INSERT INTO public.subscriptions (user_id, plan_id, start_date, end_date, status)
-      VALUES ('${id}', ${planId}, current_date - 20, ${endDate}, 'active');`);
+      VALUES ('${id}', 'ZZTEST SYNC ${index}', '', DATE '1990-01-01', 'client', ${reconcileBiometricIds[index]}, ${active});
+      ${endDate ? `INSERT INTO public.subscriptions (user_id, plan_id, start_date, end_date, status)
+      VALUES ('${id}', ${planId}, ${startDate}, ${endDate}, 'active');` : ""}`);
   }
 
   const result = await api("/api/device-users/reconcile", {
     method: "POST", headers: authHeaders(), body: JSON.stringify({ device_id: reconcileDeviceId }),
   });
   assert.equal(result.status, 200);
-  assert.ok(result.body.queued_commands >= 3);
-  assert.ok(result.body.enabled_users >= 1);
-  assert.ok(result.body.disabled_users >= 1);
+  assert.ok(result.body.queued_commands >= 8);
+  assert.ok(result.body.enabled_users >= 2);
+  assert.ok(result.body.disabled_users >= 4);
   assert.equal(result.body.expired_subscriptions, 1);
   const commands = await api(`/api/device-commands?device_id=${reconcileDeviceId}&executed=false`,
     { headers: authHeaders() });
   assert.ok(commands.body.data.some((row) => row.command.includes(`Pin=${reconcileBiometricIds[0]}`) && row.command.includes("Name=")));
   assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[1]}`));
+  assert.ok(commands.body.data.some((row) => row.command.includes(`Pin=${reconcileBiometricIds[2]}`) && row.command.includes("Name=")));
+  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[3]}`));
+  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[4]}`));
+  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[5]}`));
   const states = adminSql(`SELECT status::text FROM public.subscriptions
     WHERE user_id = '${customerIds[1]}';`);
   assert.equal(states, "expired");
+  assert.equal(adminSql(`SELECT status::text FROM public.subscriptions WHERE user_id = '${customerIds[2]}';`), "active");
+
+  assert.equal((await api("/api/device-users/reconcile", {
+    method: "POST", headers: authHeaders(),
+    body: JSON.stringify({ device_id: targetedDeviceId, customer_id: "bad-id" }),
+  })).status, 400);
+  assert.equal((await api("/api/device-users/reconcile", {
+    method: "POST", headers: authHeaders(),
+    body: JSON.stringify({ device_id: targetedDeviceId, customer_id: randomUUID() }),
+  })).status, 404);
+
+  const targeted = await api("/api/device-users/reconcile", {
+    method: "POST", headers: authHeaders(),
+    body: JSON.stringify({ device_id: targetedDeviceId, customer_id: customerIds[2] }),
+  });
+  assert.equal(targeted.status, 200);
+  assert.equal(targeted.body.profiles_considered, 1);
+  assert.equal(targeted.body.enabled_users, 1);
+  assert.equal(targeted.body.disabled_users, 0);
+  assert.equal(targeted.body.queued_commands, 2);
+  const targetedCommands = await api(`/api/device-commands?device_id=${targetedDeviceId}&executed=false`,
+    { headers: authHeaders() });
+  assert.ok(targetedCommands.body.data.every((row) => row.command.includes(`Pin=${reconcileBiometricIds[2]}`)));
 });

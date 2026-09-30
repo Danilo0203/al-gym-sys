@@ -1,7 +1,7 @@
 import type {
   CreateCustomerData,
   RenewSubscriptionData,
-} from "@/features/customers/actions/customer-actions";
+} from "@/features/customers/lib/customer-form-types";
 
 type CashCustomerData = CreateCustomerData | RenewSubscriptionData;
 

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { customerListResponseSchema } from "@/features/customers/lib/local-customers";
+import { reconcileCustomerMutation } from "./_device-sync";
 import { proxyCustomersRequest, proxyValidatedCustomersGet } from "./_lib";
 
 const ALLOWED_QUERY_PARAMS = [
@@ -22,8 +23,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  return proxyCustomersRequest(request, "/customers", {
+  const response = await proxyCustomersRequest(request, "/customers", {
     method: "POST",
     withJsonBody: true,
   });
+  return reconcileCustomerMutation(response);
 }

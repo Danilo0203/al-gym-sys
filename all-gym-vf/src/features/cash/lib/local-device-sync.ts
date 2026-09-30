@@ -17,14 +17,14 @@ function localSyncUrl(): URL | null {
     if (url.protocol !== "http:" ||
         !["127.0.0.1", "localhost", "[::1]", "sync"].includes(url.hostname) ||
         url.username || url.password || url.search || url.hash) return null;
-    url.pathname = "/api/device-users/register";
+    url.pathname = "/api/device-users/reconcile";
     return url;
   } catch {
     return null;
   }
 }
 
-export async function registerLocalCustomerOnClock(customerId: string): Promise<DeviceSyncResult> {
+export async function reconcileLocalCustomerOnClock(customerId: string): Promise<DeviceSyncResult> {
   const url = localSyncUrl();
   const token = process.env.GYM_SYNC_API_TOKEN?.trim();
   const deviceId = process.env.DEFAULT_ZK_DEVICE_SN?.trim();
@@ -43,16 +43,14 @@ export async function registerLocalCustomerOnClock(customerId: string): Promise<
     });
     const result = await response.json().catch(() => null) as {
       success?: boolean;
-      synced?: boolean;
-      queued?: boolean;
-      method?: string;
+      queued_commands?: number;
     } | null;
     const success = response.ok && result?.success === true;
     return {
       attempted: true,
-      synced: success && result?.synced === true,
-      queued: success && result?.queued === true,
-      method: result?.method === "direct" || result?.method === "queue" ? result.method : "none",
+      synced: success,
+      queued: success && Number(result?.queued_commands) > 0,
+      method: success && Number(result?.queued_commands) > 0 ? "queue" : "none",
     };
   } catch {
     return { attempted: true, synced: false, queued: false, method: "none" };

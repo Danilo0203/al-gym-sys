@@ -17,23 +17,19 @@
 - `src/app/mi` is the client/member area.
 - `src/proxy.ts` is the real auth/role gatekeeper. It redirects `/`, `/iniciar-sesion`, `/panel/*`, and `/mi/*` based on the logged-in user's role.
 
-## Supabase
-- Use `src/lib/supabase/server.ts` for SSR/server-component queries tied to the current user.
-- Use `src/lib/supabase/client.ts` only in client components.
-- Use `src/lib/supabase/admin.ts` only on the server; it requires `SUPABASE_SERVICE_ROLE_KEY` and bypasses normal user RLS.
-- The actual publishable key env var is `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`, not `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The README is stale on this point.
-- Required env vars for normal auth/query flow: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`.
-- Extra server-only flows depend on `SUPABASE_SERVICE_ROLE_KEY`.
+## Local backend
+- Runtime auth and data operations should use the local backend through `src/lib/auth/backend-auth.ts` or existing `/api/*` proxies. Forward the local session cookie from server actions.
+- Do not add new Supabase runtime calls. Remaining Supabase code is migration debt tracked in `PLAN_MIGRACION_LOCAL.md`; remove it as each active flow moves to the local backend.
+- The old Supabase migration files are historical schema references. New local schema changes belong in the sibling `algym-local-backend/database/migrations/` and must be tested against `algym_test` before applying to `algym`.
 
 ## External Integrations
-- Customer/device sync code in `src/features/customers/actions/customer-actions.ts` also depends on `GYM_SYNC_SERVER_URL`, `GYM_SYNC_API_TOKEN`, `DEFAULT_ZK_DEVICE_SN`, `ZK_DEFAULT_USER_GROUP`, `ZK_DEFAULT_AUTHORIZE_TIMEZONE_ID`, and `ZK_DEFAULT_AUTHORIZE_DOOR_ID`.
-- The attendance admin page at `src/app/panel/asistencias/page.tsx` reads from the external `gym-sync-server`, not directly from a Next API route.
-- Exercise catalog import/search also depends on `EXERCISEDB_RAPIDAPI_KEY`; the Supabase Edge Function lives at `supabase/functions/exercise-catalog-provider/index.ts`.
+- Cash and customer mutations reconcile the affected customer with local `gym-sync-server` through `src/features/cash/lib/local-device-sync.ts`. Device hardware acceptance is still pending.
+- The attendance admin page reads the local `gym-sync-server`.
+- The visible exercise catalog and routine search use local API data and local images; generation and historical imports still need migration.
 
 ## Database And Schema
-- Repo-managed SQL lives under `supabase/migrations/`.
-- Payments/customer listings rely on database views such as `payments_overview` and `customer_overview`; check SQL migrations and live Supabase schema before changing those flows.
-- If you change RLS, views, or SQL functions through Supabase MCP, mirror the change in `supabase/migrations/` or the repo will drift from the live database.
+- Active local SQL migrations live in the sibling backend's `database/migrations/`.
+- Payments/customer listings rely on PostgreSQL views such as `payments_overview` and `customer_overview`; check the local schema and exact migration state before changing those flows.
 
 ## UI Tooling
 - Tailwind is v4 via `@tailwindcss/postcss`; there is no root `tailwind.config.*`.

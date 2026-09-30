@@ -3,7 +3,7 @@
 import {
   type CreateCustomerData,
   type RenewSubscriptionData,
-} from "@/features/customers/actions/customer-actions";
+} from "@/features/customers/lib/customer-form-types";
 import { createCashCustomer, renewCashCustomer } from "@/features/cash/actions/cash-customer-actions";
 import type { CustomerSheetFormValues } from "@/features/customers/hooks/use-hook-form-customers";
 import { poundsToKilograms } from "@/lib/fitness/measurements";

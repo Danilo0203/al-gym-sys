@@ -3,12 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
-import { createClient } from "@/lib/supabase/server";
-import { toCashActionError } from "@/features/cash/lib/cash-module-errors";
 import type { TrainingProfileInput } from "@/lib/training/types";
-import { normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 import { customerDetailSchema, customerHistoryResponseSchema, customerListResponseSchema } from "@/features/customers/lib/local-customers";
 import { customerRoutineWorkspaceSchema } from "@/features/customers/lib/local-customer-routine";
 
@@ -19,19 +15,6 @@ type MovementType = "sale" | "manual_income" | "withdrawal" | "refund" | "adjust
 export type MovementCategory = "membership" | "product" | "enrollment" | "service" | "other";
 type SessionLinkStatus = "assigned" | "out_of_session";
 type CashHistorySortItem = { id: string; desc: boolean };
-
-interface PlanFinancialRow {
-  id: number;
-  price: number | string;
-  duration_days: number | string | null;
-}
-
-interface PaymentRpcResult {
-  subscription_id: string | null;
-  payment_id: string | null;
-  cash_movement_id: string | null;
-  session_link_status: SessionLinkStatus | null;
-}
 
 interface CashDashboardSummary {
   openingAmount: number;
@@ -243,23 +226,6 @@ export interface CashPaymentReversalContext {
   status: string | null;
 }
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (error && typeof error === "object" && "message" in error) {
-    return String(error.message || "");
-  }
-
-  return "";
-}
-
-function isPaymentMethodEnumTypeMismatch(error: unknown) {
-  const message = getErrorMessage(error).toLowerCase();
-  return message.includes('column "method" is of type payment_method') && message.includes("expression is of type text");
-}
-
 async function requireCashAccess() {
   const access = await getUserAccessContext();
   if (!access.isAuthenticated || !access.userId || !hasPermission(access, "cash.operate")) {
@@ -326,132 +292,6 @@ async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typ
   }
 
   return session;
-}
-
-async function createSubscriptionPaymentWithCashFallback(params: {
-  access: Awaited<ReturnType<typeof requireCashAccess>>;
-  customerId: string;
-  planId: number;
-  startDate?: string | null;
-  endDate?: string | null;
-  amountOriginal?: number;
-  finalPrice?: number;
-  discountAmount?: number;
-  graceDays?: number;
-  paymentMethod: PaymentMethod;
-  requireSession?: boolean;
-  expireCurrentSubscription?: boolean;
-}) {
-  const adminClient = createAdminClient();
-  const supabase = await createClient();
-
-  if (params.requireSession) {
-    await requireOperableOpenCashSession(params.access);
-  }
-
-  const { data: planRow, error: planError } = await adminClient
-    .from("plans")
-    .select("id, price, duration_days")
-    .eq("id", params.planId)
-    .single();
-
-  if (planError || !planRow) {
-    throw new Error("Plan no encontrado");
-  }
-
-  const plan = planRow as PlanFinancialRow;
-  const startDate =
-    params.startDate ||
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Guatemala",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-  const endDate =
-    params.endDate ||
-    (() => {
-      const durationDays = Number(plan.duration_days || 30);
-      const date = new Date(`${startDate}T00:00:00`);
-      date.setDate(date.getDate() + durationDays);
-      return new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/Guatemala",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(date);
-    })();
-  const amountOriginal = params.amountOriginal ?? Number(plan.price);
-  const discountAmount = Number(params.discountAmount ?? 0);
-  const amountPaid = Number(params.finalPrice ?? amountOriginal - discountAmount);
-
-  if (params.expireCurrentSubscription) {
-    const { error: expireError } = await adminClient
-      .from("subscriptions")
-      .update({ status: "expired" })
-      .eq("user_id", params.customerId)
-      .eq("status", "active");
-
-    if (expireError) {
-      throw expireError;
-    }
-  }
-
-  const { data: subscriptionRow, error: subscriptionError } = await adminClient
-    .from("subscriptions")
-    .insert({
-      user_id: params.customerId,
-      plan_id: params.planId,
-      start_date: startDate,
-      end_date: endDate,
-      status: "active",
-      discount_amount: discountAmount,
-      grace_days: normalizeGraceDays(params.graceDays),
-    })
-    .select("id")
-    .single();
-
-  if (subscriptionError || !subscriptionRow) {
-    throw subscriptionError || new Error("No se pudo crear la suscripcion");
-  }
-
-  const { data: paymentRow, error: paymentError } = await adminClient
-    .from("payments")
-    .insert({
-      subscription_id: subscriptionRow.id,
-      user_id: params.customerId,
-      amount_original: amountOriginal,
-      discount_amount: discountAmount,
-      amount_paid: amountPaid,
-      method: params.paymentMethod,
-      payment_date: new Date().toISOString(),
-      created_by_user_id: params.access.userId,
-      status: "posted",
-    })
-    .select("id")
-    .single();
-
-  if (paymentError || !paymentRow) {
-    throw paymentError || new Error("No se pudo registrar el pago");
-  }
-
-  const { data: movementRow, error: movementError } = await supabase.rpc("attach_payment_to_cash", {
-    p_payment_id: paymentRow.id,
-    p_actor_user_id: params.access.userId,
-    p_source_category: "membership",
-    p_note: null,
-  });
-
-  if (movementError) {
-    throw movementError;
-  }
-
-  return {
-    subscription_id: subscriptionRow.id as string,
-    payment_id: paymentRow.id as string,
-    cash_movement_id: movementRow?.id ?? null,
-    session_link_status: movementRow?.session_link_status ?? null,
-  } satisfies PaymentRpcResult;
 }
 
 export async function getCashDashboardData(): Promise<CashDashboardData> {
@@ -671,160 +511,6 @@ export async function recordManualCashMovement(
   revalidatePath("/panel/caja");
   revalidatePath("/panel/caja/historial");
   revalidatePath(`/panel/caja/historial/${sessionId}`);
-}
-
-export async function runCreateSubscriptionPaymentForExistingCustomer(params: {
-  customerId: string;
-  planId?: number;
-  startDate?: string | null;
-  endDate?: string | null;
-  amountOriginal?: number;
-  finalPrice?: number;
-  discountAmount?: number;
-  graceDays?: number;
-  paymentMethod?: PaymentMethod;
-  requireSession?: boolean;
-}) {
-  const access = await requireCashAccess();
-  if (params.requireSession) {
-    await requireOperableOpenCashSession(access);
-  }
-
-  if (params.planId && params.amountOriginal !== undefined) {
-    const fallbackData = await createSubscriptionPaymentWithCashFallback({
-      access,
-      customerId: params.customerId,
-      planId: params.planId,
-      startDate: params.startDate,
-      endDate: params.endDate,
-      amountOriginal: params.amountOriginal,
-      finalPrice: params.finalPrice,
-      discountAmount: params.discountAmount,
-      graceDays: params.graceDays,
-      paymentMethod: params.paymentMethod ?? "cash",
-      requireSession: params.requireSession,
-    });
-
-    revalidatePath("/panel/caja");
-    revalidatePath("/panel/caja/historial");
-    revalidatePath("/panel/pagos");
-    revalidatePath("/panel/resumen");
-
-    return fallbackData;
-  }
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("create_subscription_payment_for_existing_customer", {
-    p_customer_id: params.customerId,
-    p_plan_id: params.planId ?? null,
-    p_start_date: params.startDate ?? null,
-    p_end_date: params.endDate ?? null,
-    p_final_price: params.finalPrice ?? null,
-    p_discount_amount: params.discountAmount ?? 0,
-    p_grace_days: normalizeGraceDays(params.graceDays),
-    p_payment_method: params.paymentMethod ?? "cash",
-    p_created_by_user_id: access.userId,
-  });
-
-  if (error) {
-    if (isPaymentMethodEnumTypeMismatch(error) && params.planId) {
-      const fallbackData = await createSubscriptionPaymentWithCashFallback({
-        access,
-        customerId: params.customerId,
-        planId: params.planId,
-        startDate: params.startDate,
-        endDate: params.endDate,
-        finalPrice: params.finalPrice,
-        discountAmount: params.discountAmount,
-        graceDays: params.graceDays,
-        paymentMethod: params.paymentMethod ?? "cash",
-        requireSession: params.requireSession,
-      });
-
-      revalidatePath("/panel/caja");
-      revalidatePath("/panel/caja/historial");
-      revalidatePath("/panel/pagos");
-      revalidatePath("/panel/resumen");
-
-      return fallbackData;
-    }
-
-    throw toCashActionError(error, "No se pudo registrar la suscripcion con pago");
-  }
-
-  revalidatePath("/panel/caja");
-  revalidatePath("/panel/caja/historial");
-  revalidatePath("/panel/pagos");
-  revalidatePath("/panel/resumen");
-
-  return (data || null) as PaymentRpcResult | null;
-}
-
-export async function runRenewSubscriptionWithPayment(params: {
-  customerId: string;
-  planId: number;
-  startDate: string;
-  endDate: string;
-  price: number;
-  discountAmount: number;
-  graceDays?: number;
-  amountPaid: number;
-  paymentMethod: PaymentMethod;
-  requireSession?: boolean;
-}) {
-  const access = await requireCashAccess();
-  if (params.requireSession) {
-    await requireOperableOpenCashSession(access);
-  }
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.rpc("renew_subscription_with_payment", {
-    p_customer_id: params.customerId,
-    p_plan_id: params.planId,
-    p_start_date: params.startDate,
-    p_end_date: params.endDate,
-    p_price: params.price,
-    p_discount_amount: params.discountAmount,
-    p_grace_days: normalizeGraceDays(params.graceDays),
-    p_amount_paid: params.amountPaid,
-    p_payment_method: params.paymentMethod,
-    p_created_by_user_id: access.userId,
-  });
-
-  if (error) {
-    if (isPaymentMethodEnumTypeMismatch(error)) {
-      const fallbackData = await createSubscriptionPaymentWithCashFallback({
-        access,
-        customerId: params.customerId,
-        planId: params.planId,
-        startDate: params.startDate,
-        endDate: params.endDate,
-        amountOriginal: params.price,
-        finalPrice: params.amountPaid,
-        discountAmount: params.discountAmount,
-        graceDays: params.graceDays,
-        paymentMethod: params.paymentMethod,
-        requireSession: params.requireSession,
-        expireCurrentSubscription: true,
-      });
-
-      revalidatePath("/panel/caja");
-      revalidatePath("/panel/caja/historial");
-      revalidatePath("/panel/pagos");
-      revalidatePath("/panel/resumen");
-
-      return fallbackData;
-    }
-
-    throw toCashActionError(error, "No se pudo renovar la suscripcion");
-  }
-
-  revalidatePath("/panel/caja");
-  revalidatePath("/panel/caja/historial");
-  revalidatePath("/panel/pagos");
-  revalidatePath("/panel/resumen");
-
-  return (data || null) as PaymentRpcResult | null;
 }
 
 export async function getPaymentReversalContext(paymentId: string): Promise<CashPaymentReversalContext | null> {
