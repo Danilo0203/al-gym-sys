@@ -1,161 +1,37 @@
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getServerAuthContext } from "@/lib/auth/server-auth";
-import { getCurrentUserRoutineWorkspace } from "@/features/customers/actions/customer-routine-actions";
+import { cookies } from "next/headers";
+
+import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import type {
   ClientApiEnvelope,
-  ClientMembershipHistoryEntry,
   ClientMembershipPayload,
-  ClientOverviewSummary,
   ClientProfilePayload,
   ClientRoutinePayload,
 } from "@/features/client/types";
 
 function withMeta<T>(data: T): ClientApiEnvelope<T> {
-  return {
-    data,
-    meta: {
-      fetched_at: new Date().toISOString(),
-    },
-  };
+  return { data, meta: { fetched_at: new Date().toISOString() } };
 }
 
-async function requireAuthenticatedUser() {
-  const authContext = await getServerAuthContext();
-
-  if (!authContext) {
-    throw new Error("UNAUTHORIZED");
-  }
-
-  return {
-    adminClient: createAdminClient(),
-    authContext,
-  };
-}
-
-function getPlanSummary(planRef: unknown): { name?: string | null; price?: number | null } | null {
-  if (!planRef) return null;
-  if (Array.isArray(planRef)) {
-    return (planRef[0] as { name?: string | null; price?: number | null } | undefined) ?? null;
-  }
-
-  return planRef as { name?: string | null; price?: number | null };
-}
-
-async function getCurrentOverview(adminClient: ReturnType<typeof createAdminClient>, userId: string): Promise<ClientOverviewSummary | null> {
-  const { data, error } = await adminClient
-    .from("customer_overview")
-    .select(
-      "full_name, phone, avatar_url, gender, birth_date, plan_name, subscription_status, subscription_start_date, subscription_end_date, subscription_grace_days, subscription_access_until, last_check_in, is_active",
-    )
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Error loading customer overview:", error);
-    return null;
-  }
-
-  return (data as ClientOverviewSummary | null) ?? null;
+async function fetchOwnData<T>(path: "/me/profile" | "/me/membership" | "/me/routine"): Promise<T> {
+  const cookieStore = await cookies();
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  const response = await fetchAuthBackend(path, {
+    method: "GET",
+    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+  });
+  if (response.status === 401) throw new Error("UNAUTHORIZED");
+  if (!response.ok) throw new Error("No se pudieron cargar los datos del portal local.");
+  return await response.json() as T;
 }
 
 export async function getCurrentClientProfileData(): Promise<ClientApiEnvelope<ClientProfilePayload>> {
-  const { authContext, adminClient } = await requireAuthenticatedUser();
-  const [{ data: profile, error: profileError }, overview] = await Promise.all([
-    adminClient
-      .from("profiles")
-      .select("full_name, phone, birth_date, gender, avatar_url, role, created_at, updated_at")
-      .eq("id", authContext.user.id)
-      .maybeSingle(),
-    getCurrentOverview(adminClient, authContext.user.id),
-  ]);
-
-  if (profileError) {
-    console.error("Error loading current profile:", profileError);
-  }
-
-  return withMeta({
-    id: authContext.user.id,
-    email: authContext.user.email || null,
-    full_name:
-      typeof profile?.full_name === "string"
-        ? profile.full_name
-        : authContext.user.profile.fullName,
-    phone: typeof profile?.phone === "string" ? profile.phone : null,
-    birth_date: typeof profile?.birth_date === "string" ? profile.birth_date : null,
-    gender: typeof profile?.gender === "string" ? profile.gender : null,
-    avatar_url:
-      typeof profile?.avatar_url === "string"
-        ? profile.avatar_url
-        : null,
-    role: typeof profile?.role === "string" ? profile.role : authContext.authorization.roleSlug,
-    created_at: typeof profile?.created_at === "string" ? profile.created_at : null,
-    updated_at: typeof profile?.updated_at === "string" ? profile.updated_at : null,
-    overview,
-  });
+  return withMeta(await fetchOwnData<ClientProfilePayload>("/me/profile"));
 }
 
 export async function getCurrentClientMembershipData(): Promise<ClientApiEnvelope<ClientMembershipPayload>> {
-  const { authContext, adminClient } = await requireAuthenticatedUser();
-  const [overview, subscriptionsResponse] = await Promise.all([
-    getCurrentOverview(adminClient, authContext.user.id),
-    adminClient
-      .from("subscriptions")
-      .select(
-        `
-        id,
-        start_date,
-        end_date,
-        status,
-        discount_amount,
-        grace_days,
-        plan_id,
-        plans!inner (
-          name,
-          price
-        )
-      `,
-      )
-      .eq("user_id", authContext.user.id)
-      .order("created_at", { ascending: false })
-      .limit(8),
-  ]);
-
-  if (subscriptionsResponse.error) {
-    throw subscriptionsResponse.error;
-  }
-
-  const subscriptions: ClientMembershipHistoryEntry[] = (subscriptionsResponse.data || []).map((subscription) => {
-    const plan = getPlanSummary(subscription.plans);
-
-    return {
-      id: subscription.id,
-      plan_id: typeof subscription.plan_id === "number" ? subscription.plan_id : null,
-      plan_name: plan?.name || "Plan",
-      start_date: subscription.start_date,
-      end_date: subscription.end_date,
-      grace_days: subscription.grace_days ?? null,
-      access_until: null,
-      status: subscription.status,
-      price: plan?.price || 0,
-      discount_amount: subscription.discount_amount || 0,
-    };
-  });
-
-  return withMeta({
-    overview,
-    subscriptions,
-  });
+  return withMeta(await fetchOwnData<ClientMembershipPayload>("/me/membership"));
 }
 
 export async function getCurrentClientRoutineData(): Promise<ClientApiEnvelope<ClientRoutinePayload>> {
-  const { authContext, adminClient } = await requireAuthenticatedUser();
-  const [workspace, overview] = await Promise.all([
-    getCurrentUserRoutineWorkspace(),
-    getCurrentOverview(adminClient, authContext.user.id),
-  ]);
-
-  return withMeta({
-    customer_name: overview?.full_name || authContext.user.profile.fullName || "Cliente",
-    workspace,
-  });
+  return withMeta(await fetchOwnData<ClientRoutinePayload>("/me/routine"));
 }

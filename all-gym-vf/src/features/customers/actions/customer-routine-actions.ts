@@ -818,12 +818,3 @@ export async function getCustomerRoutineWorkspace(customerId: string): Promise<C
   const { adminClient } = await requireAdminAccess();
   return getRoutineWorkspaceForUser(adminClient, customerId);
 }
-
-export async function getCurrentUserRoutineWorkspace(): Promise<CustomerRoutineWorkspace> {
-  const access = await getUserAccessContext();
-  if (!access.isAuthenticated || !access.userId) {
-    throw new Error("No autorizado");
-  }
-
-  return getRoutineWorkspaceForUser(createAdminClient(), access.userId);
-}

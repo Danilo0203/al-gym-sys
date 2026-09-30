@@ -26,7 +26,7 @@ ExerciseDB/RapidAPI y Cloudflare Tunnel son dependencias externas distintas de H
 - [x] `B-01` Ambas ramas `codex/local-unified-test` existen y apuntan a los repositorios correctos.
 - [x] `B-02` El backend ofrece autenticación/sesiones, perfil y Resumen local (`src/modules/auth`, `profile`, `dashboard`).
 - [x] `B-03` El backend ofrece clientes, historial, salud, membresías y operaciones de rutinas (`src/modules/customers`, `memberships`, `customer-routines`). **Esto no afirma que todas las pantallas de esos dominios hayan dejado Supabase.**
-- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0014_exercise_editor_routine_visibility.sql`; `0012` a `0014` están aplicadas en `algym` local, con respaldo previo a `0013`.
+- [x] `B-04` El repositorio backend versiona migraciones hasta `database/migrations/0015_client_portal_plan_history.sql`; `0012` a `0015` están aplicadas en `algym` local, con respaldos previos a `0013` y `0015`.
 - [ ] `B-05` Prueba integral sin conexión al VPS/Supabase. Pendiente; es la puerta final de este plan.
 
 ## Paquetes paralelos y dependencias
@@ -68,7 +68,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 - [ ] `P2-01` Implementar administración local de usuarios: crear, cambiar credenciales/estado y desactivar; adaptar `src/features/users/actions/user-actions.ts`. Mantener consistentes `auth.users`, `profiles`, roles y sesiones locales.
 - [ ] `P2-02` Migrar CRUD de roles, asignaciones y permisos de `src/features/roles/actions/role-actions.ts`; verificar que el backend aplica la autorización y no confía solo en la interfaz.
 - [ ] `P2-03` Auditar y retirar los caminos Supabase restantes en `src/features/customers/actions/customer-actions.ts` sin perder altas, edición de cuenta, salud, membresía ni baja. Conservar sincronización biométrica donde aplique.
-- [ ] `P2-04` Migrar perfil, membresía e historial del portal `/mi` desde `src/features/client/server/client-data.ts` a endpoints locales con autorización del propio socio. Validar acceso cruzado entre clientes.
+- [ ] `P2-04` Migrar perfil, membresía e historial del portal `/mi` desde `src/features/client/server/client-data.ts` a endpoints locales con autorización del propio socio. Las tres lecturas ya usan `/me/*` local; la prueba de acceso cruzado pasó. Faltan prueba de la UI sin red externa y tratamiento local de avatares históricos.
 - [ ] `P2-05` Resolver los flujos opcionales de OAuth y recuperación de contraseña: equivalentes locales o desactivación explícita y comprobada. El login con contraseña local existente debe seguir pasando.
 
 ## Fase 3 — Ejercicios, rutinas, archivos y mensajes
@@ -132,5 +132,6 @@ Agregar una fila por paquete al integrarlo. Esta tabla complementa las casillas;
 | P3-01/P3-05 | Búsqueda y selección de ejercicios locales; entrega parcial | Codex | Backend `c214543`; web `src/features/routines/actions/exercise-search-actions.ts` y selector | GET accesible con permiso de rutinas; 132/132 pruebas backend, lint/typecheck/build web. Eliminada la búsqueda remota visible y el fallback de imágenes remotas en rutinas. | Falta catálogo e imágenes reales; generación y plantillas conservan escrituras/lecturas Supabase |
 | P3-05/P5-05 | Sin consulta automática de WorkoutX; túnel opcional | Codex | Web `routine-workspace-shared.tsx`; `docker-compose.yml` | Búsqueda de la API externa y clave embebida eliminada; Compose muestra `sync`/`web` por defecto y añade `cloudflared` solo con `--profile remote-access`. | Web y sync aún usan Supabase; no existe prueba integral sin internet |
 | P5-03 | Respaldo manual DB + media; entrega parcial | Codex | Backend `a9832ed` | `pg_dump` y tar con hashes verificados; restauración de prueba en otra base local (0 ejercicios, 0 productos, 140 perfiles) y comparación de un archivo de prueba recuperado. Host remoto rechazado. | Falta automatización, ubicación y retención finales, imágenes reales y restauración en otra instancia |
+| P2-04 | Lecturas del portal local; puerta offline pendiente | Codex | Backend `3c765b1` y migración `0015`; web `src/features/client/server/client-data.ts` | `pnpm test` 133/133 con 401, aislamiento entre dos socios y plan histórico inactivo; backend typecheck/build, web lint/typecheck/build. Respaldo `/private/tmp/algym-before-client-portal-0015.dump` verificado; política aplicada en `algym` local; endpoint vivo sin sesión respondió 401. | Faltan prueba visual y con red externa bloqueada; avatares remotos se ocultan hasta importarlos |
 
 **Para un agente que retoma:** escoger el primer ID `[ ]` cuyo prerrequisito esté resuelto, comprobar que el archivo y el estado del repo siguen vigentes, ejecutar solo ese alcance, entregar evidencia y solicitar integración. No inferir que una casilla pendiente está hecha porque existe una función con nombre parecido.
