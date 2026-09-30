@@ -19,7 +19,7 @@ export default async function MessagesPage() {
     <PageContainer
       scrollable={false}
       pageTitle="Mensajes"
-      pageDescription="Administración de plantillas de mensajes para WhatsApp"
+      pageDescription="Administración de plantillas de mensajes locales"
       pageHeaderAction={hasPermission(access, "messages.create") ? <CreateMessageButton /> : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={2} rowCount={5} />}>

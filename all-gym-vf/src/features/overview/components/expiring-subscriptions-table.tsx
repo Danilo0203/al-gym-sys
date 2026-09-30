@@ -5,10 +5,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { IconBrandWhatsapp, IconAlertTriangle } from '@tabler/icons-react';
+import { IconCopy, IconAlertTriangle } from '@tabler/icons-react';
 import type { ExpiringSubscription } from '../actions/panel-actions';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { copyMessageText } from '@/features/messages/copy-message';
 
 interface ExpiringSubscriptionsTableProps {
   data: ExpiringSubscription[];
@@ -55,13 +56,15 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
     );
   };
 
-  const getWhatsAppLink = (phone: string | null, userName: string) => {
-    if (!phone) return null;
-    const cleanPhone = phone.replace(/\D/g, '');
-    const message = encodeURIComponent(
-      `¡Hola ${userName}! 👋 Te recordamos que tu membresía en el gimnasio está por vencer. ¿Te gustaría renovarla?`
-    );
-    return `https://wa.me/${cleanPhone}?text=${message}`;
+  const copyReminder = async (userName: string) => {
+    try {
+      await copyMessageText(
+        `¡Hola ${userName}! 👋 Te recordamos que tu membresía en el gimnasio está por vencer. ¿Te gustaría renovarla?`,
+      );
+      toast.success('Recordatorio copiado');
+    } catch {
+      toast.error('No se pudo copiar el recordatorio');
+    }
   };
 
   if (data.length === 0) {
@@ -127,22 +130,18 @@ export function ExpiringSubscriptionsTable({ data }: ExpiringSubscriptionsTableP
                 </div>
                 <div className='flex items-center gap-2'>
                   {getDaysLeftBadge(sub.days_left)}
-                  {sub.phone && getWhatsAppLink(sub.phone, sub.user_name) && (
                     <Button
-                      asChild
-                        size='sm' 
+                        size='sm'
                         variant='outline'
                         className='h-8 w-8 p-0 border-emerald-500/50 hover:bg-emerald-500/10'
+                        title='Copiar recordatorio'
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void copyReminder(sub.user_name);
+                        }}
                     >
-                      <Link
-                        href={getWhatsAppLink(sub.phone, sub.user_name)!}
-                        target='_blank'
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <IconBrandWhatsapp className='h-4 w-4 text-emerald-500' />
-                      </Link>
+                        <IconCopy className='h-4 w-4 text-emerald-500' />
                     </Button>
-                  )}
                 </div>
               </div>
             ))}

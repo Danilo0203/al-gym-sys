@@ -44,6 +44,7 @@ export function MessageFormSheet({ open, onOpenChange, template, onSuccess }: Me
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(template?.name || "");
       setContent(template?.content || "");
     }
@@ -112,7 +113,7 @@ export function MessageFormSheet({ open, onOpenChange, template, onSuccess }: Me
           <SheetDescription>
             {isEditing
               ? "Modifica el nombre y contenido del mensaje."
-              : "Crea una plantilla para enviar por WhatsApp."}
+              : "Crea una plantilla para copiar y usar sin conexión."}
           </SheetDescription>
         </SheetHeader>
 

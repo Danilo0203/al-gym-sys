@@ -10,17 +10,13 @@ export interface CustomerWhatsApp {
 
 export interface WhatsAppContext {
   customerName: string;
-  phone: string;
   startDate: string | null;
   endDate: string | null;
   lastCheckIn: string | null;
   isSubscriptionExpired: boolean;
 }
 
-export function buildWhatsAppContext(customer: CustomerWhatsApp): WhatsAppContext | null {
-  const phone = customer.phone;
-  if (!phone) return null;
-
+export function buildWhatsAppContext(customer: CustomerWhatsApp): WhatsAppContext {
   const now = new Date();
 
   let isSubscriptionExpired = false;
@@ -37,7 +33,6 @@ export function buildWhatsAppContext(customer: CustomerWhatsApp): WhatsAppContex
 
   return {
     customerName: customer.full_name || "Cliente",
-    phone,
     startDate: customer.subscription_start_date,
     endDate: customer.subscription_end_date,
     lastCheckIn: customer.last_check_in,
@@ -107,10 +102,4 @@ export function interpolateMessage(content: string, ctx: WhatsAppContext): {
   result = result.replace(/@ultimo_ingreso/g, lastCheckInText);
 
   return { text: result, hasNoAttendanceData };
-}
-
-export function buildWhatsAppUrl(ctx: WhatsAppContext, messageText: string): string {
-  const cleanPhone = ctx.phone.replace(/\D/g, "");
-  const encoded = encodeURIComponent(messageText);
-  return `https://wa.me/${cleanPhone}?text=${encoded}`;
 }

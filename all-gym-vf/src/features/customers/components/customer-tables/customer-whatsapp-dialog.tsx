@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { IconAlertTriangle, IconBrandWhatsapp } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCopy } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { buildWhatsAppContext, interpolateMessage, buildWhatsAppUrl, type CustomerWhatsApp } from "@/features/messages/whatsapp-helper";
+import { buildWhatsAppContext, interpolateMessage, type CustomerWhatsApp } from "@/features/messages/whatsapp-helper";
+import { copyMessageText } from "@/features/messages/copy-message";
 
 const PLACEHOLDERS = [
   { token: "@cliente", label: "Cliente" },
@@ -27,9 +28,7 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
   const [messageText, setMessageText] = useState("");
 
   const ctx = buildWhatsAppContext(customer);
-  const { text: interpolatedText, hasNoAttendanceData } = ctx
-    ? interpolateMessage(messageText, ctx)
-    : { text: messageText, hasNoAttendanceData: false };
+  const { text: interpolatedText, hasNoAttendanceData } = interpolateMessage(messageText, ctx);
 
   useEffect(() => {
     if (!open) {
@@ -59,31 +58,29 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
     });
   };
 
-  const handleSend = () => {
-    if (!ctx) {
-      toast.error("No hay teléfono registrado para este cliente");
-      return;
-    }
+  const handleCopy = async () => {
     if (!messageText.trim()) {
       toast.error("El mensaje está vacío");
       return;
     }
-    const url = buildWhatsAppUrl(ctx, interpolatedText);
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      await copyMessageText(interpolatedText);
+      toast.success("Mensaje copiado");
+    } catch {
+      toast.error("No se pudo copiar el mensaje");
+    }
   };
-
-  if (!ctx) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <IconBrandWhatsapp className="h-5 w-5 text-emerald-500" />
-            Enviar mensaje a {customer.full_name || "Cliente"}
+            <IconCopy className="h-5 w-5 text-emerald-500" />
+            Preparar mensaje para {customer.full_name || "Cliente"}
           </DialogTitle>
           <DialogDescription>
-            Escribe un mensaje personalizado para enviar por WhatsApp.
+            Escribe un mensaje y cópialo para usarlo sin conexión.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,12 +132,12 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
               Cancelar
             </Button>
             <Button
-              onClick={handleSend}
+              onClick={() => void handleCopy()}
               disabled={!messageText.trim()}
               className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
             >
-              <IconBrandWhatsapp className="h-4 w-4" />
-              Abrir WhatsApp
+              <IconCopy className="h-4 w-4" />
+              Copiar mensaje
             </Button>
           </div>
         </div>
