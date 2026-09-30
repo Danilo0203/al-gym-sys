@@ -10,7 +10,6 @@ import { toCashActionError } from "@/features/cash/lib/cash-module-errors";
 import type { TrainingProfileInput } from "@/lib/training/types";
 import { normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 
-const GUATEMALA_UTC_OFFSET = "-06:00";
 
 type SessionStatus = "open" | "closed" | "closed_with_difference" | "cancelled";
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -18,13 +17,6 @@ type MovementType = "sale" | "manual_income" | "withdrawal" | "refund" | "adjust
 export type MovementCategory = "membership" | "product" | "enrollment" | "service" | "other";
 type SessionLinkStatus = "assigned" | "out_of_session";
 type CashHistorySortItem = { id: string; desc: boolean };
-
-interface CashRegisterRow {
-  id: string;
-  name: string;
-  is_active: boolean;
-  created_at: string;
-}
 
 interface CashSessionRow {
   id: string;
@@ -43,45 +35,6 @@ interface CashSessionRow {
   created_at: string;
 }
 
-interface CashHistoryUserRow {
-  opened_by_user_id: string;
-}
-
-interface CashMovementRow {
-  id: string;
-  cash_session_id: string | null;
-  movement_type: MovementType;
-  category: MovementCategory;
-  payment_method: PaymentMethod | null;
-  amount: number | string;
-  cash_effect_amount: number | string;
-  session_link_status: SessionLinkStatus;
-  origin: "system" | "manual";
-  source_payment_id: string | null;
-  source_subscription_id: string | null;
-  source_product_sale_id: string | null;
-  customer_id: string | null;
-  created_by_user_id: string;
-  note: string | null;
-  created_at: string;
-  voided_at: string | null;
-  voided_by_user_id: string | null;
-}
-
-interface ProductSaleRow {
-  id: string;
-  sale_number: string;
-  total_amount: number | string;
-  status: string | null;
-}
-
-interface ProductSaleItemRow {
-  product_sale_id: string;
-  product_name: string;
-  quantity: number | string;
-  line_total: number | string;
-}
-
 interface ProductInventoryRow {
   id: string;
   name: string;
@@ -91,11 +44,6 @@ interface ProductInventoryRow {
   sale_price: number | string;
   stock_quantity: number | string;
   is_active: boolean;
-}
-
-interface ProfileNameRow {
-  id: string;
-  full_name: string | null;
 }
 
 interface CashCustomerRow {
@@ -149,11 +97,6 @@ interface PaymentSummaryRow {
   amount_paid: number | string | null;
   method: PaymentMethod | null;
   status?: string | null;
-}
-
-interface PaymentStatusRow {
-  id: string;
-  status: string | null;
 }
 
 interface PlanFinancialRow {
@@ -457,10 +400,6 @@ async function requireOperableOpenCashSession(accessArg?: Awaited<ReturnType<typ
   return session;
 }
 
-function buildNameMap(rows: ProfileNameRow[] | null | undefined) {
-  return new Map((rows || []).map((row) => [row.id, row.full_name || "Usuario"]));
-}
-
 function buildLatestPaymentMap(rows: PaymentSummaryRow[] | null | undefined) {
   const latestPaymentMap = new Map<
     string,
@@ -486,229 +425,6 @@ function buildLatestPaymentMap(rows: PaymentSummaryRow[] | null | undefined) {
   }
 
   return latestPaymentMap;
-}
-
-function formatProductQuantity(value: number | string | null | undefined) {
-  const quantity = toNumber(value) || 0;
-  return Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function buildProductSaleSummaryMap(
-  sales: ProductSaleRow[] | null | undefined,
-  items: ProductSaleItemRow[] | null | undefined,
-) {
-  const itemMap = new Map<string, string[]>();
-
-  for (const item of items || []) {
-    const existing = itemMap.get(item.product_sale_id) || [];
-    existing.push(`${item.product_name} x${formatProductQuantity(item.quantity)}`);
-    itemMap.set(item.product_sale_id, existing);
-  }
-
-  return new Map(
-    (sales || []).map((sale) => [
-      sale.id,
-      {
-        saleNumber: sale.sale_number,
-        status: sale.status || null,
-        itemsSummary: itemMap.get(sale.id)?.join(", ") || null,
-      },
-    ]),
-  );
-}
-
-function mapSessionRow(
-  row: CashSessionRow,
-  registerMap: Map<string, string>,
-  profileMap: Map<string, string>,
-): CashSessionView {
-  return {
-    id: row.id,
-    session_number: row.session_number,
-    cash_register_id: row.cash_register_id,
-    cash_register_name: registerMap.get(row.cash_register_id) || "Caja",
-    opened_by_user_id: row.opened_by_user_id,
-    opened_by_name: profileMap.get(row.opened_by_user_id) || "Usuario",
-    closed_by_user_id: row.closed_by_user_id,
-    closed_by_name: row.closed_by_user_id ? profileMap.get(row.closed_by_user_id) || "Usuario" : null,
-    opened_at: row.opened_at,
-    closed_at: row.closed_at,
-    opening_amount: toNumber(row.opening_amount) || 0,
-    expected_amount: toNumber(row.expected_amount),
-    counted_amount: toNumber(row.counted_amount),
-    difference_amount: toNumber(row.difference_amount),
-    status: row.status,
-    notes: row.notes,
-  };
-}
-
-function mapMovementRows(
-  rows: CashMovementRow[],
-  profileMap: Map<string, string>,
-  paymentStatusMap: Map<string, string | null> = new Map(),
-  productSaleSummaryMap: Map<string, { saleNumber: string; status: string | null; itemsSummary: string | null }> = new Map(),
-): CashMovementView[] {
-  return rows.map((row) => ({
-    id: row.id,
-    cash_session_id: row.cash_session_id,
-    movement_type: row.movement_type,
-    category: row.category,
-    payment_method: row.payment_method,
-    amount: toNumber(row.amount) || 0,
-    cash_effect_amount: toNumber(row.cash_effect_amount) || 0,
-    session_link_status: row.session_link_status,
-    origin: row.origin,
-    source_payment_id: row.source_payment_id,
-    source_subscription_id: row.source_subscription_id,
-    source_product_sale_id: row.source_product_sale_id,
-    source_product_sale_status: row.source_product_sale_id
-      ? productSaleSummaryMap.get(row.source_product_sale_id)?.status || null
-      : null,
-    product_sale_number: row.source_product_sale_id
-      ? productSaleSummaryMap.get(row.source_product_sale_id)?.saleNumber || null
-      : null,
-    product_sale_items_summary: row.source_product_sale_id
-      ? productSaleSummaryMap.get(row.source_product_sale_id)?.itemsSummary || null
-      : null,
-    customer_id: row.customer_id,
-    customer_name: row.customer_id ? profileMap.get(row.customer_id) || "Cliente" : null,
-    created_by_user_id: row.created_by_user_id,
-    created_by_name: profileMap.get(row.created_by_user_id) || "Usuario",
-    note: row.note,
-    created_at: row.created_at,
-    voided_at: row.voided_at,
-    source_payment_status: row.source_payment_id ? paymentStatusMap.get(row.source_payment_id) || null : null,
-  }));
-}
-
-function buildCashSummary(movements: CashMovementView[], openingAmount: number): CashDashboardSummary {
-  const summary: CashDashboardSummary = {
-    openingAmount,
-    expectedAmount: openingAmount,
-    countedAmount: null,
-    differenceAmount: null,
-    totalsByMethod: {
-      cash: 0,
-      card: 0,
-      transfer: 0,
-    },
-    refunds: 0,
-    adjustments: 0,
-    voids: 0,
-    salesCount: 0,
-  };
-
-  for (const movement of movements) {
-    if (movement.voided_at) continue;
-
-    summary.expectedAmount += movement.cash_effect_amount;
-
-    if (movement.movement_type === "sale") {
-      summary.salesCount += 1;
-      if (movement.payment_method) {
-        summary.totalsByMethod[movement.payment_method] += movement.amount;
-      }
-      continue;
-    }
-
-    if (movement.movement_type === "refund") {
-      summary.refunds += movement.amount;
-      continue;
-    }
-
-    if (movement.movement_type === "adjustment") {
-      summary.adjustments += movement.cash_effect_amount;
-      continue;
-    }
-
-    if (movement.movement_type === "void") {
-      summary.voids += movement.amount;
-    }
-  }
-
-  return summary;
-}
-
-async function hydrateSessions(sessions: CashSessionRow[]) {
-  const adminClient = createAdminClient();
-  const registerIds = Array.from(new Set(sessions.map((session) => session.cash_register_id)));
-  const profileIds = Array.from(
-    new Set(
-      sessions.flatMap((session) => [
-        session.opened_by_user_id,
-        session.closed_by_user_id,
-      ]).filter((value): value is string => Boolean(value)),
-    ),
-  );
-
-  const [{ data: registers, error: registerError }, { data: profiles }] = await Promise.all([
-    registerIds.length > 0
-      ? adminClient.from("cash_registers").select("id, name").in("id", registerIds)
-      : Promise.resolve({ data: [] as CashRegisterRow[], error: null }),
-    profileIds.length > 0
-      ? adminClient.from("profiles").select("id, full_name").in("id", profileIds)
-      : Promise.resolve({ data: [] as ProfileNameRow[], error: null }),
-  ]);
-
-  if (registerError) {
-    throw toCashActionError(registerError, "Error al hidratar sesiones de caja");
-  }
-
-  const registerMap = new Map((registers || []).map((register) => [register.id, register.name]));
-  const profileMap = buildNameMap(profiles as ProfileNameRow[] | null | undefined);
-
-  return sessions.map((session) => mapSessionRow(session, registerMap, profileMap));
-}
-
-async function getProfileMap(profileIds: string[]) {
-  const adminClient = createAdminClient();
-  if (profileIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const { data } = await adminClient.from("profiles").select("id, full_name").in("id", profileIds);
-  return buildNameMap(data as ProfileNameRow[] | null | undefined);
-}
-
-async function getPaymentStatusMap(paymentIds: string[]) {
-  const adminClient = createAdminClient();
-  if (paymentIds.length === 0) {
-    return new Map<string, string | null>();
-  }
-
-  const { data, error } = await adminClient.from("payments").select("id, status").in("id", paymentIds);
-  if (error) {
-    throw toCashActionError(error, "Error al cargar el estado de pagos vinculados");
-  }
-
-  return new Map(
-    ((data as PaymentStatusRow[] | null | undefined) || []).map((payment) => [payment.id, payment.status || null]),
-  );
-}
-
-async function getProductSaleSummaryMap(productSaleIds: string[]) {
-  const adminClient = createAdminClient();
-  if (productSaleIds.length === 0) {
-    return new Map<string, { saleNumber: string; status: string | null; itemsSummary: string | null }>();
-  }
-
-  const [{ data: sales, error: salesError }, { data: items, error: itemsError }] = await Promise.all([
-    adminClient.from("product_sales").select("id, sale_number, total_amount, status").in("id", productSaleIds),
-    adminClient
-      .from("product_sale_items")
-      .select("product_sale_id, product_name, quantity, line_total")
-      .in("product_sale_id", productSaleIds)
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (salesError || itemsError) {
-    throw toCashActionError(salesError || itemsError, "Error al cargar ventas de productos vinculadas");
-  }
-
-  return buildProductSaleSummaryMap(
-    sales as ProductSaleRow[] | null | undefined,
-    items as ProductSaleItemRow[] | null | undefined,
-  );
 }
 
 async function createSubscriptionPaymentWithCashFallback(params: {
@@ -1137,204 +853,29 @@ export async function getCashCustomerSummary(customerId: string): Promise<CashCu
 }
 
 export async function getCashHistoryData(filters: CashHistoryFilters = {}): Promise<CashHistoryData> {
-  const access = await requireCashAccess();
-  const adminClient = createAdminClient();
-  const page = filters.page && filters.page > 0 ? filters.page : 1;
-  const perPage = filters.perPage && filters.perPage > 0 ? filters.perPage : 10;
-
-  let query = adminClient
-    .from("cash_sessions")
-    .select("*", { count: "exact" });
-
-  if (filters.sessionNumber) {
-    query = query.ilike("session_number", `%${filters.sessionNumber}%`);
-  }
-
-  const status = filters.status || "all";
-  if (status !== "all") {
-    query = query.eq("status", status);
-  }
-
-  if (filters.dateFrom) {
-    query = query.gte("opened_at", `${filters.dateFrom}T00:00:00${GUATEMALA_UTC_OFFSET}`);
-  }
-
-  if (filters.dateTo) {
-    query = query.lte("opened_at", `${filters.dateTo}T23:59:59.999${GUATEMALA_UTC_OFFSET}`);
-  }
-
-  if (access.isOwner) {
-    if (filters.openedByUserId) {
-      query = query.eq("opened_by_user_id", filters.openedByUserId);
-    }
-  } else {
-    query = query.eq("opened_by_user_id", access.userId);
-  }
-
-  const sortColumnMap: Partial<Record<string, keyof CashSessionRow>> = {
-    session_number: "session_number",
-    opened_at: "opened_at",
-    closed_at: "closed_at",
-    opening_amount: "opening_amount",
-    difference_amount: "difference_amount",
-    status: "status",
-  };
-
-  let hasAppliedSort = false;
-  for (const sortItem of filters.sort || []) {
-    const column = sortColumnMap[sortItem.id];
-    if (!column) continue;
-
-    query = query.order(column, { ascending: !sortItem.desc, nullsFirst: false });
-    hasAppliedSort = true;
-  }
-
-  if (!hasAppliedSort) {
-    query = query.order("opened_at", { ascending: false });
-  }
-
-  const from = (page - 1) * perPage;
-  const to = from + perPage - 1;
-
-  query = query.range(from, to);
-
-  const { data: sessionRows, error, count } = await query;
-  if (error) {
-    throw toCashActionError(error, "Error al cargar historial de caja");
-  }
-
-  const sessions = await hydrateSessions((sessionRows as CashSessionRow[] | null) || []);
-  let availableUsers: Array<{ id: string; name: string }> = [];
-
-  if (access.isOwner) {
-    let userQuery = adminClient.from("cash_sessions").select("opened_by_user_id");
-
-    if (status !== "all") {
-      userQuery = userQuery.eq("status", status);
-    }
-
-    if (filters.dateFrom) {
-      userQuery = userQuery.gte("opened_at", `${filters.dateFrom}T00:00:00${GUATEMALA_UTC_OFFSET}`);
-    }
-
-    if (filters.dateTo) {
-      userQuery = userQuery.lte("opened_at", `${filters.dateTo}T23:59:59.999${GUATEMALA_UTC_OFFSET}`);
-    }
-
-    const { data: userRows, error: userError } = await userQuery;
-
-    if (userError) {
-      throw toCashActionError(userError, "Error al cargar responsables del historial de caja");
-    }
-
-    const uniqueUserIds = Array.from(
-      new Set(
-        ((userRows as CashHistoryUserRow[] | null) || [])
-          .map((row) => row.opened_by_user_id)
-          .filter((value): value is string => Boolean(value)),
-      ),
-    );
-
-    const profileMap = await getProfileMap(uniqueUserIds);
-    availableUsers = uniqueUserIds
-      .map((id) => ({ id, name: profileMap.get(id) || "Usuario" }))
-      .sort((left, right) => left.name.localeCompare(right.name, "es"));
-  }
-
-  return {
-    access,
-    sessions,
-    availableUsers,
-    totalItems: count || 0,
-    filters: {
-      dateFrom: filters.dateFrom || "",
-      dateTo: filters.dateTo || "",
-      status,
-      openedByUserId: access.isOwner ? filters.openedByUserId || "" : access.userId,
-    },
-  };
+  await requireCashAccess();
+  const query = new URLSearchParams({
+    page: String(filters.page && filters.page > 0 ? filters.page : 1),
+    perPage: String(filters.perPage && filters.perPage > 0 ? filters.perPage : 10),
+  });
+  if (filters.sessionNumber) query.set("sessionNumber", filters.sessionNumber);
+  if (filters.dateFrom) query.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) query.set("dateTo", filters.dateTo);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.openedByUserId) query.set("openedByUserId", filters.openedByUserId);
+  const allowedSort = new Set(["session_number", "opened_at", "closed_at", "opening_amount", "difference_amount", "status"]);
+  const sort = filters.sort?.filter((item) => allowedSort.has(item.id));
+  if (sort?.length) query.set("sort", sort.map((item) => `${item.id}:${item.desc ? "desc" : "asc"}`).join(","));
+  const response = await localCashRequest(`/sessions?${query.toString()}`);
+  if (!response.ok) throw await localCashError(response);
+  return await response.json() as CashHistoryData;
 }
 
 export async function getCashSessionDetail(sessionId: string): Promise<CashSessionDetailData> {
-  const access = await requireCashAccess();
-  const adminClient = createAdminClient();
-
-  const { data: sessionRows, error: sessionError } = await adminClient
-    .from("cash_sessions")
-    .select("*")
-    .eq("id", sessionId)
-    .limit(1);
-
-  if (sessionError) {
-    throw toCashActionError(sessionError, "Error al cargar sesion");
-  }
-
-  const sessionRow = (sessionRows as CashSessionRow[] | null)?.[0];
-  if (!sessionRow) {
-    throw new Error("Sesión de caja no encontrada");
-  }
-
-  if (!access.isOwner && sessionRow.opened_by_user_id !== access.userId) {
-    throw new Error("No autorizado para ver esta sesión");
-  }
-
-  const [session] = await hydrateSessions([sessionRow]);
-  const { data: movementRows, error: movementError } = await adminClient
-    .from("cash_movements")
-    .select("*")
-    .eq("cash_session_id", sessionId)
-    .order("created_at", { ascending: false });
-
-  if (movementError) {
-    throw toCashActionError(movementError, "Error al cargar movimientos de la sesion");
-  }
-
-  const profileIds = Array.from(
-    new Set(
-      ((movementRows as CashMovementRow[] | null) || []).flatMap((movement) => [
-        movement.created_by_user_id,
-        movement.customer_id,
-      ]).filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const profileMap = await getProfileMap(profileIds);
-  const paymentIds = Array.from(
-    new Set(
-      ((movementRows as CashMovementRow[] | null) || [])
-        .map((movement) => movement.source_payment_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const productSaleIds = Array.from(
-    new Set(
-      ((movementRows as CashMovementRow[] | null) || [])
-        .map((movement) => movement.source_product_sale_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  );
-  const [paymentStatusMap, productSaleSummaryMap] = await Promise.all([
-    getPaymentStatusMap(paymentIds),
-    getProductSaleSummaryMap(productSaleIds),
-  ]);
-  const movements = mapMovementRows(
-    (movementRows as CashMovementRow[] | null) || [],
-    profileMap,
-    paymentStatusMap,
-    productSaleSummaryMap,
-  );
-  const summary = buildCashSummary(movements, session.opening_amount);
-  summary.countedAmount = session.counted_amount;
-  summary.differenceAmount = session.difference_amount;
-  if (session.expected_amount !== null) {
-    summary.expectedAmount = session.expected_amount;
-  }
-
-  return {
-    access,
-    session,
-    summary,
-    movements,
-  };
+  await requireCashAccess();
+  const response = await localCashRequest(`/sessions/${encodeURIComponent(sessionId)}`);
+  if (!response.ok) throw await localCashError(response);
+  return await response.json() as CashSessionDetailData;
 }
 
 export async function openCashSession(registerId: string, openingAmount: number, notes?: string) {

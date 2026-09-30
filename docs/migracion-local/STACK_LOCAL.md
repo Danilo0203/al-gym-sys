@@ -4,6 +4,8 @@
 
 `docker-compose.yml` levanta `web`, `backend` y `sync`. Por defecto, `backend` y `sync` conectan con el PostgreSQL instalado en esta computadora mediante `host.docker.internal`. `web` usa `http://backend:4000` dentro de Docker. El backend se publica para diagnóstico en `127.0.0.1:4001`, sin interferir con un backend del host en el puerto 4000. Su carpeta de archivos persistentes es `../algym-local-backend/data/media`.
 
+Si la web se ejecuta con `pnpm dev` en el host y el backend permanece en Compose, configurar `ALGYM_BACKEND_URL=http://127.0.0.1:4001` en `all-gym-vf/.env.local`. La configuración privada de desarrollo de esta computadora ya usa ese puerto. El puerto 4000 solo corresponde al backend ejecutado directamente en el host.
+
 Ambos repositorios deben estar en carpetas hermanas. Antes de iniciar el stack, configurar los archivos privados `../algym-local-backend/.env`, `deploy/env/web.env` y `deploy/env/sync.env`. Los servicios web pendientes todavía pueden consultar Supabase; este modo **aún no es la aceptación sin internet**.
 
 ```bash
