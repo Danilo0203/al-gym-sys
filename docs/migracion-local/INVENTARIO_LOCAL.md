@@ -1,6 +1,6 @@
 # Inventario local: contrato y límites
 
-La pantalla `/panel/inventario` usa la API del backend local. Las acciones de Next.js reenvían la cookie de sesión; el navegador no recibe credenciales de PostgreSQL. Las imágenes nuevas se guardan en `/media/products` y se leen por `/api/media/products/<hash>.<ext>` desde el disco local respaldado junto a la base.
+La pantalla `/panel/inventario` usa la API del backend local. Las acciones de Next.js reenvían la cookie de sesión; el navegador no recibe credenciales de PostgreSQL. Las imágenes nuevas se guardan junto con el alta o edición de productos en `/inventory/products/with-image` o `/inventory/products/{id}/with-image` y se leen por `/api/media/products/<hash>.<ext>` desde el disco local respaldado junto a la base.
 
 | Método | Ruta | Permiso | Operación |
 | --- | --- | --- | --- |
