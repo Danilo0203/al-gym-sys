@@ -1,0 +1,59 @@
+# Ensayo desechable con PostgreSQL de Compose y sin salida externa en web/backend/sync.
+# Usar junto con docker-compose.yml y docker-compose.container-db.yml en otro proyecto.
+services:
+  web:
+    ports: !reset []
+    extra_hosts: !reset []
+
+  backend:
+    ports: !reset []
+    extra_hosts: !reset []
+    volumes: !override
+      - ${ALGYM_OFFLINE_MEDIA_ROOT:?Indica una carpeta de media aislada}:/app/data/media
+
+  sync:
+    ports: !reset []
+    extra_hosts: !reset []
+
+  backup:
+    profiles: !override [offline-backup]
+    volumes: !override
+      - ../algym-local-backend/database/scripts/backup_local_database.sh:/scripts/backup_local_database.sh:ro
+      - ../algym-local-backend/database/scripts/backup_loop.sh:/scripts/backup_loop.sh:ro
+      - ../algym-local-backend/database/scripts/backup_health.sh:/scripts/backup_health.sh:ro
+      - ../algym-local-backend/database/scripts/prune_automatic_backups.sh:/scripts/prune_automatic_backups.sh:ro
+      - ${ALGYM_OFFLINE_MEDIA_ROOT:?Indica una carpeta de media aislada}:/media:ro
+      - ${ALGYM_OFFLINE_BACKUP_DIR:?Indica una carpeta de respaldos aislada}:/backups
+
+  gateway:
+    image: al-gym-sys-web:latest
+    command: ["node", "/opt/algym/offline-gateway.mjs"]
+    volumes:
+      - ./deploy/scripts/offline-gateway.mjs:/opt/algym/offline-gateway.mjs:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${ALGYM_OFFLINE_GATEWAY_PORT:-3900}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - gym-local
+      - gym-access
+
+networks:
+  gym-local:
+    internal: true
+  gym-access:
+    driver: bridge

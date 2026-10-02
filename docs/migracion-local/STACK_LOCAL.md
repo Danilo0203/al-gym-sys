@@ -42,6 +42,35 @@ docker compose --env-file deploy/env/web.env up -d --no-build --pull never web b
 
 Ese último comando usa el PostgreSQL **del host** configurado por el Compose habitual; requiere que ya esté restaurado y accesible. No cambia automáticamente a la base del contenedor. Para un corte aprobado hacia PostgreSQL de Compose, levantar primero `postgres` con `--profile container-db --no-build --pull never`, restaurar y reconciliar su base, y luego iniciar `web backend sync` con **ambos** archivos Compose y las mismas opciones `--no-build --pull never`; arrancar `backup` después de verificar la restauración. El modo sin descarga evita reconstrucciones accidentales, pero todavía se debe probar el corte final completo con red externa bloqueada y datos vigentes.
 
+### Ensayo reproducible desde el navegador sin salida externa
+
+`docker-compose.offline-acceptance.yml` es un tercer archivo para un **proyecto desechable**, junto con `docker-compose.yml` y `docker-compose.container-db.yml`. Requiere Docker Compose compatible con `!reset` y `!override` (validado con v5.1.4). Web, backend, sync y PostgreSQL quedan solo en una red Docker `internal: true`, sin puertos publicados ni `host.docker.internal`. El servicio `gateway` usa la imagen web ya incluida en el paquete offline y publica únicamente `127.0.0.1:3900` por defecto; reenvía rutas del navegador exclusivamente al servicio `web`. El gateway tiene además una red de acceso para que Docker Desktop permita abrir la página desde el host, por lo que esta topología prueba el aislamiento de **web/backend/sync**, no un firewall de salida para el gateway. El respaldo automático se excluye de este ensayo salvo que se active explícitamente su perfil separado.
+
+Preparar un respaldo verificado de `algym` sin detener ni escribir en la base operativa. Elegir un nombre de proyecto nuevo y carpetas absolutas, vacías y ajenas a la media operativa. Desde `al-gym-sys`, por ejemplo:
+
+```bash
+export ALGYM_OFFLINE_MEDIA_ROOT=/ruta/absoluta/media-ensayo-vacia
+export ALGYM_OFFLINE_BACKUP_DIR=/ruta/absoluta/respaldos-ensayo-vacios
+mkdir -p "$ALGYM_OFFLINE_MEDIA_ROOT" "$ALGYM_OFFLINE_BACKUP_DIR"
+python3 deploy/scripts/check_offline_compose.py
+
+docker compose -f docker-compose.yml -f docker-compose.container-db.yml \
+  -f docker-compose.offline-acceptance.yml -p algymofflineensayo \
+  --profile container-db up -d --wait --no-build --pull never postgres
+
+python3 ../algym-local-backend/database/scripts/restore_snapshot_to_container.py \
+  /ruta/absoluta/respaldo-verificado --media-target "$ALGYM_OFFLINE_MEDIA_ROOT" \
+  --project-name algymofflineensayo
+
+docker compose -f docker-compose.yml -f docker-compose.container-db.yml \
+  -f docker-compose.offline-acceptance.yml -p algymofflineensayo \
+  --profile container-db up -d --wait --no-build --pull never gateway
+
+curl -fsS http://127.0.0.1:3900/api/health
+```
+
+El restaurador no reemplaza una base existente; el volumen de PostgreSQL pertenece al nombre de proyecto elegido. `--no-build --pull never` evita descargas de imágenes, pero se necesitan las imágenes del paquete offline importadas previamente. El gateway exige un `Host` de loopback y rechaza una URL absoluta como destino. Para terminar el ensayo, comprobar primero el nombre de proyecto y ejecutar `docker compose` con los mismos tres `-f`, `-p algymofflineensayo` y `--profile container-db`, seguido de `down -v --remove-orphans`; retirar después solo las carpetas temporales creadas para ese ensayo. El reloj físico no puede usar esta red interna para conexión directa; su prueba LAN y la aceptación final con datos vigentes son puertas posteriores.
+
 El servicio `postgres` está bajo el perfil `container-db`; no participa en el arranque habitual. No publica puerto al host. Se mantiene separado para preparar y verificar un corte de datos sin sustituir la base operativa por accidente.
 
 `docker-compose.container-db.yml` es la configuración preparada para el **corte posterior a la reconciliación**: hace que `backend` y `sync` usen el servicio `postgres` y esperen su healthcheck. La configuración habitual, sin ese archivo, sigue usando PostgreSQL del host. Validar la combinación sin cambiar servicios:
