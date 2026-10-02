@@ -19,7 +19,7 @@
 
 - La API local acepta `POST /media/exercises` y `POST /media/products` con sesión y permiso de alta o edición, limita el cuerpo a 5 MB, verifica la firma de PNG/JPEG/WebP/GIF y guarda el archivo por SHA-256 bajo `LOCAL_MEDIA_ROOT` (valor por defecto `./data/media`).
 - `GET /media/{tipo}/{archivo}` requiere sesión y comprueba que el archivo esté referenciado por un ejercicio o producto local. El personal necesita un permiso de catálogo, inventario o rutina correspondiente; un socio solo puede leer la imagen de un ejercicio incluido en su rutina activa. Después verifica el hash y sirve el archivo. Next.js expone la URL relativa `/api/media/{tipo}/{archivo}` y reenvía la sesión a la API, de modo que el navegador no necesita conocer el puerto del backend.
-- Una subida todavía ocurre antes de la escritura de la entidad. Si esa segunda operación falla, el archivo queda huérfano en disco y responde 404 a la lectura. `audit_local_media.py` permite detectar ese archivo sin borrarlo; falta una limpieza coordinada para completar el contrato del punto 4.
+- Una subida todavía ocurre antes de la escritura de la entidad. Si esa segunda operación falla, el archivo queda huérfano en disco y responde 404 a la lectura. `audit_local_media.py` permite detectarlo; `quarantine_local_media.py` puede moverlo a una cuarentena reversible con las escrituras detenidas. La coordinación automática de subida y vínculo sigue pendiente para completar el contrato del punto 4.
 - La prueba sintética subió y leyó una imagen PNG desde un directorio temporal, confirmó rechazo sin sesión o permiso y rechazo de datos que no son imagen.
 - La creación manual de ejercicios ya sube la imagen comprimida a esta API y guarda su URL relativa en `public.exercises` de PostgreSQL local. La búsqueda y selección de ejercicios para rutinas consultan el catálogo local; sus demás escrituras siguen pendientes. Los productos nuevos también guardan imágenes locales mediante `/media/products`. El directorio `../algym-local-backend/data/media` está montado como volumen del backend en Compose. Existe un respaldo manual de DB y media con hashes (`backend/database/scripts/backup_local_database.sh`), pero aún no hay programación ni prueba con archivos reales del usuario.
 
@@ -38,6 +38,27 @@ python3 database/scripts/audit_local_media.py --db-name algym \
 Tras el corte a PostgreSQL de Compose, añadir `--db-mode compose --project-name NOMBRE_DEL_PROYECTO` y conservar `--db-name algym`. Usar siempre el directorio de media montado por el backend de ese mismo proyecto.
 
 La prueba en `algym_test` detectó un archivo sin vínculo, una URL sin archivo, un hash incorrecto y un enlace simbólico; confirmó que archivos y filas conservaron sus valores. La lectura de `algym` operativa del 1 de octubre informó 0 archivos y 0 referencias de media local. Estos conteos corresponden a la copia desactualizada: repetir la auditoría después de importar datos e imágenes vigentes. No automatizar el borrado mientras una petición pueda estar entre la subida y el vínculo de su imagen.
+
+### Cuarentena reversible de archivos sin vínculo
+
+`quarantine_local_media.py` considera solo imágenes con nombre, firma y SHA-256 válidos, sin referencia en ejercicios ni productos y con al menos 24 horas de antigüedad. Rechaza una auditoría con archivos corruptos o referencias locales ausentes. La vista previa no escribe y entrega un `snapshot_sha256`; la aplicación exige ese valor para detectar cambios desde la vista previa. Nunca borra archivos ni cambia PostgreSQL: mueve cada candidato a una carpeta nueva en el mismo disco, fuera de `LOCAL_MEDIA_ROOT`, y guarda un `manifest.json` privado para poder devolverlo. Comprueba referencias antes y después de mover y revierte los movimientos si detecta un cambio durante la ejecución.
+
+Orden de operación sobre `algym` cuando existan datos vigentes: detener todas las escrituras del backend y cualquier importador de media; verificar que ya no haya solicitudes pendientes; generar y verificar un respaldo nuevo de PostgreSQL **y** media; ejecutar la vista previa; revisar cada candidato; aplicar con el hash de esa vista previa y una carpeta de cuarentena nueva. `--writers-stopped` es una declaración del operador, no una detección automática. No ejecutar el modo de aplicación mientras la API pueda recibir subidas. La cuarentena y su manifiesto deben quedar fuera de Git y conservarse junto con el respaldo.
+
+```bash
+cd algym-local-backend
+python3 database/scripts/quarantine_local_media.py --db-name algym \
+  --media-root /ruta/absoluta/algym-local-backend/data/media
+python3 database/scripts/quarantine_local_media.py --db-name algym \
+  --media-root /ruta/absoluta/algym-local-backend/data/media \
+  --apply --expect HASH_DE_LA_VISTA_PREVIA --writers-stopped \
+  --backup /ruta/absoluta/respaldo-verificado \
+  --quarantine-dir /ruta/absoluta/cuarentena-nueva
+```
+
+Para restaurar un archivo, mantener las escrituras detenidas, comprobar su entrada en `manifest.json`, que la ruta original no exista y que el hash y la firma coincidan; moverlo desde la cuarentena a su subdirectorio original y repetir `audit_local_media.py`. No sobrescribir un archivo existente. Tras el corte a PostgreSQL en Compose se agregan `--db-mode compose --project-name NOMBRE_DEL_PROYECTO` en ambas llamadas y se usa el volumen de media de ese proyecto.
+
+Se ensayaron 6 casos unitarios: archivo referenciado, candidato, vista previa obsoleta, reversión al aparecer una referencia, respaldo obligatorio y antigüedad mínima. Un ensayo completo con `algym_test` movió 1 PNG sintético a cuarentena y verificó bytes, hash y manifiesto. Las vistas previas de `algym` y `algym_test` operativos no encontraron candidatos; no se movió ningún archivo real.
 
 `algym-local-backend/database/scripts/export_media_inventory.py` genera desde una copia local un manifiesto privado con los IDs y URLs actuales que aún no son media local. Deja `file` vacío para completar manualmente con la ruta absoluta de cada imagen; `--all` incluye también filas sin URL o ya locales. No consulta Supabase ni descarga binarios, no cambia la base, crea el JSON con permisos `0600` y se niega a sobrescribirlo. Por ejemplo, tras restaurar el origen en un PostgreSQL aislado de Compose:
 
