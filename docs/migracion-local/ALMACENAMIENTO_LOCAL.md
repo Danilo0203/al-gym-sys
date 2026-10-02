@@ -67,6 +67,17 @@ python3 database/scripts/export_media_inventory.py --db-mode compose --db-name a
   --project-name NOMBRE_DEL_PROYECTO --output /ruta/absoluta/manifiesto-privado.json
 ```
 
+Cuando los archivos históricos estén copiados en una carpeta local, `match_local_media.py` puede preparar otro manifiesto sin consultar la red ni PostgreSQL. Compara sufijos exactos de la ruta de cada URL histórica con las rutas bajo `--files-root`, exige al menos dos segmentos y acepta solo una coincidencia única. Verifica que el archivo sea PNG/JPEG/WebP/GIF de hasta 5 MB y escribe su SHA-256. Las rutas ambiguas, archivos inválidos, URLs sin correspondencia y campos ya decididos manualmente quedan sin alterar. Nunca adivina por nombre parecido ni sobrescribe el manifiesto de entrada. La salida contiene URLs históricas y rutas privadas: se crea con permisos `0600` fuera de Git.
+
+```bash
+cd algym-local-backend
+python3 database/scripts/match_local_media.py /ruta/absoluta/manifiesto-privado.json \
+  --files-root /ruta/absoluta/objetos-descargados \
+  --output /ruta/absoluta/manifiesto-emparejado.json
+```
+
+Revisar a mano las rutas propuestas, los campos vacíos y las animaciones distintas antes del modo seco de `import_local_media.py`. Esta herramienta no sirve para crear los archivos que aún faltan ni cambia la base local.
+
 `algym-local-backend/database/scripts/import_local_media.py` prepara la sustitución **sin descargar archivos**. Recibe ese manifiesto JSON o uno creado desde `media-manifest.example.json` con el tipo, ID y ruta absoluta del archivo de cada entidad; `expected_image_url` y, para ejercicios, `expected_animation_url` deben coincidir exactamente con la copia local de PostgreSQL (pueden ser `null`). Los avatares de perfiles usan `kind: "avatars"`, ID UUID y `expected_avatar_url`. Nunca adivinar qué archivo corresponde a un ID. `sha256` es opcional en cada elemento para contrastar los binarios antes de importar. Las URLs históricas pueden ser privadas: conservar el manifiesto fuera de Git.
 
 Si la animación histórica de un ejercicio es distinta de su imagen, el exportador deja `animation_file` vacío para exigir una decisión explícita: poner la ruta absoluta de un GIF/WebP/PNG/JPEG local, con `animation_sha256` opcional, o `null` para dejar `animation_url` vacía. También puede indicarse el mismo archivo de `file` si se quiere reutilizar la imagen deliberadamente. Si la URL histórica de animación era igual a la imagen, el importador reutiliza `file`; si era `null`, la deja en `null`. No sustituye silenciosamente una animación distinta por la imagen estática.
