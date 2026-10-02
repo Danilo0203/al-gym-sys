@@ -226,7 +226,7 @@ export function RoleFormSheet({ open, onOpenChange, role, onSuccess }: RoleFormS
           <SheetDescription>
             {isEditing
               ? "Modifica el nombre y los permisos del rol."
-              : "Crea un rol con sus permisos. La asignación de roles personalizados a usuarios aún no está disponible."}
+              : "Crea un rol con sus permisos para asignarlo a usuarios internos."}
           </SheetDescription>
         </SheetHeader>
 

@@ -19,10 +19,14 @@ installer
 deploy/env/web.env
 deploy/env/sync.env
 deploy/env/postgres.env
+deploy/offline-images/
 
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*all-gym-vf/supabase/seed.sql
+pnpm-debug.log*
+all-gym-vf/supabase/seed.sql
 /all-gym-vf/supabase/seed.sql
 backups/
+.nodeterm/
+.pnpm-store/

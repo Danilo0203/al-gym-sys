@@ -2,6 +2,7 @@ import { getPayments } from "@/features/payments/actions/get-payments";
 import { PaymentTable } from "./payment-tables/payment-table";
 import { MethodOption } from "./payment-tables/columns";
 import { searchParamsCache } from "@/lib/searchparams";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 
 export default async function PaymentListingPage() {
   const page = searchParamsCache.get("page");
@@ -10,6 +11,7 @@ export default async function PaymentListingPage() {
   const method = searchParamsCache.get("method");
   const payment_date = searchParamsCache.get("payment_date");
   const subscription_status = searchParamsCache.get("subscription_status");
+  const status = searchParamsCache.get("status");
   const sort = searchParamsCache.get("sort");
 
   const filters = {
@@ -19,6 +21,7 @@ export default async function PaymentListingPage() {
     method: method ?? undefined,
     payment_date: payment_date ?? undefined,
     subscription_status: subscription_status ?? undefined,
+    status: status ?? undefined,
     sort: sort,
   };
 
@@ -48,5 +51,9 @@ export default async function PaymentListingPage() {
     );
   }
 
-  return <PaymentTable data={data} totalItems={totalItems} methodOptions={methodOptions} />;
+  const access = await getUserAccessContext();
+  const canCorrect = hasPermission(access, "cash.operate")
+    && hasPermission(access, "cash.reverse_payment")
+    && hasPermission(access, "customers.manage_membership");
+  return <PaymentTable data={data} totalItems={totalItems} methodOptions={methodOptions} canCorrect={canCorrect} />;
 }

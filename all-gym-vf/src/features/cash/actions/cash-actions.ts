@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { localProductImageUrl } from "@/lib/media/local-product-image-url";
 import type { TrainingProfileInput } from "@/lib/training/types";
 import { customerDetailSchema, customerHistoryResponseSchema, customerListResponseSchema } from "@/features/customers/lib/local-customers";
 import { customerRoutineWorkspaceSchema } from "@/features/customers/lib/local-customer-routine";
@@ -558,7 +559,11 @@ export async function searchCashProducts(search: string): Promise<CashProductSea
   const query = new URLSearchParams({ search: search.trim() });
   const response = await localCashRequest(`/products/search?${query.toString()}`);
   if (!response.ok) throw await localCashError(response);
-  return await response.json() as CashProductSearchResult[];
+  const products = await response.json() as CashProductSearchResult[];
+  return products.map((product) => ({
+    ...product,
+    image_url: localProductImageUrl(product.image_url),
+  }));
 }
 
 export async function sellProductsFromCashSession(params: {

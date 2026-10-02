@@ -60,6 +60,7 @@ interface CustomerFormSheetProps {
     context: { entrypoint: "cash"; suggestedBasePrice?: number },
   ) => Promise<{
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
+    routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
   }>;
 }
 

@@ -6,7 +6,7 @@ import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { normalizeExerciseCatalogItem } from "@/lib/training/catalog";
 import { searchExerciseCatalogItems } from "@/lib/training/exercise-recommendations";
-import type { ExerciseCatalogItem, ProviderExerciseSummary } from "@/lib/training/types";
+import type { ExerciseCatalogItem } from "@/lib/training/types";
 
 async function listLocalExercises(): Promise<ExerciseCatalogItem[]> {
   const access = await getUserAccessContext();
@@ -39,26 +39,4 @@ export async function searchExerciseCatalog(filters: {
     success: true as const,
     data: searchExerciseCatalogItems(await listLocalExercises(), filters),
   };
-}
-
-// Compatibilidad temporal para componentes que aún importan estas acciones.
-// La búsqueda/importación externa no forma parte de la operación sin internet.
-export async function searchExerciseProvider(
-  input: string | { query: string; limit?: number; offset?: number },
-) {
-  const limit = typeof input === "string" ? 12 : Math.min(Math.max(input.limit ?? 12, 1), 24);
-  const offset = typeof input === "string" ? 0 : Math.max(input.offset ?? 0, 0);
-  return {
-    success: true as const,
-    data: [] as ProviderExerciseSummary[],
-    hasMore: false,
-    nextOffset: null,
-    limit,
-    offset,
-  };
-}
-
-export async function importExerciseFromProvider(_rawExercise: Record<string, unknown>): Promise<{ success: true; data: ExerciseCatalogItem }> {
-  void _rawExercise;
-  throw new Error("La importación externa está deshabilitada. Añade el ejercicio con una imagen local.");
 }

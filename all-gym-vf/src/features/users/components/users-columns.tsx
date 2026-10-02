@@ -3,7 +3,6 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { UserData } from "../actions/user-actions";
 import { Badge } from "@/components/ui/badge";
-import { UserRole } from "@/types";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { MoreHorizontal, SquarePen, Trash2 } from "lucide-react";
@@ -39,9 +38,9 @@ export const columns: ColumnDef<User>[] = [
     accessorKey: "role",
     header: "Rol",
     cell: ({ row }) => {
-      const role = row.getValue("role") as UserRole;
+      const role = row.getValue("role") as string;
 
-      const roleMap: Record<UserRole, string> = {
+      const roleMap: Record<string, string> = {
         owner: "Propietario",
         admin: "Administrador",
         trainer: "Entrenador",
@@ -49,7 +48,7 @@ export const columns: ColumnDef<User>[] = [
         client: "Cliente",
       };
 
-      const colorMap: Record<UserRole, "default" | "secondary" | "destructive" | "outline"> = {
+      const colorMap: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
         owner: "default",
         admin: "destructive",
         trainer: "default",

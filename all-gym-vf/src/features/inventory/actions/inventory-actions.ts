@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { localProductImageUrl } from "@/lib/media/local-product-image-url";
 
 export type InventoryMovementType = "entry" | "sale" | "manual_exit" | "adjustment" | "void";
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -105,7 +106,14 @@ export async function getProductsListing(filters: ProductListingFilters = {}) {
   if (filters.isActive?.trim()) query.set("isActive", filters.isActive.trim());
   const response = await inventoryRequest(`/products?${query.toString()}`);
   if (!response.ok) throw new Error(await responseError(response, "No se pudieron cargar los productos"));
-  return await response.json() as { data: ProductInventoryItem[]; total: number };
+  const payload = await response.json() as { data: ProductInventoryItem[]; total: number };
+  return {
+    ...payload,
+    data: payload.data.map((product) => ({
+      ...product,
+      image_url: localProductImageUrl(product.image_url),
+    })),
+  };
 }
 
 async function uploadProductImage(imageFile: File) {

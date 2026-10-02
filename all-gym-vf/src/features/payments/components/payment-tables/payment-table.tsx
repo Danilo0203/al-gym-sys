@@ -18,17 +18,19 @@ interface PaymentTableProps {
   data: Payment[];
   totalItems: number;
   methodOptions?: MethodOption[];
+  canCorrect: boolean;
 }
 
 export function PaymentTable({
   data,
   totalItems,
-  methodOptions = []
+  methodOptions = [],
+  canCorrect,
 }: PaymentTableProps) {
   const [pageSize] = useQueryState('perPage', parseAsInteger.withDefault(10));
   const pageCount = Math.ceil(totalItems / pageSize);
 
-  const columns = useMemo(() => getColumns(methodOptions), [methodOptions]);
+  const columns = useMemo(() => getColumns(methodOptions, canCorrect), [methodOptions, canCorrect]);
 
   const { table } = useDataTable({
     data,
@@ -56,6 +58,7 @@ export function PaymentTable({
         { header: 'Cliente', key: 'cliente', width: 30 },
         { header: 'Plan', key: 'plan', width: 20 },
         { header: 'Método', key: 'metodo', width: 15 },
+        { header: 'Estado del pago', key: 'estado', width: 18 },
         { header: 'Monto', key: 'monto', width: 15 },
       ];
 
@@ -65,6 +68,7 @@ export function PaymentTable({
         cliente: p.user_name,
         plan: p.plan_name,
         metodo: p.method,
+        estado: p.status === 'reversed' ? 'Reversado' : 'Publicado',
         monto: p.amount_paid // Asumiendo que es número, Excel lo tratará como tal
       }));
 

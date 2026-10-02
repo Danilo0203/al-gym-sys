@@ -3,17 +3,15 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 
-import { INTERNAL_USER_ROLES, isInternalRole } from "@/lib/auth/role-utils";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
-import type { UserRole } from "@/types";
 import type { ExtendedColumnSort } from "@/types/data-table";
 
 export interface UserData {
   id: string;
   email: string;
   full_name: string | null;
-  role: UserRole;
+  role: string;
   is_active: boolean;
   created_at: string;
   last_sign_in_at?: string | null;
@@ -23,13 +21,13 @@ export interface CreateUserData {
   email: string;
   password?: string;
   full_name: string;
-  role: UserRole;
+  role: string;
 }
 
 export interface UpdateUserData {
   id: string;
   full_name?: string;
-  role?: UserRole;
+  role?: string;
   password?: string;
   is_active?: boolean;
 }
@@ -61,11 +59,7 @@ export async function getAvailableRoles(): Promise<{ success: boolean; data?: Ro
     const response = await fetchAuthBackend("/users/roles", { headers: await backendHeaders() });
     if (!response.ok) return { success: false, error: await responseError(response, "Error al obtener roles") };
     const payload = (await response.json()) as { data?: RoleOption[] };
-    return {
-      success: true,
-      data: (payload.data ?? []).filter((role) =>
-        INTERNAL_USER_ROLES.includes(role.slug as (typeof INTERNAL_USER_ROLES)[number])),
-    };
+    return { success: true, data: payload.data ?? [] };
   } catch {
     return { success: false, error: "Error al obtener roles" };
   }
@@ -93,8 +87,8 @@ export async function getUsers(params?: {
     }
     const usersPayload = (await usersResponse.json()) as { data?: UserData[] };
     const rolesPayload = (await rolesResponse.json()) as { data?: RoleOption[] };
-    const users = (usersPayload.data ?? []).filter((user) => isInternalRole(user.role));
     const roleNameMap = Object.fromEntries((rolesPayload.data ?? []).map((role) => [role.slug, role.name]));
+    const users = (usersPayload.data ?? []).filter((user) => Object.hasOwn(roleNameMap, user.role));
     const { sort, role, full_name } = params || {};
     const selectedRoles = role ? (Array.isArray(role) ? role : role.split(",")) : [];
     const query = full_name?.trim().toLocaleLowerCase("es-GT") || "";
@@ -127,7 +121,7 @@ export async function createUser(data: CreateUserData): Promise<{ success: boole
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
     if (!hasPermission(access, "users.create")) return { success: false, error: "No autorizado" };
-    if (!isInternalRole(data.role)) return { success: false, error: "Los clientes se administran desde Clientes" };
+    if (data.role === "client") return { success: false, error: "Los clientes se administran desde Clientes" };
     if (!data.password) return { success: false, error: "La contraseña es obligatoria" };
     const response = await fetchAuthBackend("/users", {
       method: "POST", headers: await backendHeaders(), body: JSON.stringify(data),
@@ -145,7 +139,7 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
     const access = await getUserAccessContext();
     if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
     if (!hasPermission(access, "users.update")) return { success: false, error: "No autorizado" };
-    if (data.role && !isInternalRole(data.role)) return { success: false, error: "Rol no válido" };
+    if (data.role === "client") return { success: false, error: "Rol no válido" };
     const { id, ...body } = data;
     const response = await fetchAuthBackend(`/users/${encodeURIComponent(id)}`, {
       method: "PATCH", headers: await backendHeaders(), body: JSON.stringify(body),

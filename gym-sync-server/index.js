@@ -3,6 +3,7 @@ const { timingSafeEqual } = require("node:crypto");
 const express = require("express");
 const bodyParser = require("body-parser");
 const { createLocalDbFromEnvironment } = require("./local-db");
+const { isLocalClockAddress } = require("./local-clock-address");
 const ZKAttendanceClient = require("zk-attendance-sdk");
 
 const app = express();
@@ -33,6 +34,9 @@ if (!API_TOKEN || API_TOKEN === "TU_SYNC_API_TOKEN") {
 }
 if (!/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(ZK_TIME_UTC_OFFSET)) {
   throw new Error("ZK_TIME_UTC_OFFSET debe tener formato ±HH:MM");
+}
+if (ZK_DEVICE_IP && !isLocalClockAddress(ZK_DEVICE_IP)) {
+  throw new Error("ZK_DEVICE_IP debe ser una IPv4 local del reloj");
 }
 
 // ZKTeco ADMS manda texto plano en distintos content-type según firmware.
@@ -654,6 +658,9 @@ async function registerUserDirectOnClock(params) {
   if (!deviceIp) {
     return { success: false, error: "missing_device_ip" };
   }
+  if (!isLocalClockAddress(deviceIp)) {
+    return { success: false, error: "non_local_device_ip" };
+  }
 
   if (uid == null || uid <= 0) {
     return { success: false, error: "invalid_biometric_id" };
@@ -1076,6 +1083,10 @@ app.post("/api/device-users/register", async (req, res) => {
     if (payload == null) {
       return res.status(400).json({ error: "invalid_json" });
     }
+    const requestedDeviceIp = sanitizeText(payload.device_ip, 80);
+    if (requestedDeviceIp && !isLocalClockAddress(requestedDeviceIp)) {
+      return res.status(400).json({ error: "invalid_device_ip" });
+    }
 
     const resolved = await resolveDeviceSyncProfile({
       customerId: payload.customer_id,
@@ -1094,7 +1105,7 @@ app.post("/api/device-users/register", async (req, res) => {
     }
 
     const deviceId = sanitizeText(payload.device_id, 80);
-    const deviceIp = sanitizeText(payload.device_ip, 80) || ZK_DEVICE_IP;
+    const deviceIp = requestedDeviceIp || ZK_DEVICE_IP;
 
     let direct = null;
     if (deviceIp) {

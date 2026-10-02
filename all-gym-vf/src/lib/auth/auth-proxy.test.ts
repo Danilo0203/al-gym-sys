@@ -8,6 +8,7 @@ import { POST as login } from "@/app/api/auth/login/route";
 import { POST as logout } from "@/app/api/auth/logout/route";
 import { GET as getSession } from "@/app/api/auth/me/route";
 import { AuthBackendTransportError, fetchAuthBackend } from "@/lib/auth/backend-auth";
+import { proxy } from "@/proxy";
 
 process.env.ALGYM_BACKEND_URL = "http://127.0.0.1:4000";
 
@@ -161,6 +162,27 @@ test("auth/me autenticado reenvía la cookie y valida el contrato", async () => 
   assert.equal(response.status, 200);
   assert.equal(forwardedCookie, "algym_session=abc; theme=dark");
   assert.deepEqual(await response.json(), authContext);
+});
+
+test("un rol personalizado usa scope y permisos para entrar al panel", async () => {
+  const customContext = {
+    ...authContext,
+    user: { ...authContext.user, profile: { ...authContext.user.profile, role: "custom" } },
+    authorization: { ...authContext.authorization, roleSlug: "recepcion", scope: "panel" },
+  };
+  await withMockFetch(
+    (async () => jsonResponse(customContext)) as typeof fetch,
+    async () => {
+      const loginRedirect = await proxy(nextRequest("/iniciar-sesion", { cookie: "algym_session=abc" }));
+      assert.equal(new URL(loginRedirect.headers.get("location") ?? "").pathname, "/panel/clientes");
+
+      const allowed = await proxy(nextRequest("/panel/clientes", { cookie: "algym_session=abc" }));
+      assert.equal(allowed.headers.get("location"), null);
+
+      const denied = await proxy(nextRequest("/panel/usuarios", { cookie: "algym_session=abc" }));
+      assert.equal(new URL(denied.headers.get("location") ?? "").pathname, "/panel/clientes");
+    },
+  );
 });
 
 test("auth/me sin sesión conserva 401 saneado", async () => {

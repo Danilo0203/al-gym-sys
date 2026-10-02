@@ -1,3 +1,5 @@
+import { parseLocalServiceBaseUrl } from "@/lib/network/local-service-url";
+
 type DeviceSyncResult = {
   attempted: boolean;
   synced?: boolean;
@@ -12,16 +14,10 @@ function localSyncUrl(): URL | null {
   const deviceId = process.env.DEFAULT_ZK_DEVICE_SN?.trim();
   if (!configured || !token || !deviceId) return null;
 
-  try {
-    const url = new URL(configured);
-    if (url.protocol !== "http:" ||
-        !["127.0.0.1", "localhost", "[::1]", "sync"].includes(url.hostname) ||
-        url.username || url.password || url.search || url.hash) return null;
-    url.pathname = "/api/device-users/reconcile";
-    return url;
-  } catch {
-    return null;
-  }
+  const url = parseLocalServiceBaseUrl(configured, "sync");
+  if (!url) return null;
+  url.pathname = "/api/device-users/reconcile";
+  return url;
 }
 
 export async function reconcileLocalCustomerOnClock(customerId: string): Promise<DeviceSyncResult> {

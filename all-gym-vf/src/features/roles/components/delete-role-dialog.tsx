@@ -38,8 +38,8 @@ export function DeleteRoleDialog({ open, onOpenChange, role, roles, onSuccess }:
   const [needsReassign, setNeedsReassign] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const panelRoles = roles.filter((r) =>
-    r.scope === "panel" && ["owner", "admin", "trainer", "employee"].includes(r.slug));
+  const panelRoles = roles.filter((candidate) =>
+    candidate.scope === "panel" && candidate.id !== role?.id);
 
   const handleDelete = async () => {
     if (!role) return;

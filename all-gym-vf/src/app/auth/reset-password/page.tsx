@@ -25,7 +25,7 @@ export default function ResetPasswordPage() {
           <CardHeader className="text-center">
             <CardTitle className="text-xl">Cambio de contraseña deshabilitado</CardTitle>
             <CardDescription>
-              Esta ruta dependía de Supabase Auth y quedó deshabilitada mientras la autenticación use el backend local.
+              Solicita al administrador que restablezca tu contraseña.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">

@@ -15,7 +15,7 @@ const localProfileSchema = z
     email: z.email().nullable(),
     full_name: z.string(),
     phone: z.string(),
-    birth_date: z.string(),
+    birth_date: z.string().nullable(),
     gender: z.enum(["male", "female", "other"]),
     avatar_url: z.string().nullable(),
     role: z.string().nullable(),
@@ -28,7 +28,7 @@ const localProfileUpdateSchema = z
   .object({
     full_name: z.string().trim().min(2).optional(),
     phone: z.string().optional(),
-    birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     gender: z.enum(["male", "female", "other"]).optional(),
   })
   .strict()

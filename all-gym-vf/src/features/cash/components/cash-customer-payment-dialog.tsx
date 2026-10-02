@@ -59,6 +59,12 @@ function formatMoney(amount: number | null | undefined) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "Sin registro";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Intl.DateTimeFormat("es-GT", {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(new Date(`${value}T00:00:00Z`));
+  }
   return new Intl.DateTimeFormat("es-GT", {
     dateStyle: "medium",
     timeZone: "America/Guatemala",

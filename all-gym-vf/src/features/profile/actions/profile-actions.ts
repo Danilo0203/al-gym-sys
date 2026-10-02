@@ -83,7 +83,7 @@ export async function updateProfile(
     const payload = {
       ...(data.full_name !== undefined ? { full_name: data.full_name } : {}),
       ...(data.phone !== undefined ? { phone: data.phone } : {}),
-      ...(typeof data.birth_date === 'string' ? { birth_date: data.birth_date } : {}),
+      ...(data.birth_date !== undefined ? { birth_date: data.birth_date } : {}),
       ...(data.gender !== undefined ? { gender: data.gender } : {}),
     };
 

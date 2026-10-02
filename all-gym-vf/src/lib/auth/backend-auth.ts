@@ -1,3 +1,5 @@
+import { parseLocalServiceBaseUrl } from "@/lib/network/local-service-url";
+
 const DEFAULT_AUTH_BACKEND_TIMEOUT_MS = 5_000;
 
 export class AuthBackendTransportError extends Error {
@@ -17,23 +19,8 @@ export function getAuthBackendUrl(): URL {
     throw new AuthBackendTransportError("unavailable");
   }
 
-  let backendUrl: URL;
-
-  try {
-    backendUrl = new URL(configuredValue);
-  } catch {
-    throw new AuthBackendTransportError("unavailable");
-  }
-
-  if (
-    !["http:", "https:"].includes(backendUrl.protocol) ||
-    backendUrl.username ||
-    backendUrl.password ||
-    backendUrl.search ||
-    backendUrl.hash
-  ) {
-    throw new AuthBackendTransportError("unavailable");
-  }
+  const backendUrl = parseLocalServiceBaseUrl(configuredValue, "backend");
+  if (!backendUrl) throw new AuthBackendTransportError("unavailable");
 
   backendUrl.pathname = `${backendUrl.pathname.replace(/\/+$/, "")}/`;
   return backendUrl;

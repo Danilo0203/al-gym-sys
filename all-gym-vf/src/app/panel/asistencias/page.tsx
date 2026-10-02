@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { parseLocalServiceBaseUrl } from "@/lib/network/local-service-url";
 import { redirect } from "next/navigation";
 
 type AttendanceRow = {
@@ -104,25 +105,30 @@ export default async function AttendancePage(props: AttendancePageProps) {
   const biometricId = firstQueryValue(searchParams.biometric_id) || "";
   const limit = firstQueryValue(searchParams.limit) || "200";
 
-  const baseUrl = process.env.GYM_SYNC_SERVER_URL || "http://127.0.0.1:8080";
   const token = process.env.GYM_SYNC_API_TOKEN || "";
-
-  const attendanceUrl = new URL("/api/attendance", baseUrl);
-  attendanceUrl.searchParams.set("limit", limit);
-  if (dateFrom) attendanceUrl.searchParams.set("date_from", dateFrom);
-  if (dateTo) attendanceUrl.searchParams.set("date_to", dateTo);
-  if (deviceId) attendanceUrl.searchParams.set("device_id", deviceId);
-  if (biometricId) attendanceUrl.searchParams.set("biometric_id", biometricId);
-
-  const commandsUrl = new URL("/api/device-commands", baseUrl);
-  commandsUrl.searchParams.set("limit", "100");
-  if (deviceId) commandsUrl.searchParams.set("device_id", deviceId);
 
   let attendanceRows: AttendanceRow[] = [];
   let commandRows: DeviceCommandRow[] = [];
   let loadError = "";
 
   try {
+    const baseUrl = parseLocalServiceBaseUrl(
+      process.env.GYM_SYNC_SERVER_URL || "http://127.0.0.1:8080",
+      "sync",
+    );
+    if (!baseUrl) throw new Error("La URL del servicio de asistencias debe ser local.");
+
+    const attendanceUrl = new URL("/api/attendance", baseUrl);
+    attendanceUrl.searchParams.set("limit", limit);
+    if (dateFrom) attendanceUrl.searchParams.set("date_from", dateFrom);
+    if (dateTo) attendanceUrl.searchParams.set("date_to", dateTo);
+    if (deviceId) attendanceUrl.searchParams.set("device_id", deviceId);
+    if (biometricId) attendanceUrl.searchParams.set("biometric_id", biometricId);
+
+    const commandsUrl = new URL("/api/device-commands", baseUrl);
+    commandsUrl.searchParams.set("limit", "100");
+    if (deviceId) commandsUrl.searchParams.set("device_id", deviceId);
+
     const [attendanceRes, commandsRes] = await Promise.all([
       fetchJson<{ data: AttendanceRow[] }>(attendanceUrl, token),
       fetchJson<{ data: DeviceCommandRow[] }>(commandsUrl, token),

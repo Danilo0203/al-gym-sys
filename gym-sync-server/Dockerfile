@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY index.js local-db.js ./
+COPY index.js local-db.js local-clock-address.js ./
 
 EXPOSE 8080
 

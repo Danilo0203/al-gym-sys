@@ -13,6 +13,7 @@ export interface GetPaymentsParams {
   perPage: number;
   user_name?: string | null;
   method?: string | null;
+  status?: string | null;
   payment_date?: string | null;
   subscription_status?: string | null;
   sort?: ExtendedColumnSort<Payment>[] | null;
@@ -25,8 +26,10 @@ export interface GetPaymentsResponse {
 
 const paymentSchema = z.object({
   id: z.string().uuid(),
+  subscription_id: z.string().uuid().nullable(),
   payment_date: z.string().datetime(),
   amount_paid: z.number(),
+  status: z.enum(["posted", "reversed"]),
   method: z.enum(["cash", "card", "transfer"]),
   user_id: z.string().uuid(),
   user_name: z.string(),
@@ -44,7 +47,7 @@ const paymentsResponseSchema = z.object({
 });
 
 const sortableColumns = new Set([
-  "payment_date", "user_name", "subscription_status", "plan_name", "method", "amount_paid",
+  "payment_date", "user_name", "subscription_status", "plan_name", "method", "amount_paid", "status",
 ]);
 
 export async function getPayments({
@@ -52,6 +55,7 @@ export async function getPayments({
   perPage,
   user_name,
   method,
+  status,
   payment_date,
   subscription_status,
   sort,
@@ -65,6 +69,7 @@ export async function getPayments({
   const query = new URLSearchParams({ page: String(page), perPage: String(perPage) });
   if (user_name) query.set("user_name", user_name);
   if (method) query.set("method", method);
+  if (status) query.set("status", status);
   if (subscription_status) query.set("subscription_status", subscription_status);
 
   if (payment_date) {
@@ -95,4 +100,42 @@ export async function getPayments({
 
   if (!response.ok) throw new Error("Error al cargar pagos");
   return paymentsResponseSchema.parse(await response.json());
+}
+
+const paymentDetailSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid().nullable(),
+  subscription_id: z.string().uuid().nullable(),
+  payment_date: z.string().datetime(),
+  amount_original: z.number(),
+  discount_amount: z.number(),
+  amount_paid: z.number(),
+  method: z.enum(["cash", "card", "transfer"]),
+  status: z.enum(["posted", "reversed"]),
+  notes: z.string().nullable(),
+  reversed_at: z.string().datetime().nullable(),
+  reversal_reason: z.string().nullable(),
+  replacement_payment_id: z.string().uuid().nullable(),
+  user_name: z.string(),
+  plan_name: z.string(),
+  subscription_status: z.string().nullable(),
+  subscription_start_date: z.string().nullable(),
+  subscription_end_date: z.string().nullable(),
+  source_category: z.string().nullable(),
+});
+
+export type PaymentDetail = z.infer<typeof paymentDetailSchema>;
+
+export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail> {
+  const access = await getUserAccessContext();
+  if (!access.isAuthenticated) throw new Error("No autenticado");
+  if (!hasPermission(access, "payments.view")) throw new Error("No autorizado para consultar pagos");
+  const cookieStore = await cookies();
+  const cookieHeader = buildCookieHeader(cookieStore.getAll());
+  const response = await fetchAuthBackend(`/payments/${encodeURIComponent(paymentId)}`, {
+    method: "GET",
+    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+  });
+  if (!response.ok) throw new Error("No se pudo cargar el detalle del pago");
+  return paymentDetailSchema.parse(await response.json());
 }

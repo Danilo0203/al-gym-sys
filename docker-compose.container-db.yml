@@ -1,0 +1,16 @@
+# Activar únicamente después de restaurar y reconciliar algym en el servicio postgres.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.container-db.yml --profile container-db ...
+services:
+  backend:
+    environment:
+      DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  sync:
+    environment:
+      DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy

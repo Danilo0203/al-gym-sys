@@ -1,20 +1,16 @@
 "use client";
 
-import { INTERNAL_USER_ROLES, isInternalRole } from "@/lib/auth/role-utils";
 import { useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { toast } from "sonner";
 import { createUser, updateUser, type UserData } from "../actions/user-actions";
-import { UserRole } from "@/types";
 
 const userFormSchema = z.object({
   email: z.string().email({ message: "Correo electrónico inválido" }),
   full_name: z.string().min(2, { message: "El nombre es obligatorio" }),
-  role: z.enum(INTERNAL_USER_ROLES, {
-    message: "Selecciona un rol válido",
-  }),
+  role: z.string().regex(/^[a-z][a-z0-9_]{2,39}$/, { message: "Selecciona un rol válido" }),
   is_active: z.boolean(),
   password: z.string().optional(),
 });
@@ -53,7 +49,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
       form.reset({
         email: user?.email || "",
         full_name: user?.full_name || "",
-        role: user?.role && isInternalRole(user.role) ? user.role : "employee",
+        role: user?.role || "employee",
         is_active: user?.is_active ?? true,
         password: "",
       });
@@ -71,7 +67,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
           const result = await updateUser({
             id: user.id,
             full_name: values.full_name,
-            role: values.role as UserRole,
+            role: values.role,
             is_active: values.is_active,
             password: values.password || undefined,
           });
@@ -93,7 +89,7 @@ export function useHookFormUsers({ open, onOpenChange, user }: UseHookFormUsersP
         const result = await createUser({
           email: values.email,
           full_name: values.full_name,
-          role: values.role as UserRole,
+          role: values.role,
           password: values.password,
         });
 

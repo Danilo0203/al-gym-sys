@@ -81,7 +81,7 @@ test("la configuración impide conectar sync al VPS o usar un rol amplio", () =>
   const config = { NODE_ENV: "production", DB_HOST: "127.0.0.1", DB_NAME: "algym",
     DB_USER: "algym_sync", DB_PASSWORD: "test" };
   assert.equal(readDatabaseConfig(config).max, 4);
-  assert.throws(() => readDatabaseConfig({ ...config, DB_HOST: "2.25.212.207" }));
+  assert.throws(() => readDatabaseConfig({ ...config, DB_HOST: "203.0.113.7" }));
   assert.throws(() => readDatabaseConfig({ ...config, DB_USER: "algym_app" }));
   assert.throws(() => readDatabaseConfig({ ...config, DB_PASSWORD: "" }));
 });
@@ -106,6 +106,13 @@ test("rol limitado, cola ZKTeco, confirmación por SN y asistencia deduplicada",
   assert.equal((await api("/api/attendance")).status, 401);
   assert.equal((await api(`/api/attendance?token=${token}`)).status, 401);
   assert.equal((await api("/health/ready")).status, 200);
+
+  const remoteDevice = await api("/api/device-users/register", {
+    method: "POST", headers: authHeaders(),
+    body: JSON.stringify({ device_id: deviceId, biometric_id: 12345, full_name: "Prueba Local", device_ip: "8.8.8.8" }),
+  });
+  assert.equal(remoteDevice.status, 400);
+  assert.equal(remoteDevice.body.error, "invalid_device_ip");
 
   const registered = await api("/api/device-users/register", {
     method: "POST", headers: authHeaders(),

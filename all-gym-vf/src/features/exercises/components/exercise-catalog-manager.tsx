@@ -1,26 +1,22 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useDeferredValue, useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   Eye,
   EyeOff,
-  History,
   Loader2,
   PencilLine,
   Plus,
   Search,
   ImagePlus,
   Dumbbell,
-  HardDriveDownload,
   Star,
-  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -35,34 +31,57 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
-import type { ExerciseCatalogItem, ProviderExerciseSummary } from "@/lib/training/types";
+import type { ExerciseCatalogItem } from "@/lib/training/types";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import {
+  attachExerciseImage,
   createExerciseCatalogItem,
-  saveExerciseMediaToLocal,
   updateExerciseCatalogPreferences,
   updateExerciseCatalogItem,
 } from "@/features/exercises/actions/exercise-actions";
-import {
-  importExerciseFromProvider,
-  searchExerciseProvider,
-} from "@/features/customers/actions/customer-routine-actions";
 
 interface ExerciseCatalogManagerProps {
   exercises: ExerciseCatalogItem[];
   totalCount: number;
 }
 
-const PROVIDER_SEARCH_PAGE_SIZE = 12;
-const EXTERNAL_PROVIDER_ENABLED = false;
-const PROVIDER_SEARCH_HISTORY_LIMIT = 5;
-const PROVIDER_SEARCH_HISTORY_STORAGE_KEY = "exercise-provider-search-history";
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const EXERCISE_TYPE_OPTIONS = [
+  { value: "strength", label: "Fuerza" },
+  { value: "cardio", label: "Cardio" },
+  { value: "mobility", label: "Movilidad" },
+  { value: "stretching", label: "Estiramiento" },
+  { value: "balance", label: "Equilibrio" },
+] as const;
+const BODY_PART_OPTIONS = [
+  { value: "chest", label: "Pecho" }, { value: "back", label: "Espalda" },
+  { value: "shoulders", label: "Hombros" }, { value: "upper arms", label: "Brazos" },
+  { value: "waist", label: "Abdomen" }, { value: "upper legs", label: "Piernas" },
+  { value: "lower legs", label: "Pantorrillas" }, { value: "cardio", label: "Cardio" },
+  { value: "full body", label: "Cuerpo completo" },
+] as const;
+const TARGET_MUSCLE_OPTIONS = [
+  { value: "pectorals", label: "Pectorales" }, { value: "lats", label: "Dorsales" },
+  { value: "mid back", label: "Espalda media" }, { value: "delts", label: "Deltoides" },
+  { value: "biceps", label: "Bíceps" }, { value: "triceps", label: "Tríceps" },
+  { value: "quadriceps", label: "Cuádriceps" }, { value: "hamstrings", label: "Isquiotibiales" },
+  { value: "glutes", label: "Glúteos" }, { value: "calves", label: "Pantorrillas" },
+  { value: "core", label: "Abdomen" },
+] as const;
+const EQUIPMENT_OPTIONS = [
+  { value: "body weight", label: "Peso corporal" }, { value: "dumbbell", label: "Mancuerna" },
+  { value: "barbell", label: "Barra" }, { value: "kettlebell", label: "Pesa rusa" },
+  { value: "cable", label: "Polea" }, { value: "machine", label: "Máquina" },
+  { value: "resistance band", label: "Banda" }, { value: "treadmill", label: "Caminadora" },
+  { value: "stationary bike", label: "Bicicleta fija" }, { value: "rowing machine", label: "Remo" },
+] as const;
+const metadataSelectClassName = "border-input bg-background h-9 w-full rounded-md border px-3 text-sm";
 
 const createExerciseFormSchema = z
   .object({
@@ -71,23 +90,25 @@ const createExerciseFormSchema = z
       .trim()
       .min(2, "Ingresa un nombre de al menos 2 caracteres.")
       .max(120, "El nombre no puede superar los 120 caracteres."),
-    source: z.enum(["upload", "provider"]),
     image: z.custom<File | undefined>((value) => value === undefined || value instanceof File, {
       message: "Selecciona una imagen válida.",
     }),
-    providerExerciseId: z.string().trim().optional(),
+    exerciseType: z.enum(["strength", "cardio", "mobility", "stretching", "balance"]),
+    bodyPart: z.string(),
+    targetMuscle: z.string(),
+    equipment: z.string(),
+    instructions: z.string().max(2000),
   })
   .superRefine((value, ctx) => {
-    if (value.source === "upload") {
-      if (!(value.image instanceof File) || value.image.size === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["image"],
-          message: "Selecciona una imagen para el ejercicio.",
-        });
-        return;
-      }
-
+    const instructionLines = value.instructions.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (instructionLines.length > 20 || instructionLines.some((line) => line.length > 100)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["instructions"],
+        message: "Escribe hasta 20 pasos de 100 caracteres cada uno.",
+      });
+    }
+    if (value.image instanceof File) {
       if (!ACCEPTED_IMAGE_TYPES.has(value.image.type)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -105,16 +126,11 @@ const createExerciseFormSchema = z
       }
     }
 
-    if (value.source === "provider" && !value.providerExerciseId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["providerExerciseId"],
-        message: "Selecciona un ejercicio de ExerciseDB antes de guardar.",
-      });
-    }
   });
 
 type CreateExerciseFormValues = z.infer<typeof createExerciseFormSchema>;
+type ManualExerciseMetadata = Pick<CreateExerciseFormValues,
+  "exerciseType" | "bodyPart" | "targetMuscle" | "equipment" | "instructions">;
 type ExerciseCatalogFilter = "all" | "favorites" | "hidden";
 
 export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalogManagerProps) {
@@ -128,65 +144,35 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createDialogKey, setCreateDialogKey] = useState(0);
   const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
-  const [providerSearchTerm, setProviderSearchTerm] = useState("");
-  const [providerCommittedQuery, setProviderCommittedQuery] = useState("");
-  const [providerSearchVersion, setProviderSearchVersion] = useState(0);
-  const [providerSearchHistory, setProviderSearchHistory] = useState<string[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    try {
-      const storedHistory = window.localStorage.getItem(PROVIDER_SEARCH_HISTORY_STORAGE_KEY);
-      if (!storedHistory) return [];
-
-      const parsedHistory = JSON.parse(storedHistory);
-      if (!Array.isArray(parsedHistory)) return [];
-
-      return parsedHistory
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .slice(0, PROVIDER_SEARCH_HISTORY_LIMIT);
-    } catch {
-      return [];
-    }
-  });
-  const [isProviderHistoryOpen, setIsProviderHistoryOpen] = useState(false);
-  const [selectedProviderExercise, setSelectedProviderExercise] = useState<ProviderExerciseSummary | null>(null);
   const [editingExercise, setEditingExercise] = useState<ExerciseCatalogItem | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [editingImage, setEditingImage] = useState<File | null>(null);
+  const [editingMetadata, setEditingMetadata] = useState<ManualExerciseMetadata>({
+    exerciseType: "strength", bodyPart: "", targetMuscle: "", equipment: "", instructions: "",
+  });
+  const [editingMetadataTouched, setEditingMetadataTouched] = useState<Partial<Record<keyof ManualExerciseMetadata, boolean>>>({});
   const [isCreating, startCreateTransition] = useTransition();
   const [isUpdating, startUpdateTransition] = useTransition();
-  const [savingExerciseId, setSavingExerciseId] = useState<number | null>(null);
-  const [isSavingMedia, startSaveMediaTransition] = useTransition();
+  const [isAttachingImage, startAttachImageTransition] = useTransition();
   const [pendingPreference, setPendingPreference] = useState<{
     exerciseId: number;
     action: "favorite" | "preview";
   } | null>(null);
   const [isUpdatingPreference, startPreferenceTransition] = useTransition();
-  const providerResultsContainerRef = useRef<HTMLDivElement | null>(null);
-  const providerLoadMoreRef = useRef<HTMLDivElement | null>(null);
-  const providerHistoryCloseTimeoutRef = useRef<number | null>(null);
   const createForm = useForm<CreateExerciseFormValues>({
     resolver: zodResolver(createExerciseFormSchema),
     defaultValues: {
       name: "",
-      source: "upload",
       image: undefined,
-      providerExerciseId: "",
+      exerciseType: "strength",
+      bodyPart: "",
+      targetMuscle: "",
+      equipment: "",
+      instructions: "",
     },
     mode: "onSubmit",
     reValidateMode: "onChange",
   });
-  const createSource =
-    useWatch({
-      control: createForm.control,
-      name: "source",
-    }) ?? "upload";
-  const newExerciseName =
-    useWatch({
-      control: createForm.control,
-      name: "name",
-    }) ?? "";
   const shouldValidateCreateForm = createForm.formState.submitCount > 0;
 
   useEffect(() => {
@@ -196,70 +182,6 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       }
     };
   }, [selectedImagePreview]);
-
-  useEffect(() => {
-    return () => {
-      if (providerHistoryCloseTimeoutRef.current !== null) {
-        window.clearTimeout(providerHistoryCloseTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const providerSearchQuery = useInfiniteQuery({
-    queryKey: ["exercise-provider-search", providerCommittedQuery, providerSearchVersion],
-    enabled: EXTERNAL_PROVIDER_ENABLED && isCreateDialogOpen && createSource === "provider" && providerCommittedQuery.trim().length > 0,
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      searchExerciseProvider({
-        query: providerCommittedQuery,
-        offset: pageParam,
-        limit: PROVIDER_SEARCH_PAGE_SIZE,
-      }),
-    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
-    staleTime: 60 * 1000,
-  });
-
-  const providerResults = providerSearchQuery.data?.pages.flatMap((page) => page.data || []) ?? [];
-  const fetchNextProviderPage = providerSearchQuery.fetchNextPage;
-  const hasNextProviderPage = providerSearchQuery.hasNextPage;
-  const isFetchingNextProviderPage = providerSearchQuery.isFetchingNextPage;
-  const isProviderSearchError = providerSearchQuery.isError;
-  const isSearchingProvider =
-    providerSearchQuery.isLoading || (providerSearchQuery.isFetching && !isFetchingNextProviderPage);
-  const providerSearchError =
-    providerSearchQuery.error instanceof Error ? providerSearchQuery.error.message : "No se pudo consultar ExerciseDB.";
-
-  useEffect(() => {
-    const root = providerResultsContainerRef.current;
-    const target = providerLoadMoreRef.current;
-
-    if (!root || !target || !hasNextProviderPage || isFetchingNextProviderPage) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          void fetchNextProviderPage();
-        }
-      },
-      {
-        root,
-        rootMargin: "160px 0px",
-      },
-    );
-
-    observer.observe(target);
-
-    return () => observer.disconnect();
-  }, [
-    createSource,
-    fetchNextProviderPage,
-    hasNextProviderPage,
-    isFetchingNextProviderPage,
-    providerCommittedQuery,
-    providerResults.length,
-  ]);
 
   const normalizedSearchTerm = deferredSearchTerm.trim().toLowerCase();
   const visibleExercisesCount = exercises.filter((exercise) => !exercise.is_preview_hidden).length;
@@ -309,15 +231,8 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       });
       createForm.reset({
         name: "",
-        source: "upload",
         image: undefined,
-        providerExerciseId: "",
       });
-      setProviderSearchTerm("");
-      setProviderCommittedQuery("");
-      setProviderSearchVersion(0);
-      setIsProviderHistoryOpen(false);
-      setSelectedProviderExercise(null);
       setCreateDialogKey((current) => current + 1);
     }
   };
@@ -341,138 +256,33 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
   const openEditDialog = (exercise: ExerciseCatalogItem) => {
     setEditingExercise(exercise);
     setEditingName(getExerciseDisplayName(exercise));
-  };
-
-  const persistProviderSearchHistory = (nextHistory: string[]) => {
-    setProviderSearchHistory(nextHistory);
-
-    try {
-      window.localStorage.setItem(PROVIDER_SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
-    } catch {
-      // Ignore localStorage write errors.
-    }
-  };
-
-  const handleProviderSearch = (rawQuery?: string) => {
-    const effectiveQuery = (rawQuery || providerSearchTerm || newExerciseName).trim();
-
-    if (!effectiveQuery) {
-      toast.error("Escribe un nombre en español o inglés para buscar en ExerciseDB.");
-      setProviderCommittedQuery("");
-      createForm.setValue("providerExerciseId", "", {
-        shouldDirty: true,
-        shouldValidate: false,
-      });
-      createForm.clearErrors("providerExerciseId");
-      setSelectedProviderExercise(null);
-      return;
-    }
-
-    const nextHistory = [
-      effectiveQuery,
-      ...providerSearchHistory.filter((item) => item.toLowerCase() !== effectiveQuery.toLowerCase()),
-    ].slice(0, PROVIDER_SEARCH_HISTORY_LIMIT);
-
-    persistProviderSearchHistory(nextHistory);
-    setProviderSearchTerm(effectiveQuery);
-    setProviderCommittedQuery(effectiveQuery);
-    setProviderSearchVersion((current) => current + 1);
-    setIsProviderHistoryOpen(false);
-    createForm.setValue("providerExerciseId", "", {
-      shouldDirty: true,
-      shouldValidate: false,
+    setEditingImage(null);
+    setEditingMetadata({
+      exerciseType: EXERCISE_TYPE_OPTIONS.some((option) => option.value === exercise.exercise_type)
+        ? exercise.exercise_type as ManualExerciseMetadata["exerciseType"] : "strength",
+      bodyPart: exercise.body_parts[0] ?? "",
+      targetMuscle: exercise.target_muscles[0] ?? "",
+      equipment: exercise.equipments[0] ?? "",
+      instructions: exercise.instructions.join("\n"),
     });
-    createForm.clearErrors("providerExerciseId");
-    setSelectedProviderExercise(null);
+    setEditingMetadataTouched({});
   };
 
-  const handleRemoveProviderHistoryItem = (query: string) => {
-    persistProviderSearchHistory(providerSearchHistory.filter((item) => item !== query));
-  };
-
-  const openProviderHistory = () => {
-    if (providerSearchHistory.length > 0) {
-      setIsProviderHistoryOpen(true);
-    }
-  };
-
-  const scheduleProviderHistoryClose = () => {
-    if (providerHistoryCloseTimeoutRef.current !== null) {
-      window.clearTimeout(providerHistoryCloseTimeoutRef.current);
-    }
-
-    providerHistoryCloseTimeoutRef.current = window.setTimeout(() => {
-      setIsProviderHistoryOpen(false);
-    }, 120);
-  };
-
-  const cancelProviderHistoryClose = () => {
-    if (providerHistoryCloseTimeoutRef.current !== null) {
-      window.clearTimeout(providerHistoryCloseTimeoutRef.current);
-      providerHistoryCloseTimeoutRef.current = null;
-    }
-  };
-
-  const handleProviderSelect = (exercise: ProviderExerciseSummary) => {
-    setSelectedProviderExercise(exercise);
-    createForm.setValue("providerExerciseId", exercise.exerciseId, {
-      shouldDirty: true,
-      shouldValidate: shouldValidateCreateForm,
-    });
-    createForm.clearErrors("providerExerciseId");
+  const touchEditingMetadata = (key: keyof ManualExerciseMetadata) => {
+    setEditingMetadataTouched((current) => ({ ...current, [key]: true }));
   };
 
   const handleCreateExercise = createForm.handleSubmit((values) => {
     const trimmedName = values.name.trim();
 
     startCreateTransition(async () => {
-      if (values.source === "provider") {
-        if (!selectedProviderExercise) {
-          createForm.setError("providerExerciseId", {
-            type: "manual",
-            message: "Selecciona un ejercicio de ExerciseDB antes de guardar.",
-          });
-          return;
-        }
-
-        try {
-          const imported = await importExerciseFromProvider(
-            selectedProviderExercise as unknown as Record<string, unknown>,
-          );
-          const importedName = getExerciseDisplayName(imported.data);
-
-          if (trimmedName !== importedName) {
-            const renameResult = await updateExerciseCatalogItem({
-              exerciseId: imported.data.id,
-              displayName: trimmedName,
-            });
-
-            if (!renameResult.success) {
-              toast.error(renameResult.error || "El ejercicio se importó, pero no se pudo actualizar el nombre.");
-              return;
-            }
-          }
-
-          const localSaveResult = await saveExerciseMediaToLocal(imported.data.id);
-          if (!localSaveResult.success) {
-            toast.warning(
-              localSaveResult.error || "Se importó el ejercicio, pero no se pudo guardar el GIF localmente.",
-            );
-          } else {
-            toast.success("Ejercicio importado desde ExerciseDB y guardado localmente.");
-          }
-
-          handleCreateDialogChange(false);
-          router.refresh();
-          return;
-        } catch (error) {
-          toast.error(error instanceof Error ? error.message : "No se pudo importar el ejercicio desde ExerciseDB.");
-          return;
-        }
-      }
-
       const formData = new FormData();
       formData.set("name", trimmedName);
+      formData.set("exerciseType", values.exerciseType);
+      formData.set("bodyPart", values.bodyPart);
+      formData.set("targetMuscle", values.targetMuscle);
+      formData.set("equipment", values.equipment);
+      formData.set("instructions", values.instructions);
       if (values.image instanceof File) {
         formData.set("image", values.image);
       }
@@ -490,16 +300,6 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
     });
   });
 
-  const createPreviewSrc =
-    createSource === "provider" ? selectedProviderExercise?.imageUrl || null : selectedImagePreview;
-  const createPreviewLabel =
-    createSource === "provider"
-      ? selectedProviderExercise
-        ? `Preview de ${selectedProviderExercise.name}`
-        : "Selecciona un ejercicio de ExerciseDB para ver su GIF"
-      : "La vista previa aparecerá aquí";
-  const createSubmitLabel = createSource === "provider" ? "Guardar desde ExerciseDB" : "Guardar ejercicio";
-
   const handleUpdateExercise = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -511,6 +311,13 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       const result = await updateExerciseCatalogItem({
         exerciseId: editingExercise.id,
         displayName: editingName,
+        metadata: editingExercise.provider === "custom_local" ? {
+          ...(editingMetadataTouched.exerciseType ? { exerciseType: editingMetadata.exerciseType } : {}),
+          ...(editingMetadataTouched.bodyPart ? { bodyPart: editingMetadata.bodyPart } : {}),
+          ...(editingMetadataTouched.targetMuscle ? { targetMuscle: editingMetadata.targetMuscle } : {}),
+          ...(editingMetadataTouched.equipment ? { equipment: editingMetadata.equipment } : {}),
+          ...(editingMetadataTouched.instructions ? { instructions: editingMetadata.instructions } : {}),
+        } : undefined,
       });
 
       if (!result.success) {
@@ -521,24 +328,26 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       toast.success(result.message || "Ejercicio actualizado correctamente.");
       setEditingExercise(null);
       setEditingName("");
+      setEditingImage(null);
+      setEditingMetadataTouched({});
       router.refresh();
     });
   };
 
-  const handleSaveMediaLocally = (exercise: ExerciseCatalogItem) => {
-    setSavingExerciseId(exercise.id);
-
-    startSaveMediaTransition(async () => {
-      const result = await saveExerciseMediaToLocal(exercise.id);
-
+  const handleAttachImage = () => {
+    if (!editingExercise || !editingImage) return;
+    const formData = new FormData();
+    formData.set("image", editingImage);
+    startAttachImageTransition(async () => {
+      const result = await attachExerciseImage(editingExercise.id, formData);
       if (!result.success) {
-        toast.error(result.error || "No se pudo guardar la imagen localmente.");
-        setSavingExerciseId(null);
+        toast.error(result.error || "No se pudo guardar la imagen local.");
         return;
       }
-
-      toast.success(result.message || "Imagen guardada localmente.");
-      setSavingExerciseId(null);
+      toast.success(result.message || "Imagen local guardada.");
+      setEditingExercise(null);
+      setEditingName("");
+      setEditingImage(null);
       router.refresh();
     });
   };
@@ -680,10 +489,8 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                   showHiddenPreview={catalogFilter === "hidden"}
                   canUpdate={canUpdate}
                   onEdit={() => openEditDialog(exercise)}
-                  onSaveMediaLocally={() => handleSaveMediaLocally(exercise)}
                   onToggleFavorite={() => handleToggleFavorite(exercise)}
                   onTogglePreviewVisibility={() => handleTogglePreviewVisibility(exercise)}
-                  isSavingMedia={isSavingMedia && savingExerciseId === exercise.id}
                   isTogglingFavorite={
                     isUpdatingPreference &&
                     pendingPreference?.exerciseId === exercise.id &&
@@ -706,7 +513,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
           <DialogHeader className="border-border border-b px-6 pt-6 pb-4">
             <DialogTitle>Nuevo ejercicio</DialogTitle>
             <DialogDescription>
-              Crea un ejercicio con una imagen de tu computadora. Se guardará en el equipo local.
+              Crea un ejercicio ahora y añade una imagen de tu computadora cuando la tengas. Todo se guardará en el equipo local.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -727,62 +534,78 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                         {...field}
                         id={field.name}
                         aria-invalid={fieldState.invalid}
-                        placeholder={
-                          createSource === "provider"
-                            ? "Ej. Remo asistido al menton"
-                            : "Ej. Sentadilla frontal con mancuerna"
-                        }
+                        placeholder="Ej. Sentadilla frontal con mancuerna"
                       />
-                      {createSource === "provider" ? (
-                        <FieldDescription>
-                          El GIF viene de ExerciseDB, pero el nombre visible lo defines tú.
-                        </FieldDescription>
-                      ) : null}
                       <FieldError errors={[fieldState.error]} />
                     </Field>
                   )}
                 />
 
-                <Tabs
-                  value={createSource}
-                  onValueChange={(value) => {
-                    const nextSource = value as "upload" | "provider";
-                    createForm.setValue("source", nextSource, {
-                      shouldDirty: true,
-                      shouldValidate: false,
-                    });
-
-                    if (nextSource === "upload") {
-                      createForm.setValue("providerExerciseId", "", {
-                        shouldDirty: true,
-                        shouldValidate: false,
-                      });
-                      createForm.clearErrors("providerExerciseId");
-                      setSelectedProviderExercise(null);
-                    } else {
-                      createForm.setValue("image", undefined, {
-                        shouldDirty: true,
-                        shouldValidate: false,
-                      });
-                      createForm.clearErrors("image");
-                      handleCreateImageChange(null, false);
-                    }
-                  }}
-                  className="space-y-4"
-                >
-                  <TabsList className="grid w-full grid-cols-1">
-                    <TabsTrigger value="upload">Subir imagen</TabsTrigger>
-                    {EXTERNAL_PROVIDER_ENABLED ? <TabsTrigger value="provider">Elegir de ExerciseDB</TabsTrigger> : null}
-                  </TabsList>
-
-                  <TabsContent value="upload" className="space-y-4">
+                <div className="space-y-4">
+                    <p className="text-muted-foreground text-sm">
+                      Estos datos ayudan a seleccionar el ejercicio al crear rutinas locales. Puedes dejar los campos opcionales vacíos.
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Controller control={createForm.control} name="exerciseType" render={({ field }) => (
+                        <Field>
+                          <FieldLabel htmlFor="new-exercise-type">Tipo</FieldLabel>
+                          <select {...field} id="new-exercise-type" className={metadataSelectClassName}>
+                            {EXERCISE_TYPE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      )} />
+                      <Controller control={createForm.control} name="bodyPart" render={({ field }) => (
+                        <Field>
+                          <FieldLabel htmlFor="new-exercise-body-part">Zona corporal</FieldLabel>
+                          <select {...field} id="new-exercise-body-part" className={metadataSelectClassName}>
+                            <option value="">Sin especificar</option>
+                            {BODY_PART_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      )} />
+                      <Controller control={createForm.control} name="targetMuscle" render={({ field }) => (
+                        <Field>
+                          <FieldLabel htmlFor="new-exercise-target-muscle">Músculo principal</FieldLabel>
+                          <select {...field} id="new-exercise-target-muscle" className={metadataSelectClassName}>
+                            <option value="">Sin especificar</option>
+                            {TARGET_MUSCLE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      )} />
+                      <Controller control={createForm.control} name="equipment" render={({ field }) => (
+                        <Field>
+                          <FieldLabel htmlFor="new-exercise-equipment">Equipo</FieldLabel>
+                          <select {...field} id="new-exercise-equipment" className={metadataSelectClassName}>
+                            <option value="">Sin especificar</option>
+                            {EQUIPMENT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      )} />
+                    </div>
+                    <Controller control={createForm.control} name="instructions" render={({ field, fieldState }) => (
+                      <Field data-invalid={fieldState.invalid}>
+                        <FieldLabel htmlFor="new-exercise-instructions">Instrucciones opcionales</FieldLabel>
+                        <Textarea {...field} id="new-exercise-instructions" rows={3}
+                          placeholder="Un paso por línea" aria-invalid={fieldState.invalid} />
+                        <FieldDescription>Hasta 20 pasos de 100 caracteres cada uno.</FieldDescription>
+                        <FieldError errors={[fieldState.error]} />
+                      </Field>
+                    )} />
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
                       <Controller
                         control={createForm.control}
                         name="image"
                         render={({ fieldState }) => (
                           <Field data-invalid={fieldState.invalid} className="space-y-3">
-                            <FieldLabel htmlFor="new-exercise-image">Imagen</FieldLabel>
+                            <FieldLabel htmlFor="new-exercise-image">Imagen opcional</FieldLabel>
                             <Input
                               id="new-exercise-image"
                               type="file"
@@ -791,7 +614,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                               onChange={(event) => handleCreateImageChange(event.target.files?.[0] ?? null)}
                             />
                             <FieldDescription>
-                              Formatos permitidos: JPG, PNG, WEBP o GIF. Tamaño máximo: 5 MB.
+                              Puedes crear el ejercicio sin imagen y añadir un archivo local después. Formatos: JPG, PNG, WEBP o GIF; máximo 5 MB.
                             </FieldDescription>
                             <FieldError errors={[fieldState.error]} />
                           </Field>
@@ -800,184 +623,12 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
 
                       <ExerciseCreatePreview
                         title="Vista previa"
-                        src={createPreviewSrc}
-                        emptyLabel={createPreviewLabel}
-                        helper="La imagen seleccionada se guardará junto al ejercicio."
+                        src={selectedImagePreview}
+                        emptyLabel="La vista previa aparecerá aquí"
+                        helper="Si seleccionas una imagen, se guardará junto al ejercicio."
                       />
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="provider" className="space-y-4">
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.9fr)]">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="provider-exercise-search">Buscar en ExerciseDB</Label>
-                          <div className="flex flex-col gap-2 sm:flex-row">
-                            <div className="relative flex-1">
-                              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                              <Input
-                                id="provider-exercise-search"
-                                value={providerSearchTerm}
-                                onChange={(event) => setProviderSearchTerm(event.target.value)}
-                                onFocus={() => {
-                                  cancelProviderHistoryClose();
-                                  openProviderHistory();
-                                }}
-                                onBlur={scheduleProviderHistoryClose}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    handleProviderSearch();
-                                  }
-                                }}
-                                placeholder="Ej. pantorrillas, glúteo, pecho, remo..."
-                                className="pl-9"
-                              />
-                              {isProviderHistoryOpen && providerSearchHistory.length > 0 ? (
-                                <div
-                                  className="bg-popover border-border absolute top-[calc(100%+0.5rem)] left-0 z-30 w-full rounded-xl border shadow-xl"
-                                  onMouseDown={(event) => {
-                                    event.preventDefault();
-                                    cancelProviderHistoryClose();
-                                  }}
-                                >
-                                  <div className="border-border flex items-center justify-between border-b px-3 py-2">
-                                    <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium">
-                                      <History className="size-3.5" />
-                                      Ultimas busquedas
-                                    </div>
-                                    <span className="text-muted-foreground text-[11px]">
-                                      {providerSearchHistory.length}/5
-                                    </span>
-                                  </div>
-                                  <div className="max-h-56 overflow-y-auto py-1">
-                                    {providerSearchHistory.map((query) => (
-                                      <div key={query} className="flex items-center gap-2 px-2 py-1">
-                                        <button
-                                          type="button"
-                                          className="hover:bg-muted flex flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm"
-                                          onClick={() => {
-                                            setProviderSearchTerm(query);
-                                            handleProviderSearch(query);
-                                          }}
-                                        >
-                                          <History className="text-muted-foreground size-4" />
-                                          <span className="line-clamp-1">{query}</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="text-muted-foreground hover:text-foreground hover:bg-muted rounded-md p-2 transition"
-                                          onClick={() => handleRemoveProviderHistoryItem(query)}
-                                          aria-label={`Eliminar ${query} del historial`}
-                                        >
-                                          <X className="size-4" />
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => handleProviderSearch()}
-                              disabled={isSearchingProvider}
-                            >
-                              {isSearchingProvider ? <Loader2 className="animate-spin" /> : <Search />}
-                              Buscar
-                            </Button>
-                          </div>
-                          <p className="text-muted-foreground text-xs">
-                            Puedes buscar en español. Probamos traducciones y también consultas por nombre, músculo y
-                            equipo cuando aplica.
-                          </p>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <Label>Resultados</Label>
-                            <span className="text-muted-foreground text-xs">
-                              {providerCommittedQuery
-                                ? `${providerResults.length} cargados${hasNextProviderPage ? "+" : ""}`
-                                : "Sin busqueda"}
-                            </span>
-                          </div>
-
-                          <div
-                            ref={providerResultsContainerRef}
-                            className="max-h-[42vh] space-y-3 overflow-y-auto pr-1"
-                          >
-                            {!providerCommittedQuery ? (
-                              <div className="border-border bg-muted/20 text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-                                Busca un ejercicio para ver sus GIFs y elegir uno.
-                              </div>
-                            ) : isSearchingProvider ? (
-                              <div className="border-border bg-muted/20 text-muted-foreground flex min-h-40 items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-                                <Loader2 className="mr-2 size-4 animate-spin" />
-                                Buscando resultados relacionados...
-                              </div>
-                            ) : isProviderSearchError ? (
-                              <div className="border-border bg-muted/20 text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-                                {providerSearchError}
-                              </div>
-                            ) : providerResults.length === 0 ? (
-                              <div className="border-border bg-muted/20 text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-                                No encontramos resultados para esa búsqueda.
-                              </div>
-                            ) : (
-                              <>
-                                {providerResults.map((exercise) => (
-                                  <ProviderExerciseOptionCard
-                                    key={exercise.exerciseId}
-                                    exercise={exercise}
-                                    selected={selectedProviderExercise?.exerciseId === exercise.exerciseId}
-                                    onSelect={() => handleProviderSelect(exercise)}
-                                  />
-                                ))}
-                                {hasNextProviderPage ? (
-                                  <div
-                                    ref={providerLoadMoreRef}
-                                    className="text-muted-foreground flex items-center justify-center rounded-xl border border-dashed px-4 py-4 text-sm"
-                                  >
-                                    {isFetchingNextProviderPage ? (
-                                      <>
-                                        <Loader2 className="mr-2 size-4 animate-spin" />
-                                        Cargando mas resultados...
-                                      </>
-                                    ) : (
-                                      "Desliza para cargar mas resultados"
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="text-muted-foreground px-2 py-1 text-center text-xs">
-                                    No hay mas resultados para esta busqueda.
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          <Controller
-                            control={createForm.control}
-                            name="providerExerciseId"
-                            render={({ fieldState }) => <FieldError errors={[fieldState.error]} />}
-                          />
-                        </div>
-                      </div>
-
-                      <ExerciseCreatePreview
-                        title="Vista previa"
-                        src={createPreviewSrc}
-                        emptyLabel={createPreviewLabel}
-                        helper={
-                          selectedProviderExercise
-                            ? `Seleccionado: ${selectedProviderExercise.name}. Se importará y se guardará localmente.`
-                            : "Selecciona uno de los resultados para ver el GIF antes de guardarlo."
-                        }
-                      />
-                    </div>
-                  </TabsContent>
-                </Tabs>
+                </div>
               </div>
 
               <DialogFooter className="border-border border-t px-6 py-4">
@@ -991,7 +642,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                 </Button>
                 <Button type="submit" disabled={isCreating}>
                   {isCreating ? <Loader2 className="animate-spin" /> : <Plus />}
-                  {createSubmitLabel}
+                  Guardar ejercicio
                 </Button>
               </DialogFooter>
             </form>
@@ -1004,13 +655,14 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
           if (!open) {
             setEditingExercise(null);
             setEditingName("");
+            setEditingImage(null);
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Editar nombre</DialogTitle>
-            <DialogDescription>Actualiza el nombre visible del ejercicio en el catálogo local.</DialogDescription>
+            <DialogTitle>Editar ejercicio</DialogTitle>
+            <DialogDescription>Actualiza el nombre, los detalles para rutinas o añade una imagen de tu computadora.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateExercise} className="space-y-5">
             <div className="space-y-2">
@@ -1024,6 +676,94 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
               />
             </div>
 
+            {editingExercise?.provider === "custom_local" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-exercise-type">Tipo</Label>
+                  <select id="edit-exercise-type" className={metadataSelectClassName} value={editingMetadata.exerciseType}
+                    onChange={(event) => {
+                      setEditingMetadata((current) => ({ ...current, exerciseType: event.target.value as ManualExerciseMetadata["exerciseType"] }));
+                      touchEditingMetadata("exerciseType");
+                    }}>
+                    {EXERCISE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-exercise-body-part">Zona corporal</Label>
+                  <select id="edit-exercise-body-part" className={metadataSelectClassName} value={editingMetadata.bodyPart}
+                    onChange={(event) => {
+                      setEditingMetadata((current) => ({ ...current, bodyPart: event.target.value }));
+                      touchEditingMetadata("bodyPart");
+                    }}>
+                    <option value="">Sin especificar</option>
+                    {editingMetadata.bodyPart && !BODY_PART_OPTIONS.some((option) => option.value === editingMetadata.bodyPart) ? (
+                      <option value={editingMetadata.bodyPart}>{editingMetadata.bodyPart}</option>
+                    ) : null}
+                    {BODY_PART_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-exercise-target-muscle">Músculo principal</Label>
+                  <select id="edit-exercise-target-muscle" className={metadataSelectClassName} value={editingMetadata.targetMuscle}
+                    onChange={(event) => {
+                      setEditingMetadata((current) => ({ ...current, targetMuscle: event.target.value }));
+                      touchEditingMetadata("targetMuscle");
+                    }}>
+                    <option value="">Sin especificar</option>
+                    {editingMetadata.targetMuscle && !TARGET_MUSCLE_OPTIONS.some((option) => option.value === editingMetadata.targetMuscle) ? (
+                      <option value={editingMetadata.targetMuscle}>{editingMetadata.targetMuscle}</option>
+                    ) : null}
+                    {TARGET_MUSCLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-exercise-equipment">Equipo</Label>
+                  <select id="edit-exercise-equipment" className={metadataSelectClassName} value={editingMetadata.equipment}
+                    onChange={(event) => {
+                      setEditingMetadata((current) => ({ ...current, equipment: event.target.value }));
+                      touchEditingMetadata("equipment");
+                    }}>
+                    <option value="">Sin especificar</option>
+                    {editingMetadata.equipment && !EQUIPMENT_OPTIONS.some((option) => option.value === editingMetadata.equipment) ? (
+                      <option value={editingMetadata.equipment}>{editingMetadata.equipment}</option>
+                    ) : null}
+                    {EQUIPMENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="edit-exercise-instructions">Instrucciones</Label>
+                  <Textarea id="edit-exercise-instructions" rows={3} value={editingMetadata.instructions}
+                    onChange={(event) => {
+                      setEditingMetadata((current) => ({ ...current, instructions: event.target.value }));
+                      touchEditingMetadata("instructions");
+                    }} placeholder="Un paso por línea" />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-exercise-image">Imagen local</Label>
+              <Input
+                id="edit-exercise-image"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={(event) => setEditingImage(event.target.files?.[0] ?? null)}
+              />
+              <Button type="button" variant="outline" onClick={handleAttachImage} disabled={!editingImage || isAttachingImage || isUpdating}>
+                {isAttachingImage ? <Loader2 className="animate-spin" /> : <ImagePlus />}
+                Guardar imagen
+              </Button>
+              <p className="text-muted-foreground text-xs">El nombre y la imagen se guardan por separado.</p>
+            </div>
+
             <DialogFooter>
               <Button
                 type="button"
@@ -1031,12 +771,13 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                 onClick={() => {
                   setEditingExercise(null);
                   setEditingName("");
+                  setEditingImage(null);
                 }}
-                disabled={isUpdating}
+                disabled={isUpdating || isAttachingImage}
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isUpdating}>
+              <Button type="submit" disabled={isUpdating || isAttachingImage}>
                 {isUpdating ? <Loader2 className="animate-spin" /> : <PencilLine />}
                 Guardar cambios
               </Button>
@@ -1116,10 +857,8 @@ function ExerciseCard({
   exercise,
   showHiddenPreview,
   onEdit,
-  onSaveMediaLocally,
   onToggleFavorite,
   onTogglePreviewVisibility,
-  isSavingMedia = false,
   isTogglingFavorite = false,
   isTogglingPreview = false,
   canUpdate = true,
@@ -1127,10 +866,8 @@ function ExerciseCard({
   exercise: ExerciseCatalogItem;
   showHiddenPreview: boolean;
   onEdit: () => void;
-  onSaveMediaLocally: () => void;
   onToggleFavorite: () => void;
   onTogglePreviewVisibility: () => void;
-  isSavingMedia: boolean;
   isTogglingFavorite: boolean;
   isTogglingPreview: boolean;
   canUpdate?: boolean;
@@ -1139,7 +876,6 @@ function ExerciseCard({
   const isStoredLocally = isExerciseStoredLocally(exercise);
   const providerLabel = getProviderLabel(exercise.provider, isStoredLocally);
   const tags = [...exercise.body_parts, ...exercise.target_muscles, ...exercise.equipments].filter(Boolean).slice(0, 3);
-  const canSaveMediaLocally = EXTERNAL_PROVIDER_ENABLED && Boolean(exercise.image_url) && !isStoredLocally;
   const previewImageUrl = exercise.image_url ?? undefined;
   const canShowPreview = Boolean(previewImageUrl) && (!exercise.is_preview_hidden || showHiddenPreview);
 
@@ -1220,11 +956,6 @@ function ExerciseCard({
           >
             {isTogglingPreview ? <Loader2 className="animate-spin" /> : exercise.is_preview_hidden ? <Eye /> : <EyeOff />}
           </TooltipIconButton>
-          {canSaveMediaLocally ? (
-            <TooltipIconButton label="Guardar en local" onClick={onSaveMediaLocally} disabled={isSavingMedia}>
-              {isSavingMedia ? <Loader2 className="animate-spin" /> : <HardDriveDownload />}
-            </TooltipIconButton>
-          ) : null}
           {canUpdate && (
           <TooltipIconButton label="Editar nombre" onClick={onEdit}>
             <PencilLine />
@@ -1289,45 +1020,6 @@ function CatalogFilterButton({
   );
 }
 
-function ProviderExerciseOptionCard({
-  exercise,
-  selected,
-  onSelect,
-}: {
-  exercise: ProviderExerciseSummary;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-xl border p-3 text-left transition ${
-        selected ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/30"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <div className="bg-muted/30 h-20 w-24 shrink-0 overflow-hidden rounded-lg border">
-          <ExerciseImage
-            src={exercise.imageUrl}
-            alt={exercise.name}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            fallback={<div className="text-muted-foreground flex h-full items-center justify-center text-xs">Sin GIF</div>}
-          />
-        </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-start justify-between gap-3">
-            <p className="line-clamp-2 font-medium">{exercise.name}</p>
-            <Badge variant={selected ? "success" : "outline"}>{selected ? "Seleccionado" : "ExerciseDB"}</Badge>
-          </div>
-          <p className="text-muted-foreground text-xs">ID externo: {exercise.exerciseId}</p>
-        </div>
-      </div>
-    </button>
-  );
-}
-
 function getExerciseDisplayName(exercise: ExerciseCatalogItem) {
   return exercise.display_name_es || exercise.display_name || exercise.name;
 }
@@ -1366,10 +1058,5 @@ function isExerciseStoredLocally(exercise: ExerciseCatalogItem) {
     return true;
   }
 
-  return Boolean(
-    exercise.image_url &&
-    (exercise.image_url.startsWith("/api/media/exercises/") ||
-      exercise.image_url.startsWith("data:image/") ||
-      exercise.image_url.includes("/storage/v1/object/public/exercises/")),
-  );
+  return isExerciseMediaStoredLocally(exercise.image_url);
 }

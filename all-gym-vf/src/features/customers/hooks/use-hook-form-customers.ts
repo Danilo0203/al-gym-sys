@@ -658,6 +658,7 @@ interface UseHookFormCustomerSheetParams {
     context: { entrypoint: "cash"; suggestedBasePrice?: number },
   ) => Promise<{
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
+    routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
   }>;
 }
 
@@ -1064,11 +1065,18 @@ export function useHookFormCustomerSheet({
       router.refresh();
       setOpen(false);
       if (result.deviceSync?.method === "direct" && result.deviceSync.synced) {
-        toast.success("Cliente y cobro guardados localmente; acceso al reloj habilitado. Rutina pendiente.");
+        toast.success("Cliente y cobro guardados localmente; acceso al reloj habilitado.");
       } else if (result.deviceSync?.queued) {
-        toast.success("Cliente y cobro guardados localmente; acceso al reloj en cola. Rutina pendiente.");
+        toast.success("Cliente y cobro guardados localmente; acceso al reloj en cola.");
       } else {
-        toast.warning("Cliente y cobro guardados localmente. Rutina y acceso al reloj pendientes.");
+        toast.warning("Cliente y cobro guardados localmente. Acceso al reloj pendiente.");
+      }
+      if (result.routineGeneration?.status === "draft") {
+        toast.success("Propuesta de rutina local creada para revisión.");
+      } else if (result.routineGeneration?.status === "pending_profile") {
+        toast.warning("Rutina pendiente: completa la ficha de entrenamiento para generar la propuesta.");
+      } else {
+        toast.warning("El cobro quedó guardado; genera la rutina desde la ficha del cliente.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No fue posible guardar el cliente.");
@@ -1205,6 +1213,7 @@ interface UseHookFormRenewSubscriptionParams {
     success: boolean;
     error?: string;
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
+    routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
   }>;
 }
 
@@ -1527,6 +1536,13 @@ export function useHookFormRenewSubscription({
           toast.success("Suscripción renovada; acceso al reloj en cola.");
         } else {
           toast.success("Suscripción renovada exitosamente");
+        }
+        if (result.routineGeneration?.status === "draft") {
+          toast.success("Nueva propuesta de rutina local creada para revisión.");
+        } else if (result.routineGeneration?.status === "pending_profile") {
+          toast.warning("Rutina pendiente: completa la ficha de entrenamiento.");
+        } else {
+          toast.warning("La renovación quedó guardada; genera la rutina desde la ficha del cliente.");
         }
         setOpen(false);
       } else {

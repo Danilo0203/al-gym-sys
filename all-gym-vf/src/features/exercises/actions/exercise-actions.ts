@@ -14,9 +14,30 @@ const exerciseNameSchema = z
   .min(2, "El nombre debe tener al menos 2 caracteres.")
   .max(120, "El nombre no puede superar los 120 caracteres.");
 
+const manualExerciseMetadataFieldsSchema = z.object({
+  exerciseType: z.enum(["strength", "cardio", "mobility", "stretching", "balance"]),
+  bodyPart: z.enum(["", "chest", "back", "shoulders", "upper arms", "waist", "upper legs", "lower legs", "cardio", "full body"]),
+  targetMuscle: z.enum(["", "pectorals", "lats", "mid back", "delts", "biceps", "triceps", "quadriceps", "hamstrings", "glutes", "calves", "core"]),
+  equipment: z.enum(["", "body weight", "dumbbell", "barbell", "kettlebell", "cable", "machine", "resistance band", "treadmill", "stationary bike", "rowing machine"]),
+  instructions: z.string().trim().max(2000),
+});
+const manualExerciseMetadataSchema = manualExerciseMetadataFieldsSchema.refine(
+  (value) => value.instructions.split(/\r?\n/).filter((line) => line.trim().length > 0).length <= 20
+    && value.instructions.split(/\r?\n/).every((line) => line.trim().length <= 100), {
+  message: "Cada instrucción puede tener hasta 100 caracteres.",
+});
+const optionalExerciseMetadataSchema = manualExerciseMetadataFieldsSchema.partial().refine(
+  (value) => value.instructions === undefined || (
+    value.instructions.split(/\r?\n/).filter((line) => line.trim().length > 0).length <= 20
+    && value.instructions.split(/\r?\n/).every((line) => line.trim().length <= 100)
+  ), {
+    message: "Cada instrucción puede tener hasta 100 caracteres.",
+  });
+
 const updateExerciseSchema = z.object({
   exerciseId: z.number().int().positive("El identificador del ejercicio no es válido."),
   displayName: exerciseNameSchema,
+  metadata: optionalExerciseMetadataSchema.optional(),
 });
 
 const updateExercisePreferencesSchema = z
@@ -93,9 +114,31 @@ async function fileToProcessedImageBuffer(uploadedFile: File) {
   }
 }
 
+async function uploadExerciseImage(uploadedFile: File) {
+  const image = await fileToProcessedImageBuffer(uploadedFile);
+  const response = await fetchAuthBackend("/media/exercises", {
+    method: "POST",
+    headers: { ...(await getLocalHeaders()), "content-type": "image/webp" },
+    body: new Uint8Array(image),
+  });
+  if (!response.ok) throw new Error("No se pudo guardar la imagen en el equipo local.");
+  const payload: unknown = await response.json();
+  if (!isRecord(payload) || typeof payload.url !== "string") {
+    throw new Error("La API local devolvió una imagen inválida.");
+  }
+  return payload.url;
+}
+
 export async function updateExerciseCatalogItem(input: {
   exerciseId: number;
   displayName: string;
+  metadata?: Partial<{
+    exerciseType: "strength" | "cardio" | "mobility" | "stretching" | "balance";
+    bodyPart: string;
+    targetMuscle: string;
+    equipment: string;
+    instructions: string;
+  }>;
 }): Promise<ExerciseCatalogMutationResult> {
   try {
     const authError = await ensureAdminAccess("exercises.update");
@@ -112,10 +155,20 @@ export async function updateExerciseCatalogItem(input: {
     }
 
     const nextDisplayName = parsedInput.data.displayName;
+    const metadata = parsedInput.data.metadata;
     const response = await fetchAuthBackend(`/exercises/${parsedInput.data.exerciseId}`, {
       method: "PATCH",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({ displayName: nextDisplayName }),
+      body: JSON.stringify({
+        displayName: nextDisplayName,
+        ...(metadata?.exerciseType !== undefined ? { exercise_type: metadata.exerciseType } : {}),
+        ...(metadata?.bodyPart !== undefined ? { body_parts: metadata.bodyPart ? [metadata.bodyPart] : [] } : {}),
+        ...(metadata?.targetMuscle !== undefined ? { target_muscles: metadata.targetMuscle ? [metadata.targetMuscle] : [] } : {}),
+        ...(metadata?.equipment !== undefined ? { equipments: metadata.equipment ? [metadata.equipment] : [] } : {}),
+        ...(metadata?.instructions !== undefined ? {
+          instructions: metadata.instructions.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+        } : {}),
+      }),
     });
     if (!response.ok) return { success: false, error: "No se pudo actualizar el nombre del ejercicio." };
 
@@ -124,7 +177,7 @@ export async function updateExerciseCatalogItem(input: {
 
     return {
       success: true,
-      message: "Nombre del ejercicio actualizado correctamente.",
+      message: "Ejercicio actualizado correctamente.",
     };
   } catch (error) {
     console.error("Unexpected error updating exercise catalog item:", error);
@@ -193,16 +246,29 @@ export async function updateExerciseCatalogPreferences(input: {
   }
 }
 
-export async function saveExerciseMediaToLocal(exerciseId: number): Promise<ExerciseCatalogMutationResult> {
-  const authError = await ensureAdminAccess("exercises.update");
-  if (authError) return { success: false, error: authError };
-  if (!Number.isInteger(exerciseId) || exerciseId <= 0) {
-    return { success: false, error: "El identificador del ejercicio no es válido." };
+export async function attachExerciseImage(exerciseId: number, formData: FormData): Promise<ExerciseCatalogMutationResult> {
+  try {
+    const authError = await ensureAdminAccess("exercises.update");
+    if (authError) return { success: false, error: authError };
+    if (!Number.isInteger(exerciseId) || exerciseId <= 0) {
+      return { success: false, error: "El identificador del ejercicio no es válido." };
+    }
+    const image = formData.get("image");
+    if (!(image instanceof File)) return { success: false, error: "Selecciona una imagen local." };
+    const imageUrl = await uploadExerciseImage(image);
+    const response = await fetchAuthBackend(`/exercises/${exerciseId}`, {
+      method: "PATCH",
+      headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
+      body: JSON.stringify({ imageUrl, originalFileName: image.name }),
+    });
+    if (!response.ok) return { success: false, error: "No se pudo vincular la imagen al ejercicio." };
+
+    revalidatePath("/panel/ejercicios");
+    revalidatePath("/panel/clientes");
+    return { success: true, message: "Imagen local guardada en el ejercicio." };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo guardar la imagen." };
   }
-  return {
-    success: false,
-    error: "Selecciona una imagen de tu computadora para reemplazarla; la descarga externa está deshabilitada.",
-  };
 }
 
 export async function archiveStarterPackExercises(): Promise<ExerciseCatalogMutationResult> {
@@ -246,6 +312,13 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
     const rawName = formData.get("name");
     const rawImage = formData.get("image");
     const parsedName = exerciseNameSchema.safeParse(rawName);
+    const parsedMetadata = manualExerciseMetadataSchema.safeParse({
+      exerciseType: formData.get("exerciseType") ?? "strength",
+      bodyPart: formData.get("bodyPart") ?? "",
+      targetMuscle: formData.get("targetMuscle") ?? "",
+      equipment: formData.get("equipment") ?? "",
+      instructions: formData.get("instructions") ?? "",
+    });
 
     if (!parsedName.success) {
       return {
@@ -253,33 +326,24 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
         error: parsedName.error.issues[0]?.message || "Ingresa un nombre válido para el ejercicio.",
       };
     }
-
-    if (!(rawImage instanceof File)) {
-      return { success: false, error: "Selecciona una imagen para el ejercicio." };
+    if (!parsedMetadata.success) {
+      return { success: false, error: parsedMetadata.error.issues[0]?.message || "Los detalles del ejercicio no son válidos." };
     }
 
-    const image = await fileToProcessedImageBuffer(rawImage);
-    const uploadResponse = await fetchAuthBackend("/media/exercises", {
-      method: "POST",
-      headers: { ...(await getLocalHeaders()), "content-type": "image/webp" },
-      body: new Uint8Array(image),
-    });
-    if (!uploadResponse.ok) {
-      return { success: false, error: "No se pudo guardar la imagen en el equipo local." };
-    }
-    const uploadPayload: unknown = await uploadResponse.json();
-    const imageUrl = isRecord(uploadPayload) && typeof uploadPayload.url === "string"
-      ? uploadPayload.url
-      : null;
-    if (!imageUrl) return { success: false, error: "La API local devolvió una imagen inválida." };
+    const image = rawImage instanceof File && rawImage.size > 0 ? rawImage : null;
+    const imageUrl = image ? await uploadExerciseImage(image) : null;
 
     const createResponse = await fetchAuthBackend("/exercises", {
       method: "POST",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
       body: JSON.stringify({
         name: parsedName.data,
-        image_url: imageUrl,
-        original_file_name: rawImage.name,
+        ...(imageUrl ? { image_url: imageUrl, original_file_name: image!.name } : {}),
+        exercise_type: parsedMetadata.data.exerciseType,
+        body_parts: parsedMetadata.data.bodyPart ? [parsedMetadata.data.bodyPart] : [],
+        target_muscles: parsedMetadata.data.targetMuscle ? [parsedMetadata.data.targetMuscle] : [],
+        equipments: parsedMetadata.data.equipment ? [parsedMetadata.data.equipment] : [],
+        instructions: parsedMetadata.data.instructions.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
       }),
     });
 
@@ -291,7 +355,7 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
 
     return {
       success: true,
-      message: "Ejercicio creado correctamente.",
+      message: image ? "Ejercicio e imagen guardados localmente." : "Ejercicio creado sin imagen; puedes agregarla después.",
     };
   } catch (error) {
     console.error("Unexpected error creating exercise catalog item:", error);

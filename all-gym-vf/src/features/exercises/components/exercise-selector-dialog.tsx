@@ -20,6 +20,7 @@ interface ExerciseSelectorDialogProps {
 export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: ExerciseSelectorDialogProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<ExerciseCatalogItem[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +28,7 @@ export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: Exercis
     if (!nextOpen) {
       setSearchTerm("");
       setResults([]);
+      setHasSearched(false);
       setError(null);
     }
     onOpenChange(nextOpen);
@@ -35,6 +37,7 @@ export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: Exercis
   const handleSearch = useCallback(async () => {
     if (!searchTerm.trim()) return;
     setIsSearching(true);
+    setHasSearched(true);
     setError(null);
     try {
       const result = await searchExerciseCatalog({ query: searchTerm.trim(), limit: 15 });
@@ -86,7 +89,9 @@ export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: Exercis
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               {results.length === 0 && !error ? (
                 <p className="text-sm text-muted-foreground">
-                  No hay resultados. Añade el ejercicio y su imagen desde el catálogo local.
+                  {hasSearched
+                    ? "No hay resultados. Añade el ejercicio desde el catálogo local. Puedes agregar su imagen después."
+                    : "Escribe un nombre y busca en el catálogo local."}
                 </p>
               ) : null}
               <div className="space-y-3">

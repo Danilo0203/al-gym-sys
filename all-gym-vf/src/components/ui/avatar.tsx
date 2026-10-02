@@ -4,6 +4,7 @@ import * as React from 'react';
 import * as AvatarPrimitive from '@radix-ui/react-avatar';
 
 import { cn } from '@/lib/utils';
+import { localAvatarUrl } from '@/lib/media/local-avatar-url';
 
 function Avatar({
   className,
@@ -30,6 +31,7 @@ function AvatarImage({
       data-slot='avatar-image'
       className={cn('aspect-square size-full', className)}
       {...props}
+      src={localAvatarUrl(props.src)}
     />
   );
 }

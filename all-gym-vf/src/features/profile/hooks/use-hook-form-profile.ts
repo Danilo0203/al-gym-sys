@@ -14,7 +14,7 @@ const profileSchema = z.object({
   phone: z.string(),
   birth_date: z
     .date({ error: "La fecha de nacimiento es obligatoria" })
-    .refine((value) => isValid(value), "La fecha de nacimiento no es válida"),
+    .refine((value) => isValid(value), "La fecha de nacimiento no es válida").optional(),
   gender: z.enum(["male", "female", "other"]),
 });
 
@@ -73,14 +73,14 @@ export function useHookFormProfile(profile: ProfileData) {
     const nextValues = {
       full_name: values.full_name.trim(),
       phone: values.phone,
-      birth_date: format(values.birth_date, "yyyy-MM-dd"),
+      birth_date: values.birth_date ? format(values.birth_date, "yyyy-MM-dd") : null,
       gender: values.gender,
     };
 
     const currentValues = {
       full_name: profile.full_name || "",
       phone: profile.phone || "",
-      birth_date: profile.birth_date || "",
+      birth_date: profile.birth_date,
       gender: profile.gender,
     };
 

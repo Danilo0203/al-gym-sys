@@ -375,6 +375,11 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
   const showVersionCard = Boolean(workspace.activeRoutine && !workspace.draftRoutine);
   const activeDayCount = getRoutineDayCount(workspace.activeDetails);
   const activeExerciseCount = getRoutineExerciseCount(workspace.activeDetails);
+  const unresolvedExerciseCount = workspace.draftRoutine?.source === "system" && workspace.draftRoutine.generation_version
+    ? workspace.draftDetails.filter((detail) =>
+        (detail.block_type === "strength" || detail.block_type === "accessory") && detail.exercise_id === null,
+      ).length
+    : 0;
   const canChooseTemplate = !workspace.activeRoutine && !workspace.draftRoutine && !workspace.pendingRoutine;
 
   return (
@@ -486,13 +491,18 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
                       size="sm"
                       variant="outline"
                       onClick={handleApprove}
-                      disabled={isApproving}
+                      disabled={isApproving || unresolvedExerciseCount > 0}
                       className="flex-1"
                     >
                       <CheckCircle2 className="size-3.5" />
                       {isApproving ? "Aprobando..." : "Aprobar"}
                     </Button>
                   </div>
+                  {unresolvedExerciseCount > 0 ? (
+                    <p className="text-xs text-amber-600" role="status">
+                      Reemplaza {unresolvedExerciseCount} ejercicio{unresolvedExerciseCount === 1 ? "" : "s"} pendiente{unresolvedExerciseCount === 1 ? "" : "s"} del catálogo local antes de aprobar.
+                    </p>
+                  ) : null}
                   {canGenerate ? (
                     <Button
                       size="sm"

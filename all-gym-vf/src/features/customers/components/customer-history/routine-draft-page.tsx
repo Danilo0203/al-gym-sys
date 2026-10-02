@@ -94,6 +94,11 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
   const [isSearchingManual, setIsSearchingManual] = useState(false);
 
   const isGeneratingDraft = generationState.active && generationState.pendingId !== workspace.draftRoutine?.id;
+  const unresolvedExerciseCount = workspace.draftRoutine?.source === "system" && workspace.draftRoutine.generation_version
+    ? workspace.draftDetails.filter((detail) =>
+        (detail.block_type === "strength" || detail.block_type === "accessory") && detail.exercise_id === null,
+      ).length
+    : 0;
 
   const handleEditorChange = (detailId: number, patch: Partial<DetailEditorState>) => {
     const detail = workspace.draftDetails.find((item) => item.id === detailId);
@@ -393,7 +398,12 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
       </div>
 
       <div className="border-t bg-background/95 px-6 py-4 backdrop-blur">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {unresolvedExerciseCount > 0 ? (
+            <p className="text-sm text-amber-600" role="status">
+              Reemplaza {unresolvedExerciseCount} ejercicio{unresolvedExerciseCount === 1 ? "" : "s"} pendiente{unresolvedExerciseCount === 1 ? "" : "s"} del catálogo local antes de aprobar.
+            </p>
+          ) : <span />}
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link href={backHref}>Volver al perfil</Link>
@@ -402,7 +412,7 @@ export function RoutineDraftPage({ customerId, customerName, workspace }: Routin
               <RefreshCw className={`size-4 ${isGeneratingDraft ? "animate-spin" : ""}`} />
               {isGeneratingDraft ? "Generando..." : "Generar nueva rutina"}
             </Button>
-            <Button onClick={handleApprove} disabled={isApproving || isGeneratingDraft}>
+            <Button onClick={handleApprove} disabled={isApproving || isGeneratingDraft || unresolvedExerciseCount > 0}>
               {isApproving ? "Aprobando..." : "Aprobar borrador"}
             </Button>
           </div>

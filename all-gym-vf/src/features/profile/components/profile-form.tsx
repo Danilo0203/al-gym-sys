@@ -55,7 +55,6 @@ export function ProfileForm({ profile, canEditProfile }: ProfileFormProps) {
                 control={form.control}
                 name="birth_date"
                 label="Fecha de Nacimiento"
-                required
                 config={{
                   placeholder: "Selecciona una fecha",
                   maxDate: endOfDay(new Date()),

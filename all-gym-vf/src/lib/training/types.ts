@@ -106,12 +106,6 @@ export interface ExerciseCatalogItem {
   is_active: boolean;
 }
 
-export interface ProviderExerciseSummary {
-  exerciseId: string;
-  name: string;
-  imageUrl: string | null;
-}
-
 export interface ExerciseReplacementOption {
   id: number;
   name: string;

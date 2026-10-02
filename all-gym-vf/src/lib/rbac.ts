@@ -8,7 +8,7 @@ import { UserRole } from "@/types";
  * Real security is enforced by:
  * 1. Middleware (src/proxy.ts)
  * 2. getUserAccessContext with permission checks in server actions
- * 3. RLS policies in Supabase
+ * 3. RLS policies in local PostgreSQL
  */
 
 // Map routes to required permissions (replaces old ROUTE_PERMISSIONS role arrays)

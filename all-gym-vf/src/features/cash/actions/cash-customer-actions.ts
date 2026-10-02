@@ -13,6 +13,34 @@ import {
   buildCashCustomerRenewalPayload,
 } from "@/features/cash/lib/local-customer-intake";
 import { reconcileLocalCustomerOnClock } from "@/features/cash/lib/local-device-sync";
+import { generateRoutineProposal } from "@/features/customers/actions/customer-routine-actions";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+
+type CashRoutineResult = {
+  status: "draft" | "pending_profile" | "failed";
+  message?: string;
+};
+
+async function generateCashCustomerRoutine(customerId: string): Promise<CashRoutineResult> {
+  try {
+    const access = await getUserAccessContext();
+    if (!hasPermission(access, "customers.manage_routine")) {
+      return {
+        status: "pending_profile",
+        message: "El cobro dejó la rutina pendiente para revisión por un entrenador o administrador.",
+      };
+    }
+    const result = await generateRoutineProposal(customerId);
+    return result.success
+      ? { status: "draft" }
+      : { status: "pending_profile", message: result.error };
+  } catch (error) {
+    return {
+      status: "failed",
+      message: error instanceof Error ? error.message : "No se pudo generar la rutina local.",
+    };
+  }
+}
 
 async function cashMutation(path: string, payload: unknown) {
   const cookieHeader = buildCookieHeader((await cookies()).getAll());
@@ -38,7 +66,11 @@ export async function createCashCustomer(data: CreateCustomerData) {
   const response = await cashMutation("/customers", payload);
   const customer = await parseCustomerApiResponse(response, (body) => customerDetailSchema.parse(body));
   refreshCashViews(customer.id);
-  return { deviceSync: await reconcileLocalCustomerOnClock(customer.id) };
+  const [routineGeneration, deviceSync] = await Promise.all([
+    generateCashCustomerRoutine(customer.id),
+    reconcileLocalCustomerOnClock(customer.id),
+  ]);
+  return { routineGeneration, deviceSync };
 }
 
 export async function renewCashCustomer(customerId: string, data: RenewSubscriptionData) {
@@ -47,7 +79,11 @@ export async function renewCashCustomer(customerId: string, data: RenewSubscript
     const response = await cashMutation("/payments/membership", payload);
     await parseCustomerApiResponse(response, (body) => body);
     refreshCashViews(customerId);
-    return { success: true, deviceSync: await reconcileLocalCustomerOnClock(customerId) };
+    const [routineGeneration, deviceSync] = await Promise.all([
+      generateCashCustomerRoutine(customerId),
+      reconcileLocalCustomerOnClock(customerId),
+    ]);
+    return { success: true, routineGeneration, deviceSync };
   } catch (error) {
     return {
       success: false,

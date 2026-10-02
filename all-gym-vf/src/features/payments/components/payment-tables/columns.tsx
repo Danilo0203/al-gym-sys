@@ -7,11 +7,16 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { DataTableColumnHeader } from '@/components/ui/table/data-table-column-header';
 import { SubscriptionStatusBadge } from '@/components/subscription-status-badge';
+import { ReversePaymentDialog } from '@/features/cash/components/reverse-payment-dialog';
+import { Button } from '@/components/ui/button';
+import { PaymentDetailDialog } from './payment-detail-dialog';
 
 export interface Payment {
   id: string;
+  subscription_id: string | null;
   payment_date: string;
   amount_paid: number;
+  status: 'posted' | 'reversed';
   method: 'cash' | 'card' | 'transfer';
   user_name: string;
   user_email?: string;
@@ -56,7 +61,7 @@ const statusOptions: MethodOption[] = [
 ];
 
 // Factory function to create columns with dynamic options
-export function getColumns(methodOptions: MethodOption[] = defaultMethodOptions): ColumnDef<Payment>[] {
+export function getColumns(methodOptions: MethodOption[] = defaultMethodOptions, canCorrect = false): ColumnDef<Payment>[] {
   return [
     {
       id: 'payment_date',
@@ -179,6 +184,23 @@ export function getColumns(methodOptions: MethodOption[] = defaultMethodOptions)
       }
     },
     {
+      id: 'status',
+      accessorKey: 'status',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="PAGO" />,
+      enableColumnFilter: true,
+      meta: {
+        label: 'Estado del pago',
+        variant: 'select' as const,
+        options: [
+          { label: 'Publicado', value: 'posted' },
+          { label: 'Reversado', value: 'reversed' },
+        ],
+      },
+      cell: ({ row }) => <Badge variant={row.original.status === 'reversed' ? 'destructive' : 'secondary'}>
+        {row.original.status === 'reversed' ? 'Reversado' : 'Publicado'}
+      </Badge>,
+    },
+    {
       accessorKey: 'amount_paid',
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="MONTO" />
@@ -187,7 +209,22 @@ export function getColumns(methodOptions: MethodOption[] = defaultMethodOptions)
         const amount = parseFloat(row.getValue('amount_paid'));
         return <div className='font-bold text-base'>Q{amount.toFixed(2)}</div>;
       }
-    }
+    },
+    {
+      id: 'actions',
+      header: 'ACCIONES',
+      cell: ({ row }) => <div className="flex gap-2">
+        <PaymentDetailDialog paymentId={row.original.id} />
+        {canCorrect && row.original.status === 'posted' && row.original.subscription_id && (
+          <ReversePaymentDialog
+            paymentId={row.original.id}
+            sourceCategory="membership"
+            conceptLabel="Membresía"
+            trigger={<Button variant="outline" size="sm">Corregir</Button>}
+          />
+        )}
+      </div>,
+    },
   ];
 }
 

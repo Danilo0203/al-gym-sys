@@ -1,6 +1,5 @@
 import Providers from "@/components/layout/providers";
 import { Toaster } from "@/components/ui/sonner";
-import { fontVariables } from "@/lib/font";
 import ThemeProvider from "@/components/layout/ThemeToggle/theme-provider";
 import { cn } from "@/lib/utils";
 import type { Metadata, Viewport } from "next";
@@ -78,7 +77,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           "bg-background overflow-hidden overscroll-none font-sans antialiased",
           activeThemeValue ? `theme-${activeThemeValue}` : "",
           isScaled ? "theme-scaled" : "",
-          fontVariables,
         )}
         suppressHydrationWarning
       >

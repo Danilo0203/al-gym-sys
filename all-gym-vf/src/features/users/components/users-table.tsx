@@ -7,7 +7,6 @@ import { useDataTable } from "@/hooks/use-data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UserRole } from "@/types";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import React, { useMemo, useState } from "react";
@@ -114,7 +113,7 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
           })),
         },
         cell: ({ row }) => {
-          const role = row.getValue("role") as UserRole;
+          const role = row.getValue("role") as string;
           const colorMap: Record<string, "default" | "secondary" | "destructive" | "outline" | "success"> = {
             owner: "default",
             admin: "destructive",
