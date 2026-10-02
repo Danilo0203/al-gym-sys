@@ -116,25 +116,14 @@ export async function getProductsListing(filters: ProductListingFilters = {}) {
   };
 }
 
-async function uploadProductImage(imageFile: File) {
+async function productImageBase64(imageFile: File) {
   if (!ACCEPTED_IMAGE_TYPES.has(imageFile.type)) {
     throw new Error("La imagen debe ser JPG, PNG, WebP o GIF.");
   }
   if (imageFile.size > MAX_IMAGE_SIZE_BYTES) {
     throw new Error("La imagen no puede superar 5 MB.");
   }
-  const buffer = new Uint8Array(await imageFile.arrayBuffer());
-  const response = await fetchAuthBackend("/media/products", {
-    method: "POST",
-    headers: await localHeaders(imageFile.type),
-    body: buffer,
-  });
-  if (!response.ok) throw new Error(await responseError(response, "No se pudo guardar la imagen del producto"));
-  const payload = await response.json() as { url?: string };
-  if (!payload.url?.startsWith("/api/media/products/")) {
-    throw new Error("La API local devolvió una imagen inválida");
-  }
-  return payload.url;
+  return Buffer.from(await imageFile.arrayBuffer()).toString("base64");
 }
 
 export async function saveProduct(formData: FormData) {
@@ -153,8 +142,8 @@ export async function saveProduct(formData: FormData) {
 
   try {
     const imageFile = formData.get("image");
-    const imageUrl = imageFile instanceof File && imageFile.size > 0
-      ? await uploadProductImage(imageFile) : undefined;
+    const imageBase64 = imageFile instanceof File && imageFile.size > 0
+      ? await productImageBase64(imageFile) : undefined;
     const payload = {
       name,
       sku: normalizeNullableText(formData.get("sku")),
@@ -162,11 +151,12 @@ export async function saveProduct(formData: FormData) {
       costPrice,
       salePrice,
       isActive: formData.get("is_active") !== "false",
-      ...(imageUrl ? { imageUrl } : {}),
+      ...(imageBase64 ? { image_base64: imageBase64 } : {}),
       ...(!productId ? { initialQuantity } : {}),
     };
+    const productPath = productId ? `/products/${encodeURIComponent(productId)}` : "/products";
     const response = await inventoryRequest(
-      productId ? `/products/${encodeURIComponent(productId)}` : "/products",
+      imageBase64 ? `${productPath}/with-image` : productPath,
       { method: productId ? "PUT" : "POST", body: JSON.stringify(payload) },
     );
     if (!response.ok) return { success: false, error: await responseError(response, "No se pudo guardar el producto") };
