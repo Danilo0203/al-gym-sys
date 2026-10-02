@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { searchExerciseCatalog } from "@/features/routines/actions/exercise-search-actions";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { ExerciseCatalogItem } from "@/lib/training/types";
 
 interface ExerciseSelectorDialogProps {
@@ -101,7 +102,7 @@ export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: Exercis
                     <div key={exercise.id} className="rounded-lg border bg-background p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex min-w-0 flex-1 gap-4">
-                          {exercise.image_url ? (
+                          {isExerciseMediaStoredLocally(exercise.image_url) ? (
                             <div className="h-24 w-28 shrink-0 overflow-hidden rounded-lg border bg-muted/20">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={exercise.image_url} alt={name} loading="lazy" className="h-full w-full object-cover" />

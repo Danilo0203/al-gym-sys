@@ -16,6 +16,7 @@ import {
   type CashProductSearchResult,
   type PaymentMethod,
 } from "@/features/cash/actions/cash-actions";
+import { localProductImageUrl } from "@/lib/media/local-product-image-url";
 
 interface CartItem extends CashProductSearchResult {
   quantity: number;
@@ -34,14 +35,15 @@ function formatQuantity(value: number) {
 }
 
 function ProductThumb({ product }: { product: CashProductSearchResult }) {
-  if (!product.image_url) {
+  const imageUrl = localProductImageUrl(product.image_url);
+  if (!imageUrl) {
     return <div className="size-10 rounded-md border bg-muted" />;
   }
 
   return (
     <div
       className="size-10 rounded-md border bg-cover bg-center"
-      style={{ backgroundImage: `url(${product.image_url})` }}
+      style={{ backgroundImage: `url(${imageUrl})` }}
       aria-label={`Imagen de ${product.name}`}
     />
   );

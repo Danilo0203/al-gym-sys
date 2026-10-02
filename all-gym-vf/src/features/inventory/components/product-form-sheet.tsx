@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { saveProduct, type ProductInventoryItem } from "@/features/inventory/actions/inventory-actions";
+import { localProductImageUrl } from "@/lib/media/local-product-image-url";
 
 interface ProductFormSheetProps {
   product?: ProductInventoryItem | null;
@@ -45,6 +46,7 @@ export function ProductFormSheet({
   };
 
   const profit = salePrice - costPrice;
+  const productImageUrl = localProductImageUrl(product?.image_url);
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -180,11 +182,11 @@ export function ProductFormSheet({
             <div className="flex flex-col gap-2">
               <Label htmlFor="product-image">Imagen</Label>
               <Input id="product-image" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
-              {product?.image_url ? (
+              {productImageUrl ? (
                 <div
                   className="h-28 rounded-md border bg-cover bg-center"
-                  style={{ backgroundImage: `url(${product.image_url})` }}
-                  aria-label={`Imagen actual de ${product.name}`}
+                  style={{ backgroundImage: `url(${productImageUrl})` }}
+                  aria-label={`Imagen actual de ${product?.name ?? "producto"}`}
                 />
               ) : null}
             </div>

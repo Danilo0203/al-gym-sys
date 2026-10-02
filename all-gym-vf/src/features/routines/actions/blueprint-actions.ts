@@ -7,6 +7,7 @@ import { z } from "zod";
 import { parseCustomerApiResponse } from "@/features/customers/lib/local-customers";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { RoutineBlockType } from "@/lib/training/types";
 
 const blueprintSchema = z.object({
@@ -41,7 +42,12 @@ const detailSchema = z.object({
   exercise_name_snapshot: z.string().nullable(),
   exercise_image_url: z.string().nullable(),
   exercise_video_url: z.string().nullable(),
-});
+}).transform((detail) => ({
+  ...detail,
+  exercise_image_url: isExerciseMediaStoredLocally(detail.exercise_image_url)
+    ? detail.exercise_image_url : null,
+  exercise_video_url: null,
+}));
 const assignmentSchema = z.object({
   id: z.uuid(),
   blueprint_id: z.uuid(),

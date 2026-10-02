@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:auth": "tsx --test src/lib/auth/auth-proxy.test.ts",
-    "test:offline-boundaries": "tsx --test src/lib/network/local-service-url.test.ts src/lib/auth/backend-auth.test.ts src/features/cash/lib/local-device-sync.test.ts src/lib/media/local-avatar-url.test.ts"
+    "test:offline-boundaries": "tsx --test src/lib/network/local-service-url.test.ts src/lib/auth/backend-auth.test.ts src/features/cash/lib/local-device-sync.test.ts src/lib/media/local-avatar-url.test.ts src/features/customers/lib/local-customer-routine.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

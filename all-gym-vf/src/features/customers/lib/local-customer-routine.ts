@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { CustomerRoutineWorkspace } from "@/lib/training/types";
 
 const primaryGoalSchema = z.enum([
@@ -124,7 +125,12 @@ export const routineDetailSchema = z.object({
   exercise_name_snapshot: z.string().nullable(),
   exercise_image_url: z.string().nullable(),
   exercise_video_url: z.string().nullable(),
-});
+}).transform((detail) => ({
+  ...detail,
+  exercise_image_url: isExerciseMediaStoredLocally(detail.exercise_image_url)
+    ? detail.exercise_image_url : null,
+  exercise_video_url: null,
+}));
 
 export const customerRoutineWorkspaceSchema = z.object({
   trainingProfile: trainingProfileSchema.nullable(),

@@ -835,7 +835,8 @@ function ExerciseImage({
   loading?: "eager" | "lazy";
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const normalizedSrc = typeof src === "string" ? src : null;
+  const normalizedSrc = typeof src === "string"
+    && (src.startsWith("blob:") || isExerciseMediaStoredLocally(src)) ? src : null;
   const hasError = Boolean(normalizedSrc) && failedSrc === normalizedSrc;
 
   if (!normalizedSrc || hasError) {

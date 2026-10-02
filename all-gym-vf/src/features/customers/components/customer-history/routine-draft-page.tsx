@@ -28,6 +28,7 @@ import type {
   RoutineDetailRecord,
   RoutineReplacementContext,
 } from "@/lib/training/types";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import {
   generateRoutineProposal,
   getRoutineExerciseReplacementOptions,
@@ -705,7 +706,7 @@ function ReplacementMediaThumb({
   className?: string;
 }) {
   const [hasError, setHasError] = useState(false);
-  const canRender = Boolean(src) && !hasError;
+  const canRender = isExerciseMediaStoredLocally(src) && !hasError;
 
   return (
     <div className={`overflow-hidden rounded-lg border bg-muted/20 ${className || "h-24 w-28"}`}>

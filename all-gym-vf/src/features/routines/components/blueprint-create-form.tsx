@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PRIMARY_GOAL_OPTIONS } from "@/lib/training/options";
+import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { RoutineBlockType } from "@/lib/training/types";
 import { cn } from "@/lib/utils";
 import { ExerciseSelectorDialog } from "@/features/exercises/components/exercise-selector-dialog";
@@ -672,7 +673,7 @@ function SortableExercise({
 
         {/* Exercise selector + name */}
         <div className="flex items-center gap-4">
-          {exercise.exercise_image_url ? (
+          {isExerciseMediaStoredLocally(exercise.exercise_image_url) ? (
             <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl border bg-muted/20">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img

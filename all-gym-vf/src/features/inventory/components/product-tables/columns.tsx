@@ -4,6 +4,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { CellAction } from "./cell-action";
 import { Badge } from "@/components/ui/badge";
 import { DataTableColumnHeader } from "@/components/ui/table/data-table-column-header";
+import { localProductImageUrl } from "@/lib/media/local-product-image-url";
 
 export type Product = {
   id: string;
@@ -38,14 +39,15 @@ function formatQuantity(value: number) {
 }
 
 function ProductThumb({ product }: { product: Product }) {
-  if (!product.image_url) {
+  const imageUrl = localProductImageUrl(product.image_url);
+  if (!imageUrl) {
     return <div className="size-9 shrink-0 rounded-md border bg-muted" />;
   }
 
   return (
     <div
       className="size-9 shrink-0 rounded-md border bg-cover bg-center"
-      style={{ backgroundImage: `url(${product.image_url})` }}
+      style={{ backgroundImage: `url(${imageUrl})` }}
       aria-label={`Imagen de ${product.name}`}
     />
   );
