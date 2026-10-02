@@ -105,7 +105,7 @@ Un paquete dentro de un carril puede avanzar en paralelo con otros carriles. Den
 **Puerta final:** datos reconciliados, flujos completos probados y ningún servicio necesario depende del VPS/Supabase.
 
 - [ ] `P6-01` Con respaldo verificado y ventana de corte acordada, detener escrituras al origen, importar el delta final de PostgreSQL, usuarios y archivos; conservar IDs y relaciones. Registrar fecha/hora y conteos antes/después.
-- [ ] `P6-02` Reconciliar por entidad: usuarios, clientes, planes, membresías, pagos, sesiones de caja, productos, existencias, rutinas, asistencias, comandos y archivos. Resolver diferencias antes del cierre.
+- [ ] `P6-02` Reconciliar por entidad: usuarios, clientes, planes, membresías, pagos, sesiones de caja, productos, existencias, rutinas, asistencias, comandos y archivos. Resolver diferencias antes del cierre. La copia local actual está desactualizada: el usuario decidió posponer la conciliación de los 23 movimientos de caja de membresía sin pago asociado hasta restaurar los datos vigentes del VPS. No corregir ni borrar esos movimientos en la copia vieja; evaluar la discrepancia de nuevo sobre la restauración final.
 - [ ] `P6-03` Ejecutar prueba de aceptación con la red externa bloqueada: login, creación de cliente/usuario, plan, membresía, cobro/cierre/reversión, venta/stock, rutina/imagen **desde archivo local**, portal del socio, marcaje ZKTeco, Resumen y restauración de respaldo. Registrar resultados y logs sin secretos.
 - [ ] `P6-04` Eliminar configuración y claves ya innecesarias; rotar credenciales expuestas, incluida la antigua clave de WorkoutX que estuvo embebida en código; apagar Hostinger/Supabase **solo después** de confirmar `P6-01` a `P6-03` y mantener un respaldo recuperable.
 
