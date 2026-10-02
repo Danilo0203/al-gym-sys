@@ -8,7 +8,7 @@ const filenamePattern = /^[a-f0-9]{64}\.(png|jpg|webp|gif)$/;
 
 export async function GET(_request: Request, context: Context) {
   const { kind, filename } = await context.params;
-  if (!["exercises", "products"].includes(kind) || !filenamePattern.test(filename)) {
+  if (!["exercises", "products", "avatars"].includes(kind) || !filenamePattern.test(filename)) {
     return new Response("Imagen inválida", { status: 400 });
   }
 

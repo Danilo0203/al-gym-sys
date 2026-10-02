@@ -1,11 +1,5 @@
 export function localAvatarUrl(value: string | Blob | undefined): string | undefined {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return undefined;
-  if (/[\\\u0000-\u001f\u007f]/.test(value)) return undefined;
-
-  try {
-    const url = new URL(value, "http://allgym.local");
-    return url.origin === "http://allgym.local" ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  return typeof value === "string"
+    && /^\/api\/media\/avatars\/[a-f0-9]{64}\.(png|jpg|webp|gif)$/.test(value)
+    ? value : undefined;
 }
