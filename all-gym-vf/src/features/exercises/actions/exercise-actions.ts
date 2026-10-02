@@ -59,10 +59,6 @@ interface ExerciseCatalogMutationResult {
   error?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 async function ensureAdminAccess(permission: string = "exercises.view") {
   const access = await getUserAccessContext();
 
@@ -112,21 +108,6 @@ async function fileToProcessedImageBuffer(uploadedFile: File) {
     console.error("Error processing exercise image:", error);
     throw new Error("No se pudo procesar la imagen seleccionada.");
   }
-}
-
-async function uploadExerciseImage(uploadedFile: File) {
-  const image = await fileToProcessedImageBuffer(uploadedFile);
-  const response = await fetchAuthBackend("/media/exercises", {
-    method: "POST",
-    headers: { ...(await getLocalHeaders()), "content-type": "image/webp" },
-    body: new Uint8Array(image),
-  });
-  if (!response.ok) throw new Error("No se pudo guardar la imagen en el equipo local.");
-  const payload: unknown = await response.json();
-  if (!isRecord(payload) || typeof payload.url !== "string") {
-    throw new Error("La API local devolvió una imagen inválida.");
-  }
-  return payload.url;
 }
 
 export async function updateExerciseCatalogItem(input: {
@@ -255,11 +236,15 @@ export async function attachExerciseImage(exerciseId: number, formData: FormData
     }
     const image = formData.get("image");
     if (!(image instanceof File)) return { success: false, error: "Selecciona una imagen local." };
-    const imageUrl = await uploadExerciseImage(image);
-    const response = await fetchAuthBackend(`/exercises/${exerciseId}`, {
-      method: "PATCH",
+    const processedImage = await fileToProcessedImageBuffer(image);
+    const response = await fetchAuthBackend("/exercises/image-attachment", {
+      method: "POST",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({ imageUrl, originalFileName: image.name }),
+      body: JSON.stringify({
+        exercise_id: exerciseId,
+        image_base64: processedImage.toString("base64"),
+        original_file_name: image.name,
+      }),
     });
     if (!response.ok) return { success: false, error: "No se pudo vincular la imagen al ejercicio." };
 
@@ -331,14 +316,17 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
     }
 
     const image = rawImage instanceof File && rawImage.size > 0 ? rawImage : null;
-    const imageUrl = image ? await uploadExerciseImage(image) : null;
+    const processedImage = image ? await fileToProcessedImageBuffer(image) : null;
 
-    const createResponse = await fetchAuthBackend("/exercises", {
+    const createResponse = await fetchAuthBackend(image ? "/exercises/with-image" : "/exercises", {
       method: "POST",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
       body: JSON.stringify({
         name: parsedName.data,
-        ...(imageUrl ? { image_url: imageUrl, original_file_name: image!.name } : {}),
+        ...(processedImage ? {
+          image_base64: processedImage.toString("base64"),
+          original_file_name: image!.name,
+        } : {}),
         exercise_type: parsedMetadata.data.exerciseType,
         body_parts: parsedMetadata.data.bodyPart ? [parsedMetadata.data.bodyPart] : [],
         target_muscles: parsedMetadata.data.targetMuscle ? [parsedMetadata.data.targetMuscle] : [],
