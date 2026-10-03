@@ -19,6 +19,7 @@ import { usePlans } from "@/features/plans/hooks/use-plans";
 import {
   createMembershipForCustomer,
   renewMembershipForCustomer,
+  updatePendingMembershipForCustomer,
   type Membership,
   type MembershipWriteInput,
 } from "@/features/customers/lib/local-memberships";
@@ -31,6 +32,14 @@ import {
   type CreateCustomerInput,
   type UpdateCustomerInput,
 } from "@/features/customers/lib/local-customers";
+import {
+  createCustomerBodyAssessment,
+  updateCustomerHealthProfile,
+} from "@/features/customers/lib/customer-api";
+import type {
+  BodyAssessmentWriteInput,
+  CustomerHealthProfileUpdateInput,
+} from "@/features/customers/lib/customer-health";
 
 const profileCustomerSchema = z.object({
   full_name: z.string().min(2, {
@@ -548,6 +557,218 @@ function buildPhaseAUpdatePayload(
   return Object.keys(payload).length > 0 ? payload : null;
 }
 
+function buildHealthProfileUpdatePayload(
+  values: CustomerSheetFormValues,
+  customer?: CustomerData | null,
+): CustomerHealthProfileUpdateInput | null {
+  const payload: CustomerHealthProfileUpdateInput = {};
+
+  const nextParq =
+    values.parq_requires_attention === "yes"
+      ? true
+      : values.parq_requires_attention === "no"
+        ? false
+        : null;
+  if (!customer || nextParq !== customer.parq_requires_attention) {
+    if (nextParq !== null || customer?.parq_requires_attention !== null) {
+      payload.parq_requires_attention = nextParq;
+    }
+  }
+
+  const nextInjuriesOrPain = normalizeTextFieldValue(values.injuries_or_pain) ?? null;
+  if (!customer || nextInjuriesOrPain !== (customer.injuries_or_pain ?? null)) {
+    if (nextInjuriesOrPain !== null || customer?.injuries_or_pain) {
+      payload.injuries_or_pain = nextInjuriesOrPain;
+    }
+  }
+
+  const nextClearance = normalizeTextFieldValue(values.medical_clearance_notes) ?? null;
+  if (!customer || nextClearance !== (customer.medical_clearance_notes ?? null)) {
+    if (nextClearance !== null || customer?.medical_clearance_notes) {
+      payload.medical_clearance_notes = nextClearance;
+    }
+  }
+
+  const nextPrimaryGoal = values.primary_goal ?? null;
+  if (!customer || nextPrimaryGoal !== (customer.primary_goal ?? null)) {
+    if (nextPrimaryGoal !== null || customer?.primary_goal) {
+      payload.primary_goal = nextPrimaryGoal;
+    }
+  }
+
+  const nextSecondaryGoal = values.secondary_goal ?? null;
+  if (!customer || nextSecondaryGoal !== (customer.secondary_goal ?? null)) {
+    if (nextSecondaryGoal !== null || customer?.secondary_goal) {
+      payload.secondary_goal = nextSecondaryGoal;
+    }
+  }
+
+  const nextFocusAreas = values.focus_areas && values.focus_areas.length > 0 ? values.focus_areas : null;
+  const currentFocusAreas = customer?.focus_areas && customer.focus_areas.length > 0 ? customer.focus_areas : null;
+  if (!customer || JSON.stringify(nextFocusAreas) !== JSON.stringify(currentFocusAreas)) {
+    if (nextFocusAreas !== null || currentFocusAreas !== null) {
+      payload.focus_areas = nextFocusAreas;
+    }
+  }
+
+  const nextExpLevel = values.experience_level ?? null;
+  if (!customer || nextExpLevel !== (customer.experience_level ?? null)) {
+    if (nextExpLevel !== null || customer?.experience_level) {
+      payload.experience_level = nextExpLevel;
+    }
+  }
+
+  const nextDays = values.days_per_week ? Number(values.days_per_week) : null;
+  if (!customer || nextDays !== (customer.days_per_week ?? null)) {
+    if (nextDays !== null || customer?.days_per_week) {
+      payload.days_per_week = nextDays;
+    }
+  }
+
+  const nextMinutes = combineSessionDuration(values.session_hours, values.session_minutes_extra);
+  if (!customer || nextMinutes !== (customer.session_minutes ?? null)) {
+    if (nextMinutes !== null || customer?.session_minutes) {
+      payload.session_minutes = nextMinutes;
+    }
+  }
+
+  const nextLocation = values.training_location ?? null;
+  if (!customer || nextLocation !== (customer.training_location ?? null)) {
+    if (nextLocation !== null || customer?.training_location) {
+      payload.training_location = nextLocation;
+    }
+  }
+
+  const nextEquipment = values.equipment_available && values.equipment_available.length > 0 ? values.equipment_available : null;
+  const currentEquipment = customer?.equipment_available && customer.equipment_available.length > 0 ? customer.equipment_available : null;
+  if (!customer || JSON.stringify(nextEquipment) !== JSON.stringify(currentEquipment)) {
+    if (nextEquipment !== null || currentEquipment !== null) {
+      payload.equipment_available = nextEquipment;
+    }
+  }
+
+  const nextCardio = values.cardio_preference ?? null;
+  if (!customer || nextCardio !== (customer.cardio_preference ?? null)) {
+    if (nextCardio !== null || customer?.cardio_preference) {
+      payload.cardio_preference = nextCardio;
+    }
+  }
+
+  const nextPref = normalizeTextFieldValue(values.exercise_preferences) ?? null;
+  if (!customer || nextPref !== (customer.exercise_preferences ?? null)) {
+    if (nextPref !== null || customer?.exercise_preferences) {
+      payload.exercise_preferences = nextPref;
+    }
+  }
+
+  const nextDislikes = normalizeTextFieldValue(values.exercise_dislikes) ?? null;
+  if (!customer || nextDislikes !== (customer.exercise_dislikes ?? null)) {
+    if (nextDislikes !== null || customer?.exercise_dislikes) {
+      payload.exercise_dislikes = nextDislikes;
+    }
+  }
+
+  const nextDiet = values.diet_type ?? null;
+  if (!customer || nextDiet !== (customer.diet_type ?? null)) {
+    if (nextDiet !== null || customer?.diet_type) {
+      payload.diet_type = nextDiet;
+    }
+  }
+
+  const nextActivity = values.activity_level ?? null;
+  if (!customer || nextActivity !== (customer.activity_level ?? null)) {
+    if (nextActivity !== null || customer?.activity_level) {
+      payload.activity_level = nextActivity;
+    }
+  }
+
+  const nextRestrictions = values.restricted_movements && values.restricted_movements.length > 0
+    ? values.restricted_movements.join(", ")
+    : null;
+  const currentRestrictions = customer?.restricted_movements && customer.restricted_movements.length > 0
+    ? (Array.isArray(customer.restricted_movements) ? customer.restricted_movements.join(", ") : customer.restricted_movements)
+    : null;
+  if (!customer || nextRestrictions !== currentRestrictions) {
+    if (nextRestrictions !== null || currentRestrictions !== null) {
+      payload.restricted_movements = nextRestrictions;
+    }
+  }
+
+  return Object.keys(payload).length > 0 ? payload : null;
+}
+
+function buildBodyAssessmentPayload(
+  values: CustomerSheetFormValues,
+  customer?: CustomerData | null,
+): BodyAssessmentWriteInput | null {
+  const weightKg = poundsToKilograms(values.weight_lb);
+  const normalizedWeight = weightKg != null ? Number(weightKg.toFixed(2)) : undefined;
+
+  const measurements = {
+    weight_kg: normalizedWeight,
+    height_cm: values.height_cm,
+    body_fat_percentage: values.body_fat_percentage,
+    muscle_mass_kg: values.muscle_mass_kg,
+    chest: values.chest,
+    waist: values.waist,
+    hip: values.hip,
+    arm_right: values.arm_right,
+    arm_left: values.arm_left,
+    leg_right: values.leg_right,
+    leg_left: values.leg_left,
+  };
+
+  const hasAnyMeasurement = Object.values(measurements).some((v) => v !== undefined && v !== null);
+  const nutritionSnapshot = {
+    ...(values.body_type ? { body_type: values.body_type } : {}),
+    ...(values.diet_type ? { diet_type: values.diet_type } : {}),
+    ...(values.activity_level ? { activity_level: values.activity_level } : {}),
+  };
+  const hasNutrition = Object.keys(nutritionSnapshot).length > 0;
+  const hasNotes = Boolean(values.injuries?.trim());
+
+  if (!hasAnyMeasurement && !hasNutrition && !hasNotes) {
+    return null;
+  }
+
+  if (customer) {
+    const hasMeasurementChanged =
+      !areSameNumber(normalizedWeight, customer.weight_kg) ||
+      !areSameNumber(values.height_cm, customer.height_cm) ||
+      !areSameNumber(values.body_fat_percentage, customer.body_fat_percentage) ||
+      !areSameNumber(values.muscle_mass_kg, customer.muscle_mass_kg) ||
+      !areSameNumber(values.chest, customer.chest) ||
+      !areSameNumber(values.waist, customer.waist) ||
+      !areSameNumber(values.hip, customer.hip) ||
+      !areSameNumber(values.arm_right, customer.arm_right) ||
+      !areSameNumber(values.arm_left, customer.arm_left) ||
+      !areSameNumber(values.leg_right, customer.leg_right) ||
+      !areSameNumber(values.leg_left, customer.leg_left) ||
+      (values.body_type && values.body_type !== customer.body_type);
+
+    if (!hasMeasurementChanged) {
+      return null;
+    }
+  }
+
+  return {
+    assessment_date: toIsoDateString(new Date()),
+    ...(normalizedWeight != null ? { weight_kg: normalizedWeight } : {}),
+    ...(values.height_cm != null ? { height_cm: values.height_cm } : {}),
+    ...(values.body_fat_percentage != null ? { body_fat_percentage: values.body_fat_percentage } : {}),
+    ...(values.muscle_mass_kg != null ? { muscle_mass_kg: values.muscle_mass_kg } : {}),
+    ...(values.chest != null ? { chest: values.chest } : {}),
+    ...(values.waist != null ? { waist: values.waist } : {}),
+    ...(values.hip != null ? { hip: values.hip } : {}),
+    ...(values.arm_right != null ? { arm_right: values.arm_right } : {}),
+    ...(values.arm_left != null ? { arm_left: values.arm_left } : {}),
+    ...(values.leg_right != null ? { leg_right: values.leg_right } : {}),
+    ...(values.leg_left != null ? { leg_left: values.leg_left } : {}),
+    ...(hasNotes ? { notes: values.injuries?.trim() } : {}),
+    ...(hasNutrition ? { nutrition_snapshot: nutritionSnapshot } : {}),
+  };
+}
+
 export interface ProfileFormData {
   id?: string;
   full_name: string | null;
@@ -1022,31 +1243,78 @@ export function useHookFormCustomerSheet({
 
         if (isEditing && customer?.id) {
           const payload = buildPhaseAUpdatePayload(values, customer);
+          const healthPayload = buildHealthProfileUpdatePayload(values, customer);
+          const assessmentPayload = buildBodyAssessmentPayload(values, customer);
+          const hasMembershipChange = Boolean(membershipPayload && !isSameBasicMembership(localMembership, membershipPayload));
 
-          if (!payload && (!membershipPayload || isSameBasicMembership(localMembership, membershipPayload))) {
-            toast.info("No hay cambios básicos para guardar.");
+          if (!payload && !hasMembershipChange && !healthPayload && !assessmentPayload) {
+            toast.info("No hay cambios para guardar.");
             return;
           }
 
+          let didUpdate = false;
+
           if (payload) {
             await updateCustomerMutation({ id: customer.id, data: payload });
+            didUpdate = true;
           }
 
-          if (membershipPayload && !isSameBasicMembership(localMembership, membershipPayload)) {
+          if (healthPayload) {
+            await updateCustomerHealthProfile(customer.id, healthPayload);
+            await queryClient.invalidateQueries({ queryKey: ["customers", "detail", customer.id, "health-profile"] });
+            didUpdate = true;
+          }
+
+          if (assessmentPayload) {
+            await createCustomerBodyAssessment(customer.id, assessmentPayload);
+            await queryClient.invalidateQueries({ queryKey: ["customers", "detail", customer.id, "body-assessments"] });
+            didUpdate = true;
+          }
+
+          if (hasMembershipChange && membershipPayload) {
             if (localMembership) {
-              await renewMembershipForCustomer(customer.id, membershipPayload);
+              if (localMembership.status === "pending") {
+                await updatePendingMembershipForCustomer(customer.id, membershipPayload);
+              } else {
+                await renewMembershipForCustomer(customer.id, membershipPayload);
+              }
             } else {
               await createMembershipForCustomer(customer.id, membershipPayload);
             }
             await queryClient.invalidateQueries({ queryKey: ["memberships", "membership", customer.id] });
+            didUpdate = true;
+          }
+
+          if (didUpdate) {
             await queryClient.invalidateQueries({ queryKey: ["customers", "detail", customer.id] });
             await queryClient.invalidateQueries({ queryKey: ["customers", "list"] });
+            toast.success("Cliente actualizado exitosamente.");
             router.refresh();
           }
         } else {
           const payload = buildPhaseACreatePayload(values);
           if (membershipPayload) payload.membership = membershipPayload;
-          await createCustomerMutation(payload);
+          const createdCustomer = await createCustomerMutation(payload);
+
+          const healthPayload = buildHealthProfileUpdatePayload(values, null);
+          if (healthPayload) {
+            try {
+              await updateCustomerHealthProfile(createdCustomer.id, healthPayload);
+            } catch {
+              // Non-blocking
+            }
+          }
+
+          const assessmentPayload = buildBodyAssessmentPayload(values, null);
+          if (assessmentPayload) {
+            try {
+              await createCustomerBodyAssessment(createdCustomer.id, assessmentPayload);
+            } catch {
+              // Non-blocking
+            }
+          }
+
+          if (membershipPayload) toast.info("El plan quedó pendiente de cobro en Caja; aún no habilita el ingreso.");
         }
 
         setOpen(false);

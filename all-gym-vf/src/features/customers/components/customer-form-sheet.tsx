@@ -246,133 +246,6 @@ export function CustomerFormSheet({
 
               <Separator />
 
-              {isLocalCustomerForm ? (
-                <div className="space-y-6">
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
-                        3
-                      </span>
-                      Ficha Básica
-                    </h4>
-                    <div className="grid grid-cols-1 gap-4 pl-4">
-                      <FormTextarea
-                        control={form.control}
-                        name="injuries"
-                        label="Lesiones"
-                        placeholder="Describe lesiones previas o actuales..."
-                        config={{ rows: 3, maxLength: 240 }}
-                      />
-                      <FormTextarea
-                        control={form.control}
-                        name="medical_notes"
-                        label="Notas médicas"
-                        placeholder="Alergias, restricciones o indicaciones médicas relevantes."
-                        config={{ rows: 3, maxLength: 240 }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">
-                        4
-                      </span>
-                      Membresía
-                    </h4>
-                    <div className="space-y-4 pl-4">
-                      <FormSelect
-                        control={form.control}
-                        name="plan_id"
-                        label="Plan inicial"
-                        placeholder="Sin membresía por ahora"
-                        options={plans.filter((plan) => plan.is_active).map((plan) => ({
-                          label: `${plan.name} - Q${plan.price} (${plan.duration_days} días)`,
-                          value: plan.id.toString(),
-                        }))}
-                      />
-
-                      {form.watch("plan_id") ? (
-                        <>
-                          <FormRadioGroup
-                            control={form.control}
-                            name="date_mode"
-                            label="Vigencia"
-                            orientation="horizontal"
-                            options={[
-                              { label: "Según el plan", value: "automatic" },
-                              { label: "Rango manual", value: "manual" },
-                            ]}
-                          />
-
-                          <Controller
-                            control={form.control}
-                            name="subscription_period"
-                            render={({ field, fieldState }) => {
-                              const from = field.value?.from;
-                              const to = field.value?.to;
-                              const days = from && to ? differenceInDays(to, from) : 0;
-                              const endMonth = new Date(new Date().getFullYear() + 10, 11);
-
-                              return (
-                                <Field className="flex flex-col" data-invalid={fieldState.invalid}>
-                                  <FieldLabel>Período de membresía</FieldLabel>
-                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_90px] sm:items-end">
-                                    <div className="space-y-1">
-                                      <span className="text-xs text-muted-foreground">Inicio</span>
-                                      <FlexibleDatePickerInput
-                                        value={from}
-                                        onChange={(date) => {
-                                          const start = date ?? new Date();
-                                          const selectedPlan = plans.find(
-                                            (plan) => plan.id.toString() === form.getValues("plan_id"),
-                                          );
-                                          form.setValue("subscription_period", {
-                                            from: start,
-                                            to:
-                                              form.getValues("date_mode") === "automatic" && selectedPlan
-                                                ? calculateSubscriptionEndDate(start, selectedPlan.duration_days)
-                                                : field.value?.to ?? start,
-                                          });
-                                        }}
-                                        endMonth={endMonth}
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <span className="text-xs text-muted-foreground">Fin</span>
-                                      <FlexibleDatePickerInput
-                                        value={to}
-                                        onChange={(date) => form.setValue("subscription_period", {
-                                          from: from ?? new Date(),
-                                          to: date ?? from ?? new Date(),
-                                        })}
-                                        endMonth={endMonth}
-                                      />
-                                    </div>
-                                    <div className="h-9 flex items-center justify-center rounded-md border bg-muted px-2 text-sm font-medium text-muted-foreground">
-                                      {days} días
-                                    </div>
-                                  </div>
-                                  <FieldError errors={[fieldState.error]} />
-                                </Field>
-                              );
-                            }}
-                          />
-                        </>
-                      ) : null}
-
-                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4">
-                        <p className="text-sm font-medium text-foreground">Responsabilidad separada</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          El alta guarda cliente y membresía de forma atómica. Pago y caja se registran en su flujo
-                          correspondiente; esta pantalla no crea movimientos financieros.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-              <>
               {/* 3. MEMBRESÍA Y PAGOS */}
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
@@ -386,12 +259,15 @@ export function CustomerFormSheet({
                     control={form.control}
                     name="plan_id"
                     label="Seleccionar Plan"
-                    placeholder="Elige un plan..."
+                    placeholder="Sin membresía por ahora"
                     options={plans.map((p) => ({
                       label: `${p.name} - Q${p.price} (${p.duration_days} días)`,
                       value: p.id.toString(),
                     }))}
                   />
+
+                  {form.watch("plan_id") ? (
+                    <>
 
                   <FormRadioGroup
                     control={form.control}
@@ -597,16 +473,20 @@ export function CustomerFormSheet({
                     </p>
                   )}
 
-                  <FormSelect
-                    control={form.control}
-                    name="payment_method"
-                    label="Método de Pago"
-                    options={[
-                      { label: "Efectivo", value: "cash" },
-                      { label: "Tarjeta", value: "card" },
-                      { label: "Transferencia", value: "transfer" },
-                    ]}
-                  />
+                  {entrypoint === "cash" && (
+                    <FormSelect
+                      control={form.control}
+                      name="payment_method"
+                      label="Método de Pago"
+                      options={[
+                        { label: "Efectivo", value: "cash" },
+                        { label: "Tarjeta", value: "card" },
+                        { label: "Transferencia", value: "transfer" },
+                      ]}
+                    />
+                  )}
+                    </>
+                  ) : null}
                 </div>
               </div>
 
@@ -879,8 +759,6 @@ export function CustomerFormSheet({
                   )}
                 </div>
               </div>
-              </>
-              )}
             </form>
         </div>
         <div className="px-6 py-4 border-t flex justify-end gap-3 sticky bottom-0 bg-background/80 backdrop-blur-md z-10 font-sans">

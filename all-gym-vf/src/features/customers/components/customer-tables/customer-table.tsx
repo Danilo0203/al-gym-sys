@@ -69,7 +69,7 @@ export function CustomerTable({ data, totalItems, canUpdate }: CustomerTableProp
     data,
     columns,
     pageCount,
-    shallow: false,
+    shallow: true,
     debounceMs: 500,
     storageKey: "customers-table",
   });

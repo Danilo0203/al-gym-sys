@@ -30,6 +30,7 @@ const membershipOptions = [
   { label: "En prórroga", value: "grace" },
   { label: "Vencida", value: "expired" },
   { label: "Cancelada", value: "cancelled" },
+  { label: "Pendiente de cobro", value: "pending" },
   { label: "Sin membresía", value: "none" },
 ];
 

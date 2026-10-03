@@ -23,7 +23,7 @@ export const membershipSchema = z.object({
   grace_days: z.coerce.number().int(),
   access_until: z.string(),
   status: z.string(),
-  display_status: z.enum(["active", "expiring", "grace", "expired", "cancelled", "none"]),
+  display_status: z.enum(["active", "expiring", "grace", "expired", "cancelled", "pending", "none"]),
   cycles: z.coerce.number().int().positive(),
   price: z.coerce.number().nonnegative(),
   created_at: z.string(),
@@ -114,6 +114,11 @@ export function createMembershipForCustomer(customerId: string, input: Membershi
 export function renewMembershipForCustomer(customerId: string, input: MembershipWriteInput) {
   const payload = membershipWriteInputSchema.parse(input);
   return mutateMembership(`/api/customers/${customerId}/membership/renew`, "POST", payload);
+}
+
+export function updatePendingMembershipForCustomer(customerId: string, input: MembershipWriteInput) {
+  const payload = membershipWriteInputSchema.parse(input);
+  return mutateMembership(`/api/customers/${customerId}/membership/pending`, "PATCH", payload);
 }
 
 export function cancelMembershipForCustomer(customerId: string) {

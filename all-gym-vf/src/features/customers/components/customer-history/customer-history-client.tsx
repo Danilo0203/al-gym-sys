@@ -23,6 +23,7 @@ import {
   IconTrendingUp,
   IconUserCheck,
   IconUserOff,
+  IconEdit,
 } from "@tabler/icons-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +40,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CustomerStatusActionSummary } from "@/features/customers/components/customer-status-action-summary";
 import { CustomerAccountDialog } from "@/features/customers/components/customer-account-dialog";
+import { CustomerFormSheet, type CustomerData } from "@/features/customers/components/customer-form-sheet";
 import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customers";
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import type { BodyAssessmentsResponse, CustomerHealthProfile } from "@/features/customers/lib/customer-health";
+import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement } from "@/lib/training/types";
 import { CustomerHealthProfileSection } from "@/features/customers/components/customer-health-profile";
 import { AccessHistoryTab } from "./tabs/access-history-tab";
 import { BodyAssessmentTab } from "./tabs/body-assessment-tab";
@@ -50,6 +53,12 @@ import { SubscriptionHistoryTab } from "./tabs/subscription-history-tab";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+
+function parseRestrictedMovements(value?: string | string[] | null): RestrictedMovement[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value as RestrictedMovement[];
+  return value.split(",").map((s) => s.trim()).filter(Boolean) as RestrictedMovement[];
+}
 
 interface CustomerHistoryClientProps {
   profile: CustomerDetail;
@@ -98,6 +107,7 @@ function membershipHeaderMeta(status: CustomerDetail["membership_status"]) {
     grace: { label: "Plan en prórroga", tone: "warning" as const },
     expired: { label: "Plan vencido", tone: "danger" as const },
     cancelled: { label: "Plan cancelado", tone: "danger" as const },
+    pending: { label: "Pendiente de cobro", tone: "warning" as const },
     none: { label: "Sin plan", tone: "muted" as const },
   };
 
@@ -120,6 +130,7 @@ export function CustomerHistoryClient({
   const [activeSection, setActiveSection] = useState<(typeof sectionIds)[number]>("overview");
   const [statusOpen, setStatusOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const statusMutation = useUpdateCustomerStatus();
   const initials = profile.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -130,6 +141,59 @@ export function CustomerHistoryClient({
     : "sin fecha registrada";
   const canUpdateCustomer = profile.capabilities.update_customer;
   const canManageAccount = profile.capabilities.manage_account;
+
+  const latestAssessment = bodyAssessments?.data?.[0];
+
+  const customerToEdit = useMemo(() => {
+    return {
+      ...profile,
+      full_name: profile.full_name,
+      email: profile.account.email ?? profile.email ?? null,
+      phone: profile.phone,
+      is_active: profile.is_active,
+      injuries: profile.injuries ?? null,
+      medical_notes: profile.medical_notes ?? null,
+
+      // Perfil de salud y entrenamiento
+      primary_goal: (healthProfile?.primary_goal as PrimaryGoal) ?? null,
+      secondary_goal: (healthProfile?.secondary_goal as PrimaryGoal) ?? null,
+      focus_areas: (healthProfile?.focus_areas as FocusArea[]) ?? [],
+      experience_level: (healthProfile?.experience_level as "beginner" | "intermediate" | "advanced") ?? null,
+      days_per_week: healthProfile?.days_per_week ?? null,
+      session_minutes: healthProfile?.session_minutes ?? null,
+      training_location: (healthProfile?.training_location as "gym" | "home" | "mixed") ?? null,
+      equipment_available: (healthProfile?.equipment_available as EquipmentOption[]) ?? [],
+      cardio_preference: (healthProfile?.cardio_preference as "none" | "light" | "moderate" | "high") ?? null,
+      parq_requires_attention: healthProfile?.parq_requires_attention ?? null,
+      restricted_movements: parseRestrictedMovements(healthProfile?.restricted_movements),
+      exercise_preferences: healthProfile?.exercise_preferences ?? null,
+      exercise_dislikes: healthProfile?.exercise_dislikes ?? null,
+      injuries_or_pain: healthProfile?.injuries_or_pain ?? null,
+      medical_clearance_notes: healthProfile?.medical_clearance_notes ?? null,
+
+      // Medidas y nutrición
+      weight_kg: latestAssessment?.weight_kg ?? null,
+      height_cm: latestAssessment?.height_cm ?? null,
+      body_type: latestAssessment?.body_type ?? latestAssessment?.nutrition_snapshot?.body_type ?? null,
+      diet_type: healthProfile?.diet_type ?? latestAssessment?.diet_type ?? latestAssessment?.nutrition_snapshot?.diet_type ?? null,
+      activity_level: healthProfile?.activity_level ?? latestAssessment?.activity_level ?? latestAssessment?.nutrition_snapshot?.activity_level ?? null,
+      body_fat_percentage: latestAssessment?.body_fat_percentage ?? null,
+      muscle_mass_kg: latestAssessment?.muscle_mass_kg ?? null,
+      chest: latestAssessment?.chest ?? null,
+      waist: latestAssessment?.waist ?? null,
+      hip: latestAssessment?.hip ?? null,
+      arm_right: latestAssessment?.arm_right ?? null,
+      arm_left: latestAssessment?.arm_left ?? null,
+      leg_right: latestAssessment?.leg_right ?? null,
+      leg_left: latestAssessment?.leg_left ?? null,
+
+      // Membresía actual
+      plan_id: profile.current_membership?.plan_id ?? null,
+      subscription_start_date: profile.current_membership?.start_date ?? null,
+      subscription_end_date: profile.current_membership?.end_date ?? null,
+      subscription_grace_days: profile.current_membership?.grace_days ?? null,
+    } as unknown as CustomerData;
+  }, [profile, healthProfile, latestAssessment]);
   const visibleSectionIds = useMemo(() => sectionIds.filter((sectionId) => {
     if (sectionId === "payments") return history.payments !== null;
     if (sectionId === "health") return profile.capabilities.view_health_profile;
@@ -222,6 +286,13 @@ export function CustomerHistoryClient({
           onOpenChange={setAccountOpen}
         />
       ) : null}
+      <CustomerFormSheet
+        mode="edit"
+        customer={customerToEdit}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        trigger={null}
+      />
 
       <header className="z-10 shrink-0 border-b bg-gradient-to-b from-background via-background to-muted/20 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col gap-4 p-4 sm:p-5 lg:p-6">
@@ -301,6 +372,16 @@ export function CustomerHistoryClient({
                       Gestión de Cliente
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    {canUpdateCustomer ? (
+                      <DropdownMenuItem
+                        className="cursor-pointer gap-2 py-2"
+                        onClick={() => setEditOpen(true)}
+                      >
+                        <IconEdit className="h-4 w-4" />
+                        <span className="text-xs font-medium">Editar cliente</span>
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canUpdateCustomer && canManageAccount ? <DropdownMenuSeparator /> : null}
                     {canManageAccount ? (
                       <DropdownMenuItem
                         className="cursor-pointer gap-2 py-2"
@@ -310,7 +391,7 @@ export function CustomerHistoryClient({
                         <span className="text-xs font-medium">Editar cuenta</span>
                       </DropdownMenuItem>
                     ) : null}
-                    {canManageAccount && canUpdateCustomer ? <DropdownMenuSeparator /> : null}
+                    {canUpdateCustomer ? <DropdownMenuSeparator /> : null}
                     {canUpdateCustomer ? <DropdownMenuItem
                       className={cn(
                         "cursor-pointer gap-2 py-2",
@@ -438,7 +519,11 @@ export function CustomerHistoryClient({
           {profile.capabilities.view_health_profile && healthProfile ? (
             <section id="health" className="min-w-0 scroll-mt-4 space-y-6">
               <SectionHeader icon={<IconHeartbeat />} title="Salud y perfil de entrenamiento" />
-              <CustomerHealthProfileSection profile={healthProfile} canManage={profile.capabilities.manage_health_profile} />
+              <CustomerHealthProfileSection
+                profile={healthProfile}
+                canManage={profile.capabilities.manage_health_profile}
+                onEdit={() => setEditOpen(true)}
+              />
             </section>
           ) : null}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -47,6 +47,7 @@ export function useCustomersList(query: URLSearchParams) {
     queryFn: () => getCustomersList(`/api/customers?${queryString}`),
     retry: 1,
     staleTime: 0,
+    placeholderData: keepPreviousData,
   });
 }
 

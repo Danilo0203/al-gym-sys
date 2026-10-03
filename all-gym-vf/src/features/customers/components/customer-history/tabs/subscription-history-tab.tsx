@@ -25,6 +25,7 @@ export function SubscriptionHistoryTab({ subscriptionHistory }: SubscriptionHist
     active: { label: "Activa", style: "bg-green-500/10 text-green-600 border-green-500/20" },
     expired: { label: "Vencida", style: "bg-muted text-muted-foreground border-muted-foreground/20" },
     cancelled: { label: "Cancelada", style: "bg-red-500/10 text-red-600 border-red-500/20" },
+    pending: { label: "Pendiente de cobro", style: "bg-amber-500/10 text-amber-700 border-amber-500/20" },
   };
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -100,7 +101,7 @@ export function SubscriptionHistoryTab({ subscriptionHistory }: SubscriptionHist
                           <div className="flex flex-col">
                             <span className="font-bold text-sm tracking-tight">{sub.plan_name}</span>
                             <span className="text-[10px] text-muted-foreground">
-                              Adquirido en: {format(startDate, "PP", { locale: es })}
+                              {sub.status === "pending" ? "Inicio previsto: " : "Adquirido en: "}{format(startDate, "PP", { locale: es })}
                             </span>
                           </div>
                         </div>

@@ -123,9 +123,11 @@ function hasHealthProfileInformation(profile: CustomerHealthProfile): boolean {
 export function CustomerHealthProfileSection({
   profile,
   canManage,
+  onEdit,
 }: {
   profile: CustomerHealthProfile;
   canManage: boolean;
+  onEdit?: () => void;
 }) {
   const mutation = useUpdateCustomerHealthProfile();
   const [open, setOpen] = useState(false);
@@ -174,12 +176,21 @@ export function CustomerHealthProfileSection({
             <CardTitle className="flex items-center gap-2"><IconHeartbeat className="h-5 w-5 text-primary" /> Perfil de salud</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">Información privada visible únicamente para personal autorizado.</p>
           </div>
-          {canManage ? <Button size="sm" onClick={() => setDialogOpen(true)}><IconEdit className="h-4 w-4" /> Editar salud</Button> : null}
+          {canManage ? (
+            <Button size="sm" onClick={() => (onEdit ? onEdit() : setDialogOpen(true))}>
+              <IconEdit className="h-4 w-4" /> Editar salud
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-6">
           {!hasInformation ? (
-            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              Perfil de salud pendiente. Aún no se ha registrado información.
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground flex flex-wrap items-center justify-between gap-4">
+              <span>Perfil de salud pendiente. Aún no se ha registrado información.</span>
+              {canManage && onEdit ? (
+                <Button size="sm" variant="outline" onClick={onEdit}>
+                  <IconEdit className="h-4 w-4 mr-1" /> Completar perfil
+                </Button>
+              ) : null}
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4">

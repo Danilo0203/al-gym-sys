@@ -1,18 +1,52 @@
 "use client";
 
+import { useMemo } from "react";
+import { useQueryStates } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DataTableSkeleton } from "@/components/ui/table/data-table-skeleton";
 import { useCustomersList } from "@/features/customers/hooks/use-customers";
+import {
+  customerMembershipStatusSchema,
+  mapCustomerListQuery,
+  sortingStateToBackendSort,
+} from "@/features/customers/lib/local-customers";
+import { searchParams } from "@/lib/searchparams";
 import { CustomerTable } from "./customer-tables/customer-table";
 
 interface CustomerListingClientProps {
-  query: string;
+  query?: string;
   canUpdate: boolean;
 }
 
-export function CustomerListingClient({ query, canUpdate }: CustomerListingClientProps) {
-  const customersQuery = useCustomersList(new URLSearchParams(query));
+export function CustomerListingClient({ canUpdate }: CustomerListingClientProps) {
+  const [params] = useQueryStates(searchParams);
+
+  const rawIsActive = params.is_active;
+  const rawPlanId = Number(params.plan_id);
+  const membershipStatus = customerMembershipStatusSchema.safeParse(params.membership_status);
+
+  const queryParams = useMemo(() => {
+    return mapCustomerListQuery({
+      page: params.page,
+      pageSize: params.perPage,
+      search: params.full_name,
+      sort: sortingStateToBackendSort(params.sort),
+      isActive: rawIsActive === "true" ? true : rawIsActive === "false" ? false : undefined,
+      planId: Number.isInteger(rawPlanId) && rawPlanId > 0 ? rawPlanId : undefined,
+      membershipStatus: membershipStatus.success ? membershipStatus.data : undefined,
+    });
+  }, [
+    params.page,
+    params.perPage,
+    params.full_name,
+    params.sort,
+    rawIsActive,
+    rawPlanId,
+    membershipStatus,
+  ]);
+
+  const customersQuery = useCustomersList(queryParams);
 
   if (customersQuery.isPending) {
     return <DataTableSkeleton columnCount={9} rowCount={8} filterCount={4} />;
