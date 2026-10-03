@@ -13,7 +13,7 @@ const deviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const reconcileDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const targetedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const firstReconcileBiometricId = 700000 + (randomBytes(4).readUInt32BE(0) % 100000);
-const reconcileBiometricIds = Array.from({ length: 6 }, (_, index) => firstReconcileBiometricId + index);
+const reconcileBiometricIds = Array.from({ length: 7 }, (_, index) => firstReconcileBiometricId + index);
 const customerIds = [];
 let planId = null;
 let server;
@@ -194,8 +194,9 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
     { startDate: null, endDate: null, active: true },
     { startDate: "current_date + 1", endDate: "current_date + 30", active: true },
     { startDate: "current_date - 20", endDate: "current_date + 5", active: false },
+    { startDate: "current_date + 1", endDate: "current_date + 30", active: true, pending: true },
   ];
-  for (const [index, { startDate, endDate, active }] of cases.entries()) {
+  for (const [index, { startDate, endDate, active, pending }] of cases.entries()) {
     const id = randomUUID();
     customerIds.push(id);
     adminSql(`INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -203,7 +204,7 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
       INSERT INTO public.profiles (id, full_name, phone, birth_date, role, biometric_id, is_active)
       VALUES ('${id}', 'ZZTEST SYNC ${index}', '', DATE '1990-01-01', 'client', ${reconcileBiometricIds[index]}, ${active});
       ${endDate ? `INSERT INTO public.subscriptions (user_id, plan_id, start_date, end_date, status)
-      VALUES ('${id}', ${planId}, ${startDate}, ${endDate}, 'active');` : ""}`);
+       VALUES ('${id}', ${planId}, ${startDate}, ${endDate}, '${pending ? "pending" : "active"}');` : ""}`);
   }
 
   const result = await api("/api/device-users/reconcile", {
@@ -211,7 +212,7 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
   });
   assert.equal(result.status, 200);
   assert.ok(result.body.queued_commands >= 8);
-  assert.ok(result.body.enabled_users >= 2);
+  assert.ok(result.body.enabled_users >= 3);
   assert.ok(result.body.disabled_users >= 4);
   assert.equal(result.body.expired_subscriptions, 1);
   const commands = await api(`/api/device-commands?device_id=${reconcileDeviceId}&executed=false`,
@@ -220,8 +221,9 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
   assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[1]}`));
   assert.ok(commands.body.data.some((row) => row.command.includes(`Pin=${reconcileBiometricIds[2]}`) && row.command.includes("Name=")));
   assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[3]}`));
-  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[4]}`));
+  assert.ok(commands.body.data.some((row) => row.command.includes(`Pin=${reconcileBiometricIds[4]}`) && row.command.includes("Name=")));
   assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[5]}`));
+  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[6]}`));
   const states = adminSql(`SELECT status::text FROM public.subscriptions
     WHERE user_id = '${customerIds[1]}';`);
   assert.equal(states, "expired");

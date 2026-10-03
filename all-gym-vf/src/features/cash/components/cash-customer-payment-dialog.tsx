@@ -32,8 +32,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { RenewSubscriptionSheet } from "@/features/customers/components/renew-subscription-sheet";
-import { renewLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
+import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
+import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
+import { getCustomerDetail } from "@/features/customers/lib/customer-api";
+import { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
+
 import {
   getCashCustomerSummary,
   searchCashCustomers,
@@ -135,6 +138,7 @@ export function CashCustomerPaymentDialog({
   const [results, setResults] = useState<CashCustomerSearchResult[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<CashCustomerSummary | null>(null);
+  const [fullCustomerData, setFullCustomerData] = useState<CustomerData | null>(null);
   const [isSearching, startSearchTransition] = useTransition();
   const [isLoadingCustomer, startCustomerTransition] = useTransition();
   const deferredQuery = useDeferredValue(query);
@@ -189,13 +193,21 @@ export function CashCustomerPaymentDialog({
     });
   };
 
-  const handleOpenRenew = () => {
-    if (!selectedCustomer) {
+  const handleOpenRenew = async () => {
+    if (!selectedCustomerId) {
       return;
     }
 
-    setOpen(false);
-    setRenewOpen(true);
+    startCustomerTransition(async () => {
+      try {
+        const detail = await getCustomerDetail(selectedCustomerId);
+        setFullCustomerData(detail as unknown as CustomerData);
+        setOpen(false);
+        setRenewOpen(true);
+      } catch (error) {
+        toast.error("No se pudo cargar la información completa del cliente.");
+      }
+    });
   };
 
   const dialogTitle = mode === "renewal" ? "Renovar suscripción" : "Cobro a cliente";
@@ -352,21 +364,17 @@ export function CashCustomerPaymentDialog({
         </DialogContent>
       </Dialog>
 
-      {selectedCustomer ? (
-        <RenewSubscriptionSheet
-          legacyRenewSubscription={renewLegacyCashCustomer}
-          trigger={null}
+      {fullCustomerData ? (
+        <CustomerFormSheet
+          mode="edit"
+          customer={fullCustomerData}
           open={renewOpen}
-          onOpenChange={setRenewOpen}
+          onOpenChange={(next) => {
+            setRenewOpen(next);
+            if (!next) setFullCustomerData(null);
+          }}
           entrypoint="cash"
-          customerId={selectedCustomer.id}
-          customerName={selectedCustomer.full_name}
-          customerGender={selectedCustomer.gender}
-          customerBirthDate={selectedCustomer.birth_date}
-          previousSubscriptionStartDate={selectedCustomer.subscription_start_date}
-          previousSubscriptionEndDate={selectedCustomer.subscription_end_date}
-          lastAssessment={selectedCustomer.last_assessment}
-          trainingProfile={selectedCustomer.training_profile}
+          legacySubmit={submitLegacyCashCustomer}
         />
       ) : null}
     </>

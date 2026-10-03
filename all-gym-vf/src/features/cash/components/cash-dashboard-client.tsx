@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
 import { closeCashSession, ensureDefaultCashRegister, type CashDashboardData, openCashSession, recordManualCashMovement } from "@/features/cash/actions/cash-actions";
+import { PendingMembershipPaymentDialog } from "@/features/cash/components/pending-membership-payment-dialog";
 import { CashCustomerPaymentDialog } from "@/features/cash/components/cash-customer-payment-dialog";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { QuickProductSalePanel } from "@/features/cash/components/quick-product-sale-panel";
@@ -172,117 +173,6 @@ function getMovementDescription(movement: CashDashboardData["activityMovements"]
   }
 
   return movement.note || movement.created_by_name || "Movimiento operativo.";
-}
-
-function RecentMovementsCard({
-  movements,
-  canReversePayment,
-  canVoidProductSale,
-}: {
-  movements: CashDashboardData["activityMovements"];
-  canReversePayment: boolean;
-  canVoidProductSale: boolean;
-}) {
-  const recentMovements = movements.slice(0, 8);
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <CardTitle>Movimientos recientes</CardTitle>
-          <CardDescription>Resumen compacto de la sesión actual y movimientos fuera de sesión.</CardDescription>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/panel/caja/historial">Ver historial</Link>
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {recentMovements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No hay movimientos recientes para mostrar.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Hora</TableHead>
-                <TableHead>Movimiento</TableHead>
-                <TableHead>Monto</TableHead>
-                <TableHead>Impacto</TableHead>
-                <TableHead className="text-right">Acción</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentMovements.map((movement) => {
-                const showReversePayment =
-                  canReversePayment &&
-                  movement.movement_type === "sale" &&
-                  movement.source_payment_id &&
-                  movement.source_payment_status === "posted";
-                const showVoidProductSale =
-                  canVoidProductSale &&
-                  movement.movement_type === "sale" &&
-                  movement.source_product_sale_id &&
-                  movement.source_product_sale_status === "posted";
-
-                return (
-                  <TableRow key={movement.id} className={movement.session_link_status === "out_of_session" ? "bg-muted/20" : undefined}>
-                    <TableCell className="align-top text-sm font-medium">{formatDateTime(movement.created_at)}</TableCell>
-                    <TableCell className="min-w-[18rem] align-top">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={movement.movement_type === "void" ? "destructive" : "secondary"} className="h-6 px-2 text-[11px]">
-                            {getMovementTypeLabel(movement.movement_type)}
-                          </Badge>
-                          {movement.session_link_status === "out_of_session" ? (
-                            <Badge variant="outline" className="h-6 px-2 text-[11px]">
-                              Fuera de sesión
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <p className="font-medium">{getMovementTitle(movement)}</p>
-                        <p className="text-xs text-muted-foreground">{getMovementDescription(movement)}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top font-medium">{formatMoney(movement.amount)}</TableCell>
-                    <TableCell className="align-top font-medium">{formatMoney(movement.cash_effect_amount)}</TableCell>
-                    <TableCell className="align-top text-right">
-                      {showReversePayment ? (
-                        <ReversePaymentDialog
-                          paymentId={movement.source_payment_id!}
-                          sourceCategory={movement.category}
-                          conceptLabel={movement.source_product_sale_id ? "Venta" : "Cobro"}
-                          trigger={
-                            <Button variant="outline" size="sm" className="gap-2">
-                              <IconArrowsExchange className="h-4 w-4" />
-                              Revertir
-                            </Button>
-                          }
-                        />
-                      ) : showVoidProductSale ? (
-                        <ReverseProductSaleDialog
-                          productSaleId={movement.source_product_sale_id!}
-                          saleNumber={movement.product_sale_number}
-                          totalAmount={movement.amount}
-                          paymentMethod={movement.payment_method}
-                          trigger={
-                            <Button variant="outline" size="sm" className="gap-2">
-                              <IconArrowsExchange className="h-4 w-4" />
-                              Revertir
-                            </Button>
-                          }
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
-  );
 }
 
 function QuickActionCard({
@@ -626,22 +516,17 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
         </Alert>
       ) : null}
 
-      <RecentMovementsCard
-        movements={data.activityMovements}
-        canReversePayment={canReversePayment}
-        canVoidProductSale={canOperateCash}
-      />
-
-      {data.canOperateSession ? (
-        <QuickProductSalePanel
-          canSell={Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("inventory.sell"))}
-        />
-      ) : null}
-
       <Card>
-        <CardHeader>
-          <CardTitle>Acciones rápidas de caja</CardTitle>
-          <CardDescription>Accesos operativos que requieren modal o confirmación.</CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Acciones rápidas de caja</CardTitle>
+            <CardDescription>Accesos operativos que requieren modal o confirmación.</CardDescription>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/panel/caja/historial/${data.currentSession.id}`}>
+              Ver historial de caja
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {data.canOperateSession && (
@@ -672,6 +557,15 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
                   </Button>
                 }
               />
+            </QuickActionCard>
+          )}
+
+          {canOperateCash && canManageMembership && (
+            <QuickActionCard
+              title="Cobrar membresía pendiente"
+              description="Cobra el plan inicial de clientes registrados desde Clientes sin crear otra membresía."
+            >
+              <PendingMembershipPaymentDialog />
             </QuickActionCard>
           )}
 
@@ -706,6 +600,12 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
           )}
         </CardContent>
       </Card>
+
+      {data.canOperateSession ? (
+        <QuickProductSalePanel
+          canSell={Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("inventory.sell"))}
+        />
+      ) : null}
 
       <OpenSessionSupervisorCard sessions={data.supervisedOpenSessions} />
 

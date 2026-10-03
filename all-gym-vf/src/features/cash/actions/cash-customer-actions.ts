@@ -15,6 +15,41 @@ import {
 import { reconcileLocalCustomerOnClock } from "@/features/cash/lib/local-device-sync";
 import { generateRoutineProposal } from "@/features/customers/actions/customer-routine-actions";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
+import { z } from "zod";
+
+const pendingMembershipSchema = z.object({
+  id: z.string().uuid(), customer_id: z.string().uuid(), full_name: z.string(),
+  phone: z.string(), plan_id: z.coerce.number(), plan_name: z.string(),
+  start_date: z.string(), end_date: z.string(), amount_original: z.number(),
+});
+export type PendingMembership = z.infer<typeof pendingMembershipSchema>;
+
+export async function listPendingCashMemberships(search = ""): Promise<PendingMembership[]> {
+  const cookieHeader = buildCookieHeader((await cookies()).getAll());
+  const response = await fetchAuthBackend(`/payments/membership/pending?${new URLSearchParams({ search })}`, {
+    headers: cookieHeader ? { cookie: cookieHeader } : {},
+  });
+  const result = await parseCustomerApiResponse(response,
+    (body) => z.object({ data: z.array(pendingMembershipSchema) }).parse(body));
+  return result.data;
+}
+
+export async function collectPendingCashMembership(membershipId: string, discountAmount: number,
+  paymentMethod: "cash" | "card" | "transfer") {
+  const response = await cashMutation(
+    `/payments/membership/pending/${encodeURIComponent(membershipId)}/collect`,
+    { discountAmount, paymentMethod },
+  );
+  const result = await parseCustomerApiResponse(response,
+    (body) => z.object({ customer_id: z.string().uuid(), payment_id: z.string().uuid() }).parse(body));
+  refreshCashViews(result.customer_id);
+  revalidatePath("/panel/pagos");
+  const [routineGeneration, deviceSync] = await Promise.all([
+    generateCashCustomerRoutine(result.customer_id),
+    reconcileLocalCustomerOnClock(result.customer_id),
+  ]);
+  return { routineGeneration, deviceSync };
+}
 
 type CashRoutineResult = {
   status: "draft" | "pending_profile" | "failed";

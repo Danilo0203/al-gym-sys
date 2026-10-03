@@ -4,6 +4,9 @@ import {
   type CreateCustomerData,
   type RenewSubscriptionData,
 } from "@/features/customers/lib/customer-form-types";
+import { getCustomerDetail } from "@/features/customers/lib/customer-api";
+import { updatePendingMembershipForCustomer } from "@/features/customers/lib/local-memberships";
+import { collectPendingCashMembership, listPendingCashMemberships } from "@/features/cash/actions/cash-customer-actions";
 import { createCashCustomer, renewCashCustomer } from "@/features/cash/actions/cash-customer-actions";
 import type { CustomerSheetFormValues } from "@/features/customers/hooks/use-hook-form-customers";
 import { poundsToKilograms } from "@/lib/fitness/measurements";
@@ -78,7 +81,50 @@ export async function submitLegacyCashCustomer(
   };
 
   if (customerId) {
-    throw new Error("Edita el cliente desde el módulo de clientes.");
+    if (!values.plan_id) {
+      throw new Error("Debe seleccionar un plan para cobrar al cliente existente.");
+    }
+    
+    const renewPayload: RenewSubscriptionData = {
+      origin: "cash",
+      plan_id: Number(values.plan_id),
+      start_date: values.subscription_period?.from || new Date(),
+      end_date: values.subscription_period?.to || new Date(),
+      price: values.final_price !== undefined ? values.final_price : (context.suggestedBasePrice || 0),
+      discount_amount: Number(values.discount_amount) || 0,
+      grace_days: values.grace_days || 0,
+      amount_paid: values.final_price !== undefined ? Math.max(0, values.final_price + (Number(values.discount_amount) || 0)) : (context.suggestedBasePrice || 0),
+      payment_method: values.payment_method || "cash",
+      weight_kg: poundsToKilograms(values.weight_lb) ?? undefined,
+      height_cm: values.height_cm,
+      body_type: values.body_type,
+      diet_type: values.diet_type,
+      activity_level: values.activity_level,
+    };
+
+    const customerDetail = await getCustomerDetail(customerId);
+    if (customerDetail.current_membership?.status === "pending") {
+      const allPending = await listPendingCashMemberships(customerDetail.full_name);
+      const pendingMatch = allPending.find(m => m.customer_id === customerId);
+      
+      if (!pendingMatch) {
+        throw new Error("No se pudo encontrar la membresía pendiente para cobrar.");
+      }
+      
+      await updatePendingMembershipForCustomer(customerId, {
+        plan_id: renewPayload.plan_id,
+        cycles: 1,
+        start_date: values.subscription_period?.from ? values.subscription_period.from.toISOString().split('T')[0] : undefined,
+      });
+      
+      return collectPendingCashMembership(
+        pendingMatch.id,
+        renewPayload.discount_amount,
+        renewPayload.payment_method,
+      );
+    }
+
+    return renewCashCustomer(customerId, renewPayload);
   }
 
   return createCashCustomer(customerPayload);

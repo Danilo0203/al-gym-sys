@@ -74,9 +74,8 @@ function createLocalDb(pool) {
     async loadActiveSubscriptionUserIds() {
       const result = await pool.query(
         `SELECT DISTINCT user_id FROM public.subscriptions
-         WHERE status = 'active'
-           AND start_date <= (now() AT TIME ZONE 'America/Guatemala')::date
-           AND public.subscription_access_until(end_date, grace_days)
+          WHERE status = 'active'
+            AND public.subscription_access_until(end_date, grace_days)
                >= (now() AT TIME ZONE 'America/Guatemala')::date`,
       );
       return new Set(result.rows.map((row) => row.user_id));
