@@ -35,10 +35,10 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
 };
 
 const PANEL_ROUTE_PRIORITY = [
+  "/panel/caja",
   "/panel/clientes",
   "/panel/resumen",
   "/panel/pagos",
-  "/panel/caja",
   "/panel/caja/historial",
   "/panel/inventario/productos",
   "/panel/inventario/movimientos",

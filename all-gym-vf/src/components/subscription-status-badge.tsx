@@ -27,10 +27,14 @@ export function SubscriptionStatusBadge({
     displayStatus === "grace" ||
     displayStatus === "expired" ||
     displayStatus === "cancelled" ||
+    displayStatus === "pending" ||
     displayStatus === "none"
       ? displayStatus
       : getSubscriptionDisplayStatus({ status, endDate, graceDays, accessUntil });
 
+  if (resolvedDisplayStatus === 'pending') {
+    return <Badge variant="warning" className={className}>Pendiente de cobro</Badge>;
+  }
   if (resolvedDisplayStatus === 'none' || resolvedDisplayStatus === 'cancelled') {
     if (resolvedDisplayStatus === 'cancelled') {
       badgeVariant = 'destructive';

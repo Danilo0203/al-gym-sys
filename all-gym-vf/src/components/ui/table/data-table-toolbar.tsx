@@ -111,15 +111,21 @@ function DataTableToolbarFilter<TData>({
       if (!columnMeta?.variant) return null;
 
       switch (columnMeta.variant) {
-        case 'text':
+        case 'text': {
+          const rawFilterValue = column.getFilterValue();
+          const filterText = Array.isArray(rawFilterValue)
+            ? rawFilterValue.join(' ')
+            : (rawFilterValue as string) ?? '';
+
           return (
             <Input
               placeholder={columnMeta.placeholder ?? columnMeta.label}
-              value={(column.getFilterValue() as string) ?? ''}
+              value={filterText}
               onChange={(event) => column.setFilterValue(event.target.value)}
               className='h-8 w-40 lg:w-56'
             />
           );
+        }
 
         case 'number':
           return (

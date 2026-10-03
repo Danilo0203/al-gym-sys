@@ -247,11 +247,19 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
     return Object.entries(filterValues).reduce<ColumnFiltersState>(
       (filters, [key, value]) => {
         if (value !== null) {
-          const processedValue = Array.isArray(value)
-            ? value
-            : typeof value === 'string' && /[^a-zA-Z0-9]/.test(value)
-              ? value.split(/[^a-zA-Z0-9]+/).filter(Boolean)
-              : [value];
+          const column = columns.find((col) => getColumnKey(col) === key);
+          const isFaceted = Boolean(column?.meta?.options);
+
+          let processedValue: unknown;
+          if (isFaceted) {
+            processedValue = Array.isArray(value)
+              ? value
+              : typeof value === 'string'
+                ? value.split(ARRAY_SEPARATOR).filter(Boolean)
+                : [value];
+          } else {
+            processedValue = value;
+          }
 
           filters.push({
             id: key,
@@ -262,7 +270,7 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
       },
       []
     );
-  }, [filterValues, enableAdvancedFilter]);
+  }, [filterValues, enableAdvancedFilter, columns, getColumnKey]);
 
   const [columnFilters, setColumnFilters] =
     React.useState<ColumnFiltersState>(initialColumnFilters);
@@ -339,10 +347,23 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
         const filterUpdates = next.reduce<
           Record<string, string | string[] | null>
         >((acc, filter) => {
-          if (
-            filterableColumns.find((column) => getColumnKey(column) === filter.id)
-          ) {
-            acc[filter.id] = filter.value as string | string[];
+          const column = filterableColumns.find((col) => getColumnKey(col) === filter.id);
+          if (column) {
+            const isFaceted = Boolean(column.meta?.options);
+            if (isFaceted) {
+              acc[filter.id] = Array.isArray(filter.value)
+                ? (filter.value as string[])
+                : filter.value
+                  ? [String(filter.value)]
+                  : null;
+            } else {
+              acc[filter.id] =
+                typeof filter.value === 'string'
+                  ? filter.value
+                  : filter.value == null
+                    ? null
+                    : String(filter.value);
+            }
           }
           return acc;
         }, {});

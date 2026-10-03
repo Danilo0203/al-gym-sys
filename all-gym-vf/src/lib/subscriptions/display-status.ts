@@ -7,6 +7,7 @@ export type SubscriptionDisplayStatus =
   | "grace"
   | "expired"
   | "cancelled"
+  | "pending"
   | "none";
 
 interface SubscriptionDisplayStatusParams {
@@ -23,6 +24,7 @@ export function getSubscriptionDisplayStatus({
   accessUntil,
 }: SubscriptionDisplayStatusParams): SubscriptionDisplayStatus {
   if (!status) return "none";
+  if (status === "pending") return "pending";
   if (status === "cancelled") return "cancelled";
 
   if (endDate) {
