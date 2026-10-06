@@ -109,6 +109,7 @@ export default async function AttendancePage(props: AttendancePageProps) {
 
   let attendanceRows: AttendanceRow[] = [];
   let commandRows: DeviceCommandRow[] = [];
+  let commandDeliveryPaused: boolean | null = null;
   let loadError = "";
 
   try {
@@ -131,11 +132,14 @@ export default async function AttendancePage(props: AttendancePageProps) {
 
     const [attendanceRes, commandsRes] = await Promise.all([
       fetchJson<{ data: AttendanceRow[] }>(attendanceUrl, token),
-      fetchJson<{ data: DeviceCommandRow[] }>(commandsUrl, token),
+      fetchJson<{ data: DeviceCommandRow[]; delivery_paused?: boolean }>(commandsUrl, token),
     ]);
 
     attendanceRows = attendanceRes.data || [];
     commandRows = commandsRes.data || [];
+    commandDeliveryPaused = typeof commandsRes.delivery_paused === "boolean"
+      ? commandsRes.delivery_paused
+      : null;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Error desconocido";
   }
@@ -143,8 +147,25 @@ export default async function AttendancePage(props: AttendancePageProps) {
   return (
     <PageContainer
       pageTitle="Asistencias"
-      pageDescription="Lecturas del reloj (ATTLOG) y estado de comandos enviados al dispositivo"
+      pageDescription="Lecturas del reloj (ATTLOG) y estado de comandos pendientes o enviados"
     >
+      {commandDeliveryPaused === true ? (
+        <Card className="mb-4 border-amber-500/60" role="status">
+          <CardHeader>
+            <CardTitle>Entrega de comandos al reloj en pausa</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            Los marcajes se siguen recibiendo. Los comandos quedan pendientes hasta revisar la cola y habilitar la entrega.
+          </CardContent>
+        </Card>
+      ) : null}
+      {commandDeliveryPaused === null && !loadError ? (
+        <Card className="mb-4 border-amber-500/60" role="status">
+          <CardContent className="py-4 text-sm">
+            No se pudo confirmar si la entrega de comandos al reloj está habilitada.
+          </CardContent>
+        </Card>
+      ) : null}
       <Card className="mb-4">
         <CardHeader>
           <CardTitle>Filtros</CardTitle>

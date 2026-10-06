@@ -135,6 +135,7 @@ test("rol limitado, cola ZKTeco, confirmación por SN y asistencia deduplicada",
     { method: "POST", body: "" })).status, 200);
   const beforeAck = await api(`/api/device-commands?device_id=${deviceId}&executed=false`,
     { headers: authHeaders() });
+  assert.equal(beforeAck.body.delivery_paused, false);
   assert.ok(beforeAck.body.data.some((command) => command.id === commandId));
   assert.equal((await api(`/iclock/devicecmd?SN=${deviceId}&ID=${commandId}&Return=0`,
     { method: "POST", body: "" })).status, 200);
@@ -198,6 +199,7 @@ test("pausa de corte conserva cola y marcajes sin enviar comandos al reloj", asy
     process.env.SYNC_COMMAND_DELIVERY_PAUSED = "true";
     const pending = await api(`/api/device-commands?device_id=${pausedDeviceId}&executed=false`,
       { headers: authHeaders() });
+    assert.equal(pending.body.delivery_paused, true);
     assert.equal(pending.body.data.length, 1);
 
     const direct = await api("/api/device-users/register", {

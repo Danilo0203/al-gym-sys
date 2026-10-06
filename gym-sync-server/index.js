@@ -1053,7 +1053,7 @@ app.get("/api/device-commands", async (req, res) => {
 
     const executed = executedRaw === "true" ? true : executedRaw === "false" ? false : null;
     const data = await db.listDeviceCommands({ limit, deviceId, executed });
-    return res.json({ data });
+    return res.json({ data, delivery_paused: isCommandDeliveryPaused() });
   } catch (error) {
     console.error("❌ Exception en /api/device-commands:", error);
     return res.status(500).json({ error: "device_commands_exception" });
