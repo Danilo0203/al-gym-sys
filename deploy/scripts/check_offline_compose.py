@@ -46,6 +46,14 @@ def check() -> None:
             raise ValueError(f"{name} expone un puerto o usa una red de salida")
         if any("host.docker.internal" in value for value in (service.get("extra_hosts") or [])):
             raise ValueError(f"{name} conserva acceso al host Docker")
+    for name in ("backend", "sync"):
+        if services[name].get("environment", {}).get("DB_HOST") != "postgres":
+            raise ValueError(f"{name} no usa el PostgreSQL interno del ensayo")
+    web_env = services["web"].get("environment", {})
+    if web_env.get("ALGYM_BACKEND_URL") != "http://backend:4000":
+        raise ValueError("La web no usa el backend interno del ensayo")
+    if web_env.get("GYM_SYNC_SERVER_URL") != "http://sync:8080":
+        raise ValueError("La web no usa el sync interno del ensayo")
     gateway = services["gateway"]
     if set(gateway.get("networks", {})) != {"gym-local", "gym-access"}:
         raise ValueError("El gateway necesita solo la red interna y la de acceso")
