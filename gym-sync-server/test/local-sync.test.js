@@ -187,14 +187,15 @@ test("reconciliación local habilita membresía vigente y deshabilita vencida", 
   planId = Number(adminSql(`INSERT INTO public.plans (name, price, duration_days)
     VALUES ('ZZTEST SYNC ${randomUUID()}', 100, 30) RETURNING id;`));
   assert.ok(planId > 0);
+  const localToday = "(now() AT TIME ZONE 'America/Guatemala')::date";
   const cases = [
-    { startDate: "current_date - 20", endDate: "current_date + 5", active: true },
-    { startDate: "current_date - 20", endDate: "current_date - 4", active: true },
-    { startDate: "current_date - 20", endDate: "current_date - 1", active: true },
+    { startDate: `${localToday} - 20`, endDate: `${localToday} + 5`, active: true },
+    { startDate: `${localToday} - 20`, endDate: `${localToday} - 8`, active: true },
+    { startDate: `${localToday} - 20`, endDate: `${localToday} - 1`, active: true },
     { startDate: null, endDate: null, active: true },
-    { startDate: "current_date + 1", endDate: "current_date + 30", active: true },
-    { startDate: "current_date - 20", endDate: "current_date + 5", active: false },
-    { startDate: "current_date + 1", endDate: "current_date + 30", active: true, pending: true },
+    { startDate: `${localToday} + 1`, endDate: `${localToday} + 30`, active: true },
+    { startDate: `${localToday} - 20`, endDate: `${localToday} + 5`, active: false },
+    { startDate: `${localToday} + 1`, endDate: `${localToday} + 30`, active: true, pending: true },
   ];
   for (const [index, { startDate, endDate, active, pending }] of cases.entries()) {
     const id = randomUUID();
