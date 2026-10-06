@@ -10,6 +10,7 @@ const role = `algym_sync_test_${randomBytes(4).toString("hex")}`;
 const password = randomBytes(24).toString("hex");
 const token = randomBytes(24).toString("hex");
 const deviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
+const pausedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const reconcileDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const targetedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const firstReconcileBiometricId = 700000 + (randomBytes(4).readUInt32BE(0) % 100000);
@@ -54,6 +55,7 @@ before(async () => {
     ZK_DEVICE_IP: "",
     ZK_TIME_UTC_OFFSET: "-06:00",
     COMMAND_LOCK_MS: "50",
+    SYNC_COMMAND_DELIVERY_PAUSED: "false",
     DEVICE_RECONCILE_COOLDOWN_MS: "120000",
   });
   sync = require("../index");
@@ -66,9 +68,9 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
   if (sync) await sync.db.close();
-  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}', '${targetedDeviceId}');
+  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}');
     DELETE FROM public.device_commands
-      WHERE device_id IN ('${deviceId}', '${reconcileDeviceId}', '${targetedDeviceId}')
+      WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}')
          OR command ~ 'Pin=(${reconcileBiometricIds.join("|")})([^0-9]|$)';
     DELETE FROM public.subscriptions WHERE user_id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
     DELETE FROM public.profiles WHERE id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
@@ -181,6 +183,45 @@ test("rol limitado, cola ZKTeco, confirmación por SN y asistencia deduplicada",
     { headers: authHeaders() });
   assert.ok(finalCommands.body.data.some((command) => command.command === query.body.command));
   assert.ok(finalCommands.body.data.some((command) => command.command === disable.body.commands[0]));
+});
+
+test("pausa de corte conserva cola y marcajes sin enviar comandos al reloj", async () => {
+  await sync.db.insertCommands([{
+    device_id: pausedDeviceId,
+    command: "DATA QUERY user Pin=12345",
+  }]);
+  delete process.env.SYNC_COMMAND_DELIVERY_PAUSED;
+  try {
+    const poll = await api(`/iclock/getrequest?SN=${pausedDeviceId}`);
+    assert.equal(poll.status, 200);
+    assert.equal(poll.text, "OK");
+    process.env.SYNC_COMMAND_DELIVERY_PAUSED = "true";
+    const pending = await api(`/api/device-commands?device_id=${pausedDeviceId}&executed=false`,
+      { headers: authHeaders() });
+    assert.equal(pending.body.data.length, 1);
+
+    const direct = await api("/api/device-users/register", {
+      method: "POST", headers: authHeaders(),
+      body: JSON.stringify({ device_id: pausedDeviceId, biometric_id: 12345,
+        full_name: "Prueba Pausa", device_ip: "10.0.0.20" }),
+    });
+    assert.equal(direct.status, 200);
+    assert.equal(direct.body.method, "queue");
+    assert.equal(direct.body.direct.error, "command_delivery_paused");
+    assert.equal((await api(`/iclock/getrequest?SN=${pausedDeviceId}`)).text, "OK");
+
+    const line = "ATTLOG 12345 2026-09-29 10:30:00 0 1";
+    assert.equal((await api(`/iclock/cdata?SN=${pausedDeviceId}`,
+      { method: "POST", body: line })).status, 200);
+    const attendance = await api(`/api/attendance?device_id=${pausedDeviceId}`,
+      { headers: authHeaders() });
+    assert.equal(attendance.body.data.length, 1);
+    const after = await api(`/api/device-commands?device_id=${pausedDeviceId}&executed=false`,
+      { headers: authHeaders() });
+    assert.equal(after.body.data.length, 3);
+  } finally {
+    process.env.SYNC_COMMAND_DELIVERY_PAUSED = "false";
+  }
 });
 
 test("reconciliación local habilita membresía vigente y deshabilita vencida", async () => {

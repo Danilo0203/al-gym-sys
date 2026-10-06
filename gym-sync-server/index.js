@@ -26,6 +26,7 @@ const ZK_DEFAULT_USER_GROUP = Number(process.env.ZK_DEFAULT_USER_GROUP || 1);
 const ZK_DEFAULT_AUTHORIZE_TIMEZONE_ID = Number(process.env.ZK_DEFAULT_AUTHORIZE_TIMEZONE_ID || 1);
 const ZK_DEFAULT_AUTHORIZE_DOOR_ID = Number(process.env.ZK_DEFAULT_AUTHORIZE_DOOR_ID || 1);
 const DEVICE_RECONCILE_COOLDOWN_MS = Number(process.env.DEVICE_RECONCILE_COOLDOWN_MS || 120000);
+const COMMAND_DELIVERY_PAUSED_SETTING = process.env.SYNC_COMMAND_DELIVERY_PAUSED || "true";
 
 const db = createLocalDbFromEnvironment();
 
@@ -37,6 +38,13 @@ if (!/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(ZK_TIME_UTC_OFFSET)) {
 }
 if (ZK_DEVICE_IP && !isLocalClockAddress(ZK_DEVICE_IP)) {
   throw new Error("ZK_DEVICE_IP debe ser una IPv4 local del reloj");
+}
+if (!new Set(["true", "false"]).has(COMMAND_DELIVERY_PAUSED_SETTING)) {
+  throw new Error("SYNC_COMMAND_DELIVERY_PAUSED debe ser true o false");
+}
+
+function isCommandDeliveryPaused() {
+  return (process.env.SYNC_COMMAND_DELIVERY_PAUSED || "true") === "true";
 }
 
 // ZKTeco ADMS manda texto plano en distintos content-type según firmware.
@@ -608,6 +616,7 @@ async function reconcileDeviceUsers(deviceId, customerId = null) {
 }
 
 function maybeReconcileDeviceUsers(deviceId, trigger) {
+  if (isCommandDeliveryPaused()) return null;
   const sanitizedDeviceId = sanitizeText(deviceId, 80);
   if (!sanitizedDeviceId || sanitizedDeviceId === "Unknown") {
     return null;
@@ -652,6 +661,9 @@ function maybeReconcileDeviceUsers(deviceId, trigger) {
 }
 
 async function registerUserDirectOnClock(params) {
+  if (isCommandDeliveryPaused()) {
+    return { success: false, error: "command_delivery_paused" };
+  }
   const uid = parseIntOrNull(params.biometricId);
   const deviceIp = sanitizeText(params.deviceIp, 80);
 
@@ -776,6 +788,9 @@ app.get("/iclock/getrequest", async (req, res) => {
   setPlainText(res);
 
   try {
+    if (isCommandDeliveryPaused()) {
+      return res.send("OK");
+    }
     void maybeReconcileDeviceUsers(sn, "getrequest");
 
     cleanupStaleInflight(sn);
