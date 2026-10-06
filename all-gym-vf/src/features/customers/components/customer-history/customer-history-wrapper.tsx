@@ -10,8 +10,17 @@ import {
   useCustomerHistory,
 } from "@/features/customers/hooks/use-customers";
 import { CustomerHistoryClient } from "./customer-history-client";
+import type { CustomerRoutineWorkspace } from "@/lib/training/types";
 
-export default function CustomerHistoryWrapper({ customerId }: { customerId: string }) {
+export default function CustomerHistoryWrapper({
+  customerId,
+  canManageRoutine,
+  routineWorkspace,
+}: {
+  customerId: string;
+  canManageRoutine: boolean;
+  routineWorkspace: CustomerRoutineWorkspace | null;
+}) {
   const [membershipsPage, setMembershipsPage] = useState(1);
   const [paymentsPage, setPaymentsPage] = useState(1);
   const [assessmentsPage, setAssessmentsPage] = useState(1);
@@ -69,6 +78,8 @@ export default function CustomerHistoryWrapper({ customerId }: { customerId: str
     <CustomerHistoryClient
       profile={customerQuery.data}
       history={historyQuery.data}
+      canManageRoutine={canManageRoutine}
+      routineWorkspace={routineWorkspace}
       healthProfile={canViewHealth ? healthQuery.data : undefined}
       bodyAssessments={canViewAssessments ? assessmentsQuery.data : undefined}
       membershipsPage={membershipsPage}

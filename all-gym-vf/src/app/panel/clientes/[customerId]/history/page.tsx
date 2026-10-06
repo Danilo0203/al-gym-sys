@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import CustomerHistoryWrapper from "@/features/customers/components/customer-history/customer-history-wrapper";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { serverGetCustomerRoutineWorkspace } from "@/features/customers/lib/customer-routine-server-api";
+import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 
 interface CustomerHistoryPageProps {
   params: Promise<{ customerId: string }>;
@@ -9,11 +11,20 @@ interface CustomerHistoryPageProps {
 
 export default async function CustomerHistoryPage({ params }: CustomerHistoryPageProps) {
   const { customerId } = await params;
+  const access = await getUserAccessContext();
+  const canManageRoutine = hasPermission(access, "customers.manage_routine");
+  const routineWorkspace = canManageRoutine
+    ? await serverGetCustomerRoutineWorkspace(customerId)
+    : null;
 
   return (
     <div className="flex flex-col gap-6 p-6 flex-1 min-h-0">
       <Suspense fallback={<HistoryLoadingSkeleton />}>
-        <CustomerHistoryWrapper customerId={customerId} />
+        <CustomerHistoryWrapper
+          customerId={customerId}
+          canManageRoutine={canManageRoutine}
+          routineWorkspace={routineWorkspace}
+        />
       </Suspense>
     </div>
   );

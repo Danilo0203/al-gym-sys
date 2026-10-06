@@ -45,7 +45,9 @@ import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customer
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
 import type { BodyAssessmentsResponse, CustomerHealthProfile } from "@/features/customers/lib/customer-health";
 import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement } from "@/lib/training/types";
+import type { CustomerRoutineWorkspace } from "@/lib/training/types";
 import { CustomerHealthProfileSection } from "@/features/customers/components/customer-health-profile";
+import { RoutineWorkspaceTab } from "./tabs/routine-workspace-tab";
 import { AccessHistoryTab } from "./tabs/access-history-tab";
 import { BodyAssessmentTab } from "./tabs/body-assessment-tab";
 import { PaymentHistoryTab } from "./tabs/payment-history-tab";
@@ -63,6 +65,8 @@ function parseRestrictedMovements(value?: string | string[] | null): RestrictedM
 interface CustomerHistoryClientProps {
   profile: CustomerDetail;
   history: CustomerHistoryResponse;
+  canManageRoutine: boolean;
+  routineWorkspace: CustomerRoutineWorkspace | null;
   healthProfile?: CustomerHealthProfile;
   bodyAssessments?: BodyAssessmentsResponse;
   membershipsPage: number;
@@ -117,6 +121,8 @@ function membershipHeaderMeta(status: CustomerDetail["membership_status"]) {
 export function CustomerHistoryClient({
   profile,
   history,
+  canManageRoutine,
+  routineWorkspace,
   healthProfile,
   bodyAssessments,
   membershipsPage,
@@ -472,22 +478,18 @@ export function CustomerHistoryClient({
 
           <section id="routine" className="min-w-0 scroll-mt-4 space-y-6">
             <SectionHeader icon={<IconBarbell />} title="Rutina Personalizada" />
-            <Card className="min-w-0 overflow-hidden border-dashed border-primary/20 bg-card/60 shadow-sm">
-              <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
-                <div className="rounded-2xl bg-primary/10 p-4 text-primary">
-                  <IconBarbell className="h-10 w-10" />
-                </div>
-                <div className="max-w-lg space-y-2">
-                  <h3 className="text-lg font-black tracking-tight">Rutina local pendiente de integración</h3>
+            {routineWorkspace ? (
+              <RoutineWorkspaceTab customerId={profile.id} workspace={routineWorkspace} />
+            ) : (
+              <Card className="min-w-0 overflow-hidden border-dashed border-primary/20 bg-card/60 shadow-sm">
+                <CardContent className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+                  <IconBarbell className="h-10 w-10 text-primary" />
                   <p className="text-sm text-muted-foreground">
-                    La lectura de Rutinas todavía no forma parte de este contrato local. Esta sección permanece visible para conservar la navegación de Clientes.
+                    {canManageRoutine ? "No se pudo cargar la rutina de este cliente." : "No tienes permiso para ver o administrar rutinas."}
                   </p>
-                </div>
-                <Badge variant="outline" className="border-primary/10 bg-muted/30 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  No disponible en esta fase
-                </Badge>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </section>
 
           <section id="memberships" className="min-w-0 scroll-mt-4 space-y-6">
