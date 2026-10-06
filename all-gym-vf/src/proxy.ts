@@ -4,6 +4,26 @@ import { AuthBackendTransportError, fetchAuthBackend } from "@/lib/auth/backend-
 import { authContextSchema, getAuthError, isJsonContentType } from "@/lib/auth/contracts";
 import { parseUserRole, resolvePostLoginRoute } from "@/lib/auth/role-utils";
 
+const safeApiMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function isForeignApiMutation(request: NextRequest): boolean {
+  if (safeApiMethods.has(request.method)) return false;
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return true;
+
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+
+  try {
+    const originUrl = new URL(origin);
+    const requestHost = request.headers.get("host") ?? request.nextUrl.host;
+    return !["http:", "https:"].includes(originUrl.protocol) || originUrl.host !== requestHost;
+  } catch {
+    return true;
+  }
+}
+
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const response = NextResponse.next({
@@ -12,7 +32,15 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  if (pathname.startsWith("/api/")) return response;
+  if (pathname.startsWith("/api/")) {
+    if (isForeignApiMutation(request)) {
+      return NextResponse.json(
+        { error: { code: "INVALID_ORIGIN", message: "Origen no permitido" } },
+        { status: 403, headers: { "cache-control": "no-store" } },
+      );
+    }
+    return response;
+  }
 
   const isProtectedArea = pathname.startsWith("/panel") || pathname.startsWith("/mi");
   let authResponse: Response;

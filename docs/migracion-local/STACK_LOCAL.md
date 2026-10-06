@@ -16,6 +16,8 @@ Para recibir marcajes ADMS desde el reloj físico, `sync` debe publicar el puert
 
 En producción, Next envía una política de contenido con `connect-src 'self'`, imágenes de origen local/datos/blob y fuentes locales. Esto impide solicitudes externas iniciadas por el navegador; no sustituye la auditoría de llamadas del servidor ni la prueba final con la red externa bloqueada. El entorno `next dev` no aplica esa política para conservar la recarga de desarrollo.
 
+Las mutaciones de `/api/*` en Next rechazan el encabezado `Origin` de otro host o puerto y `Sec-Fetch-Site` distinto de `same-origin`/`none` antes de llegar a la ruta. Las llamadas internas sin esos encabezados siguen disponibles para las acciones del servidor; el backend aplica sus permisos por sesión. Se comprobó con la imagen v18: `POST /api/auth/logout` de otro puerto respondió 403, del mismo origen respondió 204 y `/api/health` respondió 200. Esto evita que una página abierta en otro puerto local invoque mutaciones usando la cookie del navegador; no sustituye la revisión restante de permisos y red.
+
 ```bash
 mkdir -p ../algym-local-backend/data/media
 docker compose --env-file deploy/env/web.env up -d --build
@@ -33,7 +35,7 @@ deploy/scripts/export_offline_images.sh /ruta/absoluta/algym-imagenes
 
 El paquete incluye `al-gym-sys-web`, `al-gym-sys-backend`, `al-gym-sys-sync` y `postgres:17-alpine`, con manifiesto de IDs, plataforma Docker y hashes SHA-256. Se excluye `cloudflared`, que solo corresponde al perfil remoto opcional. Construir el paquete en la misma arquitectura que tendrá Docker en la computadora de destino (por ejemplo `linux/arm64` o `linux/amd64`). Transportar el paquete y los dos repositorios juntos; el paquete **no** contiene la base, las imágenes de ejercicios, archivos de media ni las variables privadas. Restaurar esos datos por separado a partir de un respaldo verificado y crear los archivos privados de entorno antes del arranque.
 
-El paquete validado de esta computadora quedó en `deploy/offline-images/linux-arm64-20261006-v17` (262 MB). Se verificaron sus hashes y la importación de las cuatro imágenes `linux/arm64`. Esa carpeta se ignora en Git por su tamaño; si se instala en otra computadora, copiarla por separado o generar allí otro paquete con las imágenes apropiadas para su arquitectura. El paquete debe regenerarse después de reconstruir cualquiera de las imágenes. La importación y el arranque desde ese paquete no necesitan descargar imágenes. Una compilación nueva desde código fuente todavía necesita una caché local completa de paquetes npm/pnpm o acceso temporal al registro: el paquete v17 contiene imágenes de ejecución, no una copia de esas dependencias de desarrollo.
+El paquete validado de esta computadora quedó en `deploy/offline-images/linux-arm64-20261006-v18` (260 MB). Se verificaron sus hashes y la importación de las cuatro imágenes `linux/arm64`. Esa carpeta se ignora en Git por su tamaño; si se instala en otra computadora, copiarla por separado o generar allí otro paquete con las imágenes apropiadas para su arquitectura. El paquete debe regenerarse después de reconstruir cualquiera de las imágenes. La importación y el arranque desde ese paquete no necesitan descargar imágenes. Una compilación nueva desde código fuente todavía necesita una caché local completa de paquetes npm/pnpm o acceso temporal al registro: el paquete v18 contiene imágenes de ejecución, no una copia de esas dependencias de desarrollo.
 
 En el destino, con Docker ya instalado, importar y verificar las imágenes sin red:
 
