@@ -59,12 +59,19 @@ export function BlueprintRenameDialog({
 }) {
   const router = useRouter();
   const { data: currentUser } = useCurrentUser();
-  const canManage = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("routines.view"));
+  const canManage = Boolean(currentUser?.isOwner || (
+    currentUser?.permissions?.includes("routines.view") &&
+    currentUser?.permissions?.includes("routines.manage_blueprints")
+  ));
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const closeDialog = () => {
+    setOpen(false);
+    setSearchTerm("");
+  };
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -134,7 +141,6 @@ export function BlueprintRenameDialog({
 
   useEffect(() => {
     if (!open) {
-      setSearchTerm("");
       return;
     }
 
@@ -150,7 +156,7 @@ export function BlueprintRenameDialog({
       setIsSaving(true);
       await updateRoutineBlueprintName({ blueprintId, name });
       toast.success("Plantilla actualizada.");
-      setOpen(false);
+      closeDialog();
       startTransition(() => router.refresh());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo actualizar.");
@@ -202,6 +208,8 @@ export function BlueprintRenameDialog({
         setOpen(nextOpen);
         if (nextOpen) {
           setName(currentName);
+        } else {
+          closeDialog();
         }
       }}
     >
@@ -228,7 +236,7 @@ export function BlueprintRenameDialog({
             autoFocus
           />
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={closeDialog}>
               Cancelar
             </Button>
             <Button onClick={() => void handleSave()} disabled={isSaving}>

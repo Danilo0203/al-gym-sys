@@ -132,10 +132,17 @@ interface BlueprintDetailViewProps {
 function AssignDialog({ blueprintId }: { blueprintId: string }) {
   const router = useRouter();
   const { data: currentUser } = useCurrentUser();
-  const canAssign = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("routines.view"));
+  const canAssign = Boolean(currentUser?.isOwner || (
+    currentUser?.permissions?.includes("routines.view") &&
+    currentUser?.permissions?.includes("routines.manage_blueprints")
+  ));
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const closeDialog = () => {
+    setOpen(false);
+    setQuery("");
+  };
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -181,7 +188,6 @@ function AssignDialog({ blueprintId }: { blueprintId: string }) {
 
   useEffect(() => {
     if (!open) {
-      setQuery("");
       return;
     }
 
@@ -232,7 +238,7 @@ function AssignDialog({ blueprintId }: { blueprintId: string }) {
         queryClient.invalidateQueries({ queryKey: ["routine-blueprint-detail", blueprintId] }),
         queryClient.invalidateQueries({ queryKey: ["routine-blueprint-clients", blueprintId] }),
       ]);
-      setOpen(false);
+      closeDialog();
       startTransition(() => router.refresh());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo asignar.");
@@ -250,7 +256,7 @@ function AssignDialog({ blueprintId }: { blueprintId: string }) {
         queryClient.invalidateQueries({ queryKey: ["routine-blueprint-detail", blueprintId] }),
         queryClient.invalidateQueries({ queryKey: ["routine-blueprint-clients", blueprintId] }),
       ]);
-      setOpen(false);
+      closeDialog();
       startTransition(() => router.refresh());
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo quitar.");
@@ -266,10 +272,8 @@ function AssignDialog({ blueprintId }: { blueprintId: string }) {
     <Dialog
       open={open}
       onOpenChange={(val) => {
-        setOpen(val);
-        if (!val) {
-          setQuery("");
-        }
+        if (val) setOpen(true);
+        else closeDialog();
       }}
     >
       {canAssign && (

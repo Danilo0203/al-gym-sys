@@ -8,6 +8,7 @@ import { es } from "date-fns/locale";
 import { AlertCircle, ArrowRight, CheckCircle2, Dumbbell, RefreshCw, Sparkles } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -304,6 +305,11 @@ function RoutineCard({
 
 export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceTabProps) {
   const router = useRouter();
+  const { data: currentUser } = useCurrentUser();
+  const canManageBlueprints = Boolean(currentUser?.isOwner || (
+    currentUser?.permissions?.includes("routines.view") &&
+    currentUser?.permissions?.includes("routines.manage_blueprints")
+  ));
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
@@ -535,15 +541,17 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
                       {isGenerating ? "Generando..." : generateLabel}
                     </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleArchiveActive}
-                    disabled={isArchiving}
-                    className="h-8 justify-center text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    {isArchiving ? "Guardando..." : "Guardar como plantilla"}
-                  </Button>
+                  {canManageBlueprints ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleArchiveActive}
+                      disabled={isArchiving}
+                      className="h-8 justify-center text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {isArchiving ? "Guardando..." : "Guardar como plantilla"}
+                    </Button>
+                  ) : null}
                 </>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -556,7 +564,7 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
                     <RefreshCw className={cn("size-3.5", isGenerating && "animate-spin")} />
                     {isGenerating ? "Generando..." : generateLabel}
                   </Button>
-                  {canChooseTemplate ? (
+                  {canChooseTemplate && canManageBlueprints ? (
                     <Button
                       size="sm"
                       variant="outline"

@@ -94,7 +94,9 @@ export interface CreateBlueprintInput {
 
 async function requestBlueprints(path: string, init: RequestInit = {}) {
   const access = await getUserAccessContext();
-  if (!access.isAuthenticated || !hasPermission(access, "routines.view")) {
+  const isMutation = (init.method ?? "GET").toUpperCase() !== "GET";
+  if (!access.isAuthenticated || !hasPermission(access, "routines.view") ||
+    ((isMutation || path.startsWith("/clients")) && !hasPermission(access, "routines.manage_blueprints"))) {
     throw new Error("No autorizado");
   }
   const cookieStore = await cookies();

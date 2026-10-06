@@ -172,7 +172,7 @@ function BlueprintCard({ blueprint }: { blueprint: BlueprintWithStats }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ canManage }: { canManage: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-6 py-16 text-center">
       <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -184,21 +184,23 @@ function EmptyState() {
           Cuando generes o guardes plantillas de rutina, aparecerán aquí.
         </p>
       </div>
-      <Button asChild>
-        <Link href="/panel/rutinas/nueva">
-          <IconPlus className="size-4" />
-          Crear plantilla personalizada
-        </Link>
-      </Button>
+      {canManage ? (
+        <Button asChild>
+          <Link href="/panel/rutinas/nueva">
+            <IconPlus className="size-4" />
+            Crear plantilla personalizada
+          </Link>
+        </Button>
+      ) : null}
     </div>
   );
 }
 
-export default async function RoutinesListing() {
+export default async function RoutinesListing({ canManage }: { canManage: boolean }) {
   const blueprints = await getAllRoutineBlueprints();
 
   if (blueprints.length === 0) {
-    return <EmptyState />;
+    return <EmptyState canManage={canManage} />;
   }
 
   const totals = blueprints.reduce(

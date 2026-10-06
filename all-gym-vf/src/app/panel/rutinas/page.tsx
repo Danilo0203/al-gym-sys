@@ -27,17 +27,17 @@ export default async function RoutinesPage() {
       scrollable
       pageTitle="Rutinas"
       pageDescription="Biblioteca de plantillas de rutina. Asigna a tus clientes."
-      pageHeaderAction={
+      pageHeaderAction={hasPermission(access, "routines.manage_blueprints") ? (
         <Button asChild>
           <Link href="/panel/rutinas/nueva">
             <IconPlus className="size-4" />
             Crear plantilla personalizada
           </Link>
         </Button>
-      }
+      ) : null}
     >
       <Suspense fallback={<DataTableSkeleton columnCount={4} rowCount={8} />}>
-        <RoutinesListing />
+        <RoutinesListing canManage={hasPermission(access, "routines.manage_blueprints")} />
       </Suspense>
     </PageContainer>
   );

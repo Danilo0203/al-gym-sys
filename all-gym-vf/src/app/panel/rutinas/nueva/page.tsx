@@ -13,7 +13,8 @@ export default async function NewBlueprintPage() {
   if (!access.isAuthenticated) {
     redirect("/iniciar-sesion");
   }
-  if (!hasPermission(access, "routines.view")) {
+  if (!hasPermission(access, "routines.view") ||
+      !hasPermission(access, "routines.manage_blueprints")) {
     redirect("/panel");
   }
 
