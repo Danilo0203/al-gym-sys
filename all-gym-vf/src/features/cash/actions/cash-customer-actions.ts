@@ -10,6 +10,7 @@ import type {
 } from "@/features/customers/lib/customer-form-types";
 import {
   buildCashCustomerCreatePayload,
+  type buildCashCustomerIntake,
   buildCashCustomerRenewalPayload,
 } from "@/features/cash/lib/local-customer-intake";
 import { reconcileLocalCustomerOnClock } from "@/features/cash/lib/local-device-sync";
@@ -35,10 +36,10 @@ export async function listPendingCashMemberships(search = ""): Promise<PendingMe
 }
 
 export async function collectPendingCashMembership(membershipId: string, discountAmount: number,
-  paymentMethod: "cash" | "card" | "transfer") {
+  paymentMethod: "cash" | "card" | "transfer", intake?: ReturnType<typeof buildCashCustomerIntake>) {
   const response = await cashMutation(
     `/payments/membership/pending/${encodeURIComponent(membershipId)}/collect`,
-    { discountAmount, paymentMethod },
+    { discountAmount, paymentMethod, ...(intake && Object.keys(intake).length > 0 && { intake }) },
   );
   const result = await parseCustomerApiResponse(response,
     (body) => z.object({ customer_id: z.string().uuid(), payment_id: z.string().uuid() }).parse(body));

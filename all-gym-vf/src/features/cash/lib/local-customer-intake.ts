@@ -20,7 +20,7 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value?.trim() || undefined;
 }
 
-function buildIntake(data: CashCustomerData, isRenewal: boolean) {
+export function buildCashCustomerIntake(data: CashCustomerData, isRenewal: boolean) {
   const healthProfile = {
     ...(data.parq_requires_attention !== undefined && { parq_requires_attention: data.parq_requires_attention }),
     ...(data.injuries_or_pain !== undefined && { injuries_or_pain: nonEmpty(data.injuries_or_pain) ?? null }),
@@ -74,6 +74,10 @@ function buildIntake(data: CashCustomerData, isRenewal: boolean) {
   };
   const profileUpdate = isRenewal
     ? {
+        ...(data.full_name !== undefined && { full_name: data.full_name.trim() }),
+        ...(data.phone !== undefined && { phone: data.phone.trim() }),
+        ...(data.birth_date !== undefined && { birth_date: calendarDate(data.birth_date, "La fecha de nacimiento") }),
+        ...(data.gender !== undefined && { gender: data.gender }),
         ...(data.injuries !== undefined && { injuries: nonEmpty(data.injuries) ?? null }),
         ...(data.medical_clearance_notes !== undefined && { medical_notes: nonEmpty(data.medical_clearance_notes) ?? null }),
       }
@@ -91,7 +95,7 @@ export function buildCashCustomerCreatePayload(data: CreateCustomerData) {
   if (!data.plan_id) throw new Error("Selecciona un plan para cobrar el alta.");
   if (!data.birth_date) throw new Error("La fecha de nacimiento es obligatoria.");
   if (!data.start_date || !data.end_date) throw new Error("Selecciona el período de la membresía.");
-  const intake = buildIntake(data, false);
+  const intake = buildCashCustomerIntake(data, false);
   return {
     full_name: data.full_name.trim(),
     phone: data.phone.trim(),
@@ -117,7 +121,7 @@ export function buildCashCustomerCreatePayload(data: CreateCustomerData) {
 }
 
 export function buildCashCustomerRenewalPayload(customerId: string, data: RenewSubscriptionData) {
-  const intake = buildIntake(data, true);
+  const intake = buildCashCustomerIntake(data, true);
   return {
     customerId,
     planId: data.plan_id,

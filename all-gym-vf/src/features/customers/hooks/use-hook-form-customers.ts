@@ -876,7 +876,7 @@ interface UseHookFormCustomerSheetParams {
   legacySubmit?: (
     customerId: string | null,
     values: CustomerSheetFormValues,
-    context: { entrypoint: "cash"; suggestedBasePrice?: number },
+    context: { entrypoint: "cash"; suggestedBasePrice?: number; suggestedCycles?: number },
   ) => Promise<{
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
     routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
@@ -1329,6 +1329,7 @@ export function useHookFormCustomerSheet({
       const result = await legacySubmit(isEditing && customer?.id ? customer.id : null, values, {
         entrypoint: "cash",
         suggestedBasePrice: membershipPricing?.suggestedBasePrice,
+        suggestedCycles: membershipPricing?.suggestedCycles,
       });
       router.refresh();
       setOpen(false);

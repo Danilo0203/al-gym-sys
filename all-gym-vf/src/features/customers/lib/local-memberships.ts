@@ -46,6 +46,11 @@ export const membershipWriteInputSchema = z.object({
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).strict();
 
+export const pendingMembershipWriteInputSchema = membershipWriteInputSchema
+  .extend({ end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() })
+  .refine((value) => !value.start_date || !value.end_date || value.end_date > value.start_date,
+    { message: "La fecha final debe ser posterior al inicio", path: ["end_date"] });
+
 export const cancelMembershipInputSchema = z.object({
   status: z.literal("cancelled"),
 }).strict();
@@ -116,8 +121,8 @@ export function renewMembershipForCustomer(customerId: string, input: Membership
   return mutateMembership(`/api/customers/${customerId}/membership/renew`, "POST", payload);
 }
 
-export function updatePendingMembershipForCustomer(customerId: string, input: MembershipWriteInput) {
-  const payload = membershipWriteInputSchema.parse(input);
+export function updatePendingMembershipForCustomer(customerId: string, input: MembershipWriteInput & { end_date?: string }) {
+  const payload = pendingMembershipWriteInputSchema.parse(input);
   return mutateMembership(`/api/customers/${customerId}/membership/pending`, "PATCH", payload);
 }
 

@@ -57,7 +57,7 @@ interface CustomerFormSheetProps {
   legacySubmit?: (
     customerId: string | null,
     values: CustomerSheetFormValues,
-    context: { entrypoint: "cash"; suggestedBasePrice?: number },
+    context: { entrypoint: "cash"; suggestedBasePrice?: number; suggestedCycles?: number },
   ) => Promise<{
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
     routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
@@ -163,7 +163,7 @@ export function CustomerFormSheet({
                     label="Correo electrónico"
                     placeholder="user@gym.com (opcional)"
                     type="email"
-                    disabled={isLocalCustomerForm && isEditing}
+                    disabled={isEditing}
                     icon={<IconMail className="h-4 w-4" />}
                   />
                   <FormInputGroup
@@ -172,7 +172,7 @@ export function CustomerFormSheet({
                     label={isEditing ? "Nueva Contraseña" : "Contraseña"}
                     placeholder={isEditing ? "Usa la acción Editar cuenta" : isLocalCustomerForm ? "Opcional (8 a 128 caracteres)" : "Opcional"}
                     type="password"
-                    disabled={isLocalCustomerForm && isEditing}
+                    disabled={isEditing}
                     autoComplete="new-password"
                     icon={<IconLock className="h-4 w-4" />}
                   />

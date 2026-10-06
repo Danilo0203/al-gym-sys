@@ -57,6 +57,10 @@ export interface CreateCustomerData {
 
 export interface RenewSubscriptionData {
   origin?: "customers" | "cash";
+  full_name?: string;
+  phone?: string;
+  birth_date?: Date;
+  gender?: "male" | "female" | "other";
   plan_id: number;
   start_date: Date;
   end_date: Date;

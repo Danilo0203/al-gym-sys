@@ -8,6 +8,7 @@ import { getCustomerDetail } from "@/features/customers/lib/customer-api";
 import { updatePendingMembershipForCustomer } from "@/features/customers/lib/local-memberships";
 import { collectPendingCashMembership, listPendingCashMemberships } from "@/features/cash/actions/cash-customer-actions";
 import { createCashCustomer, renewCashCustomer } from "@/features/cash/actions/cash-customer-actions";
+import { buildCashCustomerRenewalPayload } from "@/features/cash/lib/local-customer-intake";
 import type { CustomerSheetFormValues } from "@/features/customers/hooks/use-hook-form-customers";
 import { poundsToKilograms } from "@/lib/fitness/measurements";
 import { combineSessionDuration, DEFAULT_TRAINING_LOCATION } from "@/lib/training/profile-defaults";
@@ -20,7 +21,7 @@ function normalizeTextFieldValue(value: string | null | undefined) {
 export async function submitLegacyCashCustomer(
   customerId: string | null,
   values: CustomerSheetFormValues,
-  context: { entrypoint: "cash"; suggestedBasePrice?: number },
+  context: { entrypoint: "cash"; suggestedBasePrice?: number; suggestedCycles?: number },
 ) {
   const customerPayload: CreateCustomerData = {
     email: values.email || undefined,
@@ -86,14 +87,15 @@ export async function submitLegacyCashCustomer(
     }
     
     const renewPayload: RenewSubscriptionData = {
+      ...customerPayload,
       origin: "cash",
       plan_id: Number(values.plan_id),
       start_date: values.subscription_period?.from || new Date(),
       end_date: values.subscription_period?.to || new Date(),
-      price: values.final_price !== undefined ? values.final_price : (context.suggestedBasePrice || 0),
+      price: customerPayload.amount_original ?? (context.suggestedBasePrice || 0),
       discount_amount: Number(values.discount_amount) || 0,
       grace_days: values.grace_days || 0,
-      amount_paid: values.final_price !== undefined ? Math.max(0, values.final_price + (Number(values.discount_amount) || 0)) : (context.suggestedBasePrice || 0),
+      amount_paid: values.final_price !== undefined ? values.final_price : (context.suggestedBasePrice || 0),
       payment_method: values.payment_method || "cash",
       weight_kg: poundsToKilograms(values.weight_lb) ?? undefined,
       height_cm: values.height_cm,
@@ -101,6 +103,7 @@ export async function submitLegacyCashCustomer(
       diet_type: values.diet_type,
       activity_level: values.activity_level,
     };
+    const preparedRenewal = buildCashCustomerRenewalPayload(customerId, renewPayload);
 
     const customerDetail = await getCustomerDetail(customerId);
     if (customerDetail.current_membership?.status === "pending") {
@@ -113,14 +116,25 @@ export async function submitLegacyCashCustomer(
       
       await updatePendingMembershipForCustomer(customerId, {
         plan_id: renewPayload.plan_id,
-        cycles: 1,
-        start_date: values.subscription_period?.from ? values.subscription_period.from.toISOString().split('T')[0] : undefined,
+        cycles: Math.max(1, context.suggestedCycles ?? 1),
+        start_date: preparedRenewal.startDate,
+        end_date: preparedRenewal.endDate,
       });
+      const updatedPending = (await listPendingCashMemberships(customerDetail.full_name))
+        .find((membership) => membership.id === pendingMatch.id);
+      if (!updatedPending) {
+        throw new Error("La membresía dejó de estar pendiente. Actualiza la Caja antes de cobrar.");
+      }
+      const expectedCents = Math.round((updatedPending.amount_original - renewPayload.discount_amount) * 100);
+      if (expectedCents !== Math.round(renewPayload.amount_paid * 100)) {
+        throw new Error(`El importe cambió a Q${(expectedCents / 100).toFixed(2)}. Revisa el plan, período y descuento antes de cobrar.`);
+      }
       
       return collectPendingCashMembership(
         pendingMatch.id,
         renewPayload.discount_amount,
         renewPayload.payment_method,
+        preparedRenewal.intake,
       );
     }
 

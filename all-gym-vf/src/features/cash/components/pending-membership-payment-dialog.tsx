@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
-import { searchPendingCashCustomers, type CashCustomerSearchResult } from "../actions/cash-actions";
+import { listPendingCashMemberships, type PendingMembership } from "@/features/cash/actions/cash-customer-actions";
 import { getCustomerDetail } from "@/features/customers/lib/customer-api";
 import { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
 
@@ -16,7 +16,7 @@ export function PendingMembershipPaymentDialog() {
   const [open, setOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [items, setItems] = useState<CashCustomerSearchResult[]>([]);
+  const [items, setItems] = useState<PendingMembership[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +25,7 @@ export function PendingMembershipPaymentDialog() {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       setLoading(true);
-      void searchPendingCashCustomers(search).then((data) => {
+      void listPendingCashMemberships(search).then((data) => {
         if (!cancelled) {
           setItems(data);
         }
@@ -43,7 +43,7 @@ export function PendingMembershipPaymentDialog() {
       setSelectedCustomer(detail as unknown as CustomerData);
       setOpen(false); // Cierra el modal de búsqueda
       setSheetOpen(true); // Abre el sheet
-    } catch (_error) {
+    } catch {
       toast.error("No se pudo cargar la información del cliente.");
     } finally {
       setLoading(false);
@@ -63,7 +63,7 @@ export function PendingMembershipPaymentDialog() {
           <DialogHeader>
             <DialogTitle>Buscar cliente a cobrar</DialogTitle>
             <DialogDescription>
-              Busca clientes nuevos con un plan pendiente o sin plan asignado. Al seleccionar uno, podrás completar su ficha y cobrar el plan.
+              Busca clientes nuevos con un plan pendiente. Al seleccionar uno, podrás completar su ficha y cobrar el plan.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -73,15 +73,14 @@ export function PendingMembershipPaymentDialog() {
               {items.map((item) => (
                 <button type="button" key={item.id} role="option" aria-selected={false}
                   className="w-full rounded-lg border p-3 text-left text-sm hover:bg-muted/50"
-                  onClick={() => handleSelect(item.id)}>
+                  onClick={() => handleSelect(item.customer_id)}>
                   <span className="font-medium">{item.full_name}</span> · {item.phone || "Sin teléfono"}<br />
                   <span className="text-muted-foreground">
-                    {item.subscription_status === "pending" ? "Membresía Pendiente" : "Sin Plan Asignado"}
-                    {item.plan_name ? ` · ${item.plan_name}` : ""}
+                    Membresía pendiente · {item.plan_name}
                   </span>
                 </button>
               ))}
-              {!loading && items.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">No hay clientes pendientes o sin plan con ese nombre.</p> : null}
+              {!loading && items.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">No hay membresías pendientes con ese nombre.</p> : null}
               {loading ? <p className="p-4 text-center text-sm text-muted-foreground">Buscando…</p> : null}
             </div>
           </div>
