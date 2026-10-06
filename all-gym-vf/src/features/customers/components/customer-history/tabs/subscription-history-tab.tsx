@@ -59,7 +59,7 @@ export function SubscriptionHistoryTab({ subscriptionHistory }: SubscriptionHist
                   <TableHead className="font-bold text-xs uppercase tracking-wider pl-6">Plan / Servicio</TableHead>
                   <TableHead className="font-bold text-xs uppercase tracking-wider">Período de Vigencia</TableHead>
                   <TableHead className="font-bold text-xs uppercase tracking-wider text-center">Duración</TableHead>
-                  <TableHead className="font-bold text-xs uppercase tracking-wider text-right">Inversión</TableHead>
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-right">Precio base del plan</TableHead>
                   <TableHead className="font-bold text-xs uppercase tracking-wider pr-6 text-right">Estado</TableHead>
                 </TableRow>
               </TableHeader>
