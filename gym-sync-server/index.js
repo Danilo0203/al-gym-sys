@@ -8,6 +8,7 @@ const ZKAttendanceClient = require("zk-attendance-sdk");
 
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.SYNC_HOST || "0.0.0.0";
 const REGISTRY_CODE = String(process.env.ZK_REGISTRY_CODE || "1");
 const COMMAND_LOCK_MS = Number(process.env.COMMAND_LOCK_MS || 25000);
 const SUCCESS_RETURNS = new Set(
@@ -1407,7 +1408,7 @@ app.get("/health/ready", async (_req, res) => {
 
 if (require.main === module) {
   db.ready()
-    .then(() => app.listen(PORT, "0.0.0.0", () => {
+    .then(() => app.listen(PORT, HOST, () => {
       console.log(`🚀 SERVIDOR LISTO EN PUERTO ${PORT}`);
     }))
     .catch((error) => {
