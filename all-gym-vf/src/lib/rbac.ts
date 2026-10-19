@@ -72,6 +72,7 @@ export function getRequiredPermissionForRoute(route: string): string | null {
  */
 export function canAccessRoute(route: string, permissions: string[], isOwner: boolean): boolean {
   if (isOwner) return true;
+  if (matchesRoutePattern(route.split("?")[0], "/panel/exportar-windows")) return false;
 
   const requiredPermission = getRequiredPermissionForRoute(route);
   if (!requiredPermission) {

@@ -648,7 +648,7 @@ async function getCustomerDeviceProfile(adminClient: AdminSupabaseClient, custom
     biometric_id?: number | string | null;
     full_name?: string | null;
     is_active?: boolean | null;
-  } | null;
+  };
   const normalizedBiometricId = normalizeBiometricId(typedProfile?.biometric_id);
   if (normalizedBiometricId == null) {
     return { ok: false as const, reason: "missing_biometric_id" as const };
