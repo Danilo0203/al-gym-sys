@@ -52,6 +52,8 @@ después de comprobar las tres rutas de salud. No se configura el inicio de sesi
 automático de Windows ni se guarda la contraseña del propietario en texto plano.
 La apertura automática usa un acceso directo en Inicio para todos los usuarios
 de esa computadora; se puede desactivar desde las aplicaciones de inicio.
+Windows inicia los servicios de aplicación de forma diferida: en la VM de prueba,
+el navegador abrió aproximadamente dos minutos después de entrar a Windows.
 
 Es una instalación nueva: roles, permisos, propietario y una caja inicial.
 Clientes, planes, ejercicios y operaciones existentes requieren una importación
@@ -138,3 +140,36 @@ de respaldo en un entorno separado antes de usar datos reales.
 El ejecutable de desarrollo no está firmado con un certificado comercial del
 distribuidor. Windows puede mostrar el editor desconocido hasta firmar una versión
 de distribución con un certificado propio.
+
+## Resultados de esta entrega — 2026-10-19
+
+Artefacto: `AlGym-Setup-0.1.0-win-x64.exe`, 86 333 435 bytes.
+
+SHA-256: `b36e6e6d8520fe4ba7da1db298cb6c8d0d3eaa0c9d415508c0fa23f130db3800`.
+
+Fuentes del ejecutable: frontend `1b6104f7757702523d8fb53a2c8382bef25b0b7f`
+y backend `baa3b3b28be8b86e0e704f94806ba2d74069ccb1`. Ambos repositorios están
+en `codex/windows-native-installer`; incluyen una copia de los cambios pendientes
+que había al comenzar. Los checkouts originales conservaron rama, HEAD, diff y
+contenido de sus archivos.
+
+Comprobaciones realizadas:
+
+- Compilación de producción de frontend y backend en macOS y Windows; sync
+  empaquetado con sus dependencias de Windows.
+- Tres pruebas unitarias del bootstrap y una prueba de integración en PostgreSQL
+  temporal: 38 migraciones, login, repetición idempotente, rechazo de clúster ajeno,
+  rechazo de una migración alterada y restauración real de un dump en otra base.
+- Creación de cuenta mediante el configurador en Windows. El usuario confirmó
+  el acceso directo y el inicio de sesión. Los scripts finales se validaron
+  mediante preparación y reparación, conservando la instalación.
+- Cuatro servicios con inicio automático y cuentas limitadas; las tres rutas de
+  salud, la base `algym_windows`, el usuario `algym_app`, la tarea diaria de
+  respaldo y los hashes del respaldo pasaron `Test-InstalledAlGym.ps1`.
+- Reinicio real de Windows: servicios recuperados sin iniciarlos manualmente.
+  El registro de PowerShell muestra `Open-AlGym.ps1` a las 13:58:42 y Chrome se
+  abrió con la URL local a las 14:00:49; se observó el panel con la sesión conservada.
+
+La VM usa Windows 11 ARM64 con emulación x64. Quedan por probar el equipo físico
+de destino, el reloj biométrico y el ciclo completo de desinstalación/reinstalación.
+El paquete crea una base nueva; no contiene los datos de la instalación de desarrollo.
