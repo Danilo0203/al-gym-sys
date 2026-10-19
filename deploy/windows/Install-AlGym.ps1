@@ -117,6 +117,9 @@ try {
             initialized=$false}
         Write-Utf8File (Join-Path $DataRoot 'private\installation.json') ($state | ConvertTo-Json)
     } elseif (-not $state.initialized) { $owner = Get-OwnerAccount }
+    Protect-Directory (Join-Path $DataRoot 'migration') @('S-1-5-19')
+    Protect-Directory (Join-Path $DataRoot 'migration\inbox') @() @('S-1-5-19')
+    Protect-Directory (Join-Path $DataRoot 'migration\outbox') @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'config') @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'media') @() @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'postgres') @() @('S-1-5-20')
@@ -190,6 +193,7 @@ DB_NAME=algym_windows
 DB_USER=algym_app
 DB_PASSWORD=$($state.appPassword)
 LOCAL_MEDIA_ROOT=$media
+ALGYM_MIGRATION_ROOT=$($DataRoot.Replace('\', '/'))/migration
 CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAME_SITE=lax
@@ -243,6 +247,7 @@ SYNC_COMMAND_DELIVERY_PAUSED=true
     Write-InstallStage 'Creando el primer respaldo.'
     & "$PSScriptRoot\Backup-AlGym.ps1" -AppRoot $AppRoot -DataRoot $DataRoot
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el primer respaldo.' }
+    & "$PSScriptRoot\Install-MigrationService.ps1" -AppRoot $AppRoot -DataRoot $DataRoot
     Write-InstallStage 'Configuración terminada.'
     exit 0
 } catch {

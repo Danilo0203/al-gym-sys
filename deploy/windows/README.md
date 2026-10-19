@@ -255,3 +255,42 @@ informó al usuario y se continuó exclusivamente desde el dump ya descargado.
 La incidencia y el procedimiento de corte están documentados en el informe
 privado `LEEME-TRASLADO.txt`. La copia no reemplaza un respaldo final cuando
 llegue el traslado definitivo al cliente.
+
+
+## Importación dentro del sistema (0.3.0)
+
+El flujo vigente es **Administración → Importar datos**, solo para propietarios.
+El instalador configura la infraestructura; ya no presenta la casilla de
+importación ni crea el acceso directo al formulario externo.
+
+El navegador envía el archivo en streaming al backend local, muestra el resumen
+validado y exige confirmación explícita. Las rutas exigen sesión propietaria y
+origen permitido; la vista previa se liga a esa cuenta, al hash y a una caducidad.
+El progreso usa una capacidad aleatoria temporal que sobrevive al reemplazo de
+las sesiones, permite únicamente leer el estado y no aparece en URLs o registros.
+
+`AlGymMigration` es un servicio de mantenimiento sin puerto de escucha. Es el
+único proceso nuevo que corre como LocalSystem; los servicios web/backend/sync
+conservan LocalService y no reciben la clave administrativa de PostgreSQL.
+Consume solamente solicitudes de importación con identificadores y rutas fijas,
+revalida la sesión propietaria antes de ejecutar, copia a una carpeta privada,
+comprueba el hash y llama al importador instalado. No ejecuta código, SQL ni
+rutas proporcionadas por un paquete. El resultado se escribe en un directorio
+que LocalService solo puede leer. El archivo cargado se elimina al terminar;
+los metadatos y capacidades caducan en 24 horas.
+
+Las escrituras de importación siguen siendo transaccionales, con respaldo
+previo y comparación de todas las filas. El envío al reloj queda pausado.
+El mutex de mantenimiento evita que un respaldo independiente coincida con
+una importación. La instalación y desinstalación administran el nuevo servicio.
+
+Pruebas que no usan la base operativa:
+
+```sh
+node --test windows/migration-worker.test.mjs
+node --import tsx --test src/modules/migration/migration.routes.test.ts
+ALGYM_INSTALLER_PG_BIN=/ruta/postgresql/bin node --test windows/transfer.integration.test.mjs
+```
+
+La API de carga tiene su propia validación de origen y sesión, y está excluida
+del Proxy de Next para no duplicar en memoria el cuerpo de hasta 256 MB.

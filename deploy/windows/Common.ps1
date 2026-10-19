@@ -68,7 +68,7 @@ function Wait-Http([string]$Uri, [int]$Seconds = 120) {
 }
 
 function Stop-AlGymServices {
-    foreach ($name in @('AlGymWeb', 'AlGymSync', 'AlGymBackend', 'AlGymPostgres')) {
+    foreach ($name in @('AlGymMigration', 'AlGymWeb', 'AlGymSync', 'AlGymBackend', 'AlGymPostgres')) {
         $service = Get-Service -Name $name -ErrorAction SilentlyContinue
         if ($service -and $service.Status -ne 'Stopped') {
             Stop-Service -Name $name -ErrorAction Stop
@@ -78,7 +78,7 @@ function Stop-AlGymServices {
 }
 
 function Assert-ServiceOwnership([string]$AppRoot) {
-    foreach ($name in @('AlGymWeb', 'AlGymSync', 'AlGymBackend', 'AlGymPostgres')) {
+    foreach ($name in @('AlGymMigration', 'AlGymWeb', 'AlGymSync', 'AlGymBackend', 'AlGymPostgres')) {
         $service = Get-CimInstance Win32_Service -Filter "Name='$name'"
         if ($service -and -not $service.PathName.StartsWith(('"' + $AppRoot + '\'), [StringComparison]::OrdinalIgnoreCase)) {
             throw "El servicio $name pertenece a otra instalación."

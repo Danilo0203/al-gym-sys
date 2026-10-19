@@ -4,12 +4,12 @@ Assert-Administrator
 $state = Read-Installation $DataRoot $AppRoot
 if (-not $state -or -not $state.initialized) { throw 'No existe una instalación terminada.' }
 Assert-ServiceOwnership $AppRoot
-foreach ($name in @('AlGymPostgres', 'AlGymBackend', 'AlGymSync', 'AlGymWeb')) {
+foreach ($name in @('AlGymMigration', 'AlGymPostgres', 'AlGymBackend', 'AlGymSync', 'AlGymWeb')) {
     $service = Get-CimInstance Win32_Service -Filter "Name='$name'"
     if (-not $service -or $service.State -ne 'Running' -or $service.StartMode -ne 'Auto') {
         throw "$name no está funcionando con inicio automático."
     }
-    $expected = if ($name -eq 'AlGymPostgres') { 'NetworkService' } else { 'LocalService' }
+    $expected = if ($name -eq 'AlGymPostgres') { 'NetworkService' } elseif ($name -eq 'AlGymMigration') { 'LocalSystem' } else { 'LocalService' }
     if ($service.StartName -notmatch $expected) { throw "$name tiene una cuenta de servicio inesperada." }
 }
 $ready = Invoke-RestMethod 'http://127.0.0.1:4000/health/ready'

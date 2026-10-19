@@ -1,7 +1,7 @@
 ﻿param(
     [string]$BackendPath = (Join-Path $PSScriptRoot '..\..\..\algym-local-backend'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\build\windows'),
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.2.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.0',
     [string]$InnoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
 )
 . "$PSScriptRoot\Common.ps1"

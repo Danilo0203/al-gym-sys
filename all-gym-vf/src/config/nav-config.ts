@@ -126,6 +126,12 @@ export const navItems: NavItem[] = [
         icon: "message",
         access: { permissions: ["messages.view"] },
       },
+      {
+        title: "Importar datos",
+        url: "/panel/importar-datos",
+        icon: "settings",
+        access: { role: "owner" },
+      },
     ],
   },
   {

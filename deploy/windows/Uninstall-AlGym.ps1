@@ -4,7 +4,7 @@ try {
     Assert-Administrator
     Assert-ServiceOwnership $AppRoot
     Stop-AlGymServices
-    foreach ($name in @('AlGymWeb', 'AlGymSync', 'AlGymBackend')) {
+    foreach ($name in @('AlGymMigration', 'AlGymWeb', 'AlGymSync', 'AlGymBackend')) {
         if (Get-Service $name -ErrorAction SilentlyContinue) { Invoke-Checked (Join-Path $AppRoot "services\$name.exe") @('uninstall') }
     }
     if (Get-Service AlGymPostgres -ErrorAction SilentlyContinue) {

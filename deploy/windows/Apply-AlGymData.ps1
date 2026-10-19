@@ -2,9 +2,12 @@
     [Parameter(Mandatory=$true)][string]$AppRoot,
     [Parameter(Mandatory=$true)][string]$DataRoot,
     [Parameter(Mandatory=$true)][string]$Package,
-    [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedHash
+    [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedHash,
+    [switch]$Headless,
+    [string]$ResultPath
 )
 . "$PSScriptRoot\Common.ps1"
+$failureMessage = ''; $report = $null
 $running = @(); $folder = $null; $code = 1; $mutex = $null; $owned = $false
 function Invoke-DataTool([string]$Action, [string]$Path, $Request) {
     $psi = New-Object Diagnostics.ProcessStartInfo
@@ -62,8 +65,11 @@ try {
         $code = 0
     }
 } catch {
-    Add-Type -AssemblyName System.Windows.Forms
-    [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'AlGym - Importación pendiente') | Out-Null
+    $failureMessage = $_.Exception.Message
+    if (-not $Headless) {
+        Add-Type -AssemblyName System.Windows.Forms
+        [Windows.Forms.MessageBox]::Show($failureMessage, 'AlGym - Importación pendiente') | Out-Null
+    }
 } finally {
     foreach ($name in @('AlGymBackend','AlGymSync','AlGymWeb')) {
         if ($running -contains $name) { try { Start-Service $name } catch { $code = 1 } }
@@ -75,9 +81,15 @@ try {
 if ($code -eq 0) {
     try { Wait-Http 'http://127.0.0.1:4000/health/ready'; Wait-Http 'http://127.0.0.1:3000/api/health'; Wait-Http 'http://127.0.0.1:8080/health/ready' }
     catch {
-        Add-Type -AssemblyName System.Windows.Forms
-        [Windows.Forms.MessageBox]::Show('La importación terminó, pero un servicio no respondió. Conserva el respaldo y revisa los registros de AlGym.', 'AlGym') | Out-Null
+        $failureMessage = 'La importación terminó, pero un servicio no respondió. Revisa los registros de AlGym.'
+        if (-not $Headless) {
+            Add-Type -AssemblyName System.Windows.Forms
+            [Windows.Forms.MessageBox]::Show($failureMessage, 'AlGym') | Out-Null
+        }
         $code = 1
     }
+}
+if ($Headless -and $ResultPath) {
+    Write-Utf8File $ResultPath (@{success=($code -eq 0); message=$failureMessage} | ConvertTo-Json -Compress)
 }
 exit $code

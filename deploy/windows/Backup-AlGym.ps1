@@ -1,8 +1,11 @@
 ﻿param([Parameter(Mandatory=$true)][string]$AppRoot, [Parameter(Mandatory=$true)][string]$DataRoot)
 . "$PSScriptRoot\Common.ps1"
-$running = @()
+$running = @(); $mutex = $null; $owned = $false
 try {
     Assert-Administrator
+    $mutex = New-Object Threading.Mutex($false, 'Global\AlGymDataImport')
+    $owned = $mutex.WaitOne(0)
+    if (-not $owned) { throw 'Hay otra operación de respaldo o importación en curso.' }
     $state = Read-Installation $DataRoot $AppRoot
     if (-not $state -or -not $state.initialized) { throw 'La instalación no está inicializada.' }
     Assert-ServiceOwnership $AppRoot
@@ -35,7 +38,12 @@ try {
     exit 0
 } catch { Write-Error $_ -ErrorAction Continue; exit 1 }
 finally {
+    try {
     foreach ($name in @('AlGymBackend', 'AlGymSync', 'AlGymWeb')) {
         if ($running -contains $name) { Start-Service $name }
+    }
+    } finally {
+        if ($owned) { $mutex.ReleaseMutex() }
+        if ($mutex) { $mutex.Dispose() }
     }
 }
