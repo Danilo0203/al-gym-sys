@@ -13,9 +13,11 @@ const deviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const pausedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const reconcileDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const targetedDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
+const staffDeviceId = `SYNCTEST${randomBytes(4).toString("hex")}`;
 const firstReconcileBiometricId = 700000 + (randomBytes(4).readUInt32BE(0) % 100000);
-const reconcileBiometricIds = Array.from({ length: 7 }, (_, index) => firstReconcileBiometricId + index);
+const reconcileBiometricIds = Array.from({ length: 9 }, (_, index) => firstReconcileBiometricId + index);
 const customerIds = [];
+const staffIdsToClean = [];
 let planId = null;
 let server;
 let baseUrl;
@@ -68,15 +70,44 @@ before(async () => {
 after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
   if (sync) await sync.db.close();
-  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}');
+  adminSql(`DELETE FROM public.attendance_logs WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}', '${staffDeviceId}');
     DELETE FROM public.device_commands
-      WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}')
+      WHERE device_id IN ('${deviceId}', '${pausedDeviceId}', '${reconcileDeviceId}', '${targetedDeviceId}', '${staffDeviceId}')
          OR command ~ 'Pin=(${reconcileBiometricIds.join("|")})([^0-9]|$)';
     DELETE FROM public.subscriptions WHERE user_id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
-    DELETE FROM public.profiles WHERE id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
-    DELETE FROM auth.users WHERE id IN (${customerIds.map((id) => `'${id}'`).join(",") || "NULL"});
+    DELETE FROM public.profiles WHERE id IN (${[...customerIds, ...staffIdsToClean].map((id) => `'${id}'`).join(",") || "NULL"});
+    DELETE FROM auth.users WHERE id IN (${[...customerIds, ...staffIdsToClean].map((id) => `'${id}'`).join(",") || "NULL"});
     ${planId ? `DELETE FROM public.plans WHERE id = ${planId};` : ""}
     DROP ROLE ${role};`);
+});
+
+test("el personal activo entra sin membresía y el inactivo queda deshabilitado", async () => {
+  const staffIds = [randomUUID(), randomUUID()];
+  for (const [index, id] of staffIds.entries()) {
+    staffIdsToClean.push(id);
+    adminSql(`INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+      VALUES ('${id}', '${id}@sync.test.local', '{}'::jsonb, now(), now());
+      INSERT INTO public.profiles (id, full_name, phone, role, biometric_id, is_active)
+      VALUES ('${id}', 'ZZTEST PERSONAL ${index}', '', '${index === 0 ? "trainer" : "employee"}',
+        ${reconcileBiometricIds[7 + index]}, ${index === 0});`);
+  }
+
+  for (const [index, id] of staffIds.entries()) {
+    const result = await api("/api/device-users/reconcile", {
+      method: "POST", headers: authHeaders(), body: JSON.stringify({ device_id: staffDeviceId, user_id: id }),
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.profiles_considered, 1);
+    assert.equal(result.body.enabled_users, index === 0 ? 1 : 0);
+    assert.equal(result.body.disabled_users, index === 0 ? 0 : 1);
+  }
+  const commands = await api(`/api/device-commands?device_id=${staffDeviceId}&executed=false`,
+    { headers: authHeaders() });
+  assert.ok(commands.body.data.some((row) => row.command.includes(`Pin=${reconcileBiometricIds[7]}`) && row.command.includes("Name=")));
+  assert.ok(commands.body.data.some((row) => row.command === `DATA DELETE userauthorize Pin=${reconcileBiometricIds[8]}`));
+  assert.equal((await api("/api/device-users/reconcile", {
+    method: "POST", headers: authHeaders(), body: JSON.stringify({ device_id: staffDeviceId, customer_id: staffIds[0] }),
+  })).status, 404);
 });
 
 test("la configuración impide conectar sync al VPS o usar un rol amplio", () => {

@@ -455,9 +455,11 @@ export function searchExerciseCatalogItems(
     targetMuscle?: string;
     equipment?: string;
     limit?: number;
+    offset?: number;
   },
 ) {
-  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 50);
+  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 51);
+  const offset = Math.max(0, Math.floor(filters.offset ?? 0));
   const variants = buildExerciseSearchVariants(filters.query || "");
   const normalizedBodyPart = filters.bodyPart ? normalizeExerciseSearchText(filters.bodyPart) : null;
   const normalizedTargetMuscle = filters.targetMuscle ? normalizeExerciseSearchText(filters.targetMuscle) : null;
@@ -503,7 +505,7 @@ export function searchExerciseCatalogItems(
       return getExerciseDisplayName(left.item).localeCompare(getExerciseDisplayName(right.item), "es");
     });
 
-  return scored.slice(0, limit).map(({ item }) => item);
+  return scored.slice(offset, offset + limit).map(({ item }) => item);
 }
 
 export function isEquipmentCompatible(

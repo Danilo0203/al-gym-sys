@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
 import type { ExtendedColumnSort } from "@/types/data-table";
+import { reconcileLocalInternalUserOnClock } from "@/features/cash/lib/local-device-sync";
 
 export interface UserData {
   id: string;
@@ -15,6 +16,7 @@ export interface UserData {
   is_active: boolean;
   created_at: string;
   last_sign_in_at?: string | null;
+  biometric_id: number | null;
 }
 
 export interface CreateUserData {
@@ -145,6 +147,7 @@ export async function updateUser(data: UpdateUserData): Promise<{ success: boole
       method: "PATCH", headers: await backendHeaders(), body: JSON.stringify(body),
     });
     if (!response.ok) return { success: false, error: await responseError(response, "No se pudo actualizar el usuario") };
+    await reconcileLocalInternalUserOnClock(id);
     revalidatePath("/panel/usuarios");
     return { success: true };
   } catch {
@@ -161,8 +164,32 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
       method: "DELETE", headers: await backendHeaders(),
     });
     if (!response.ok) return { success: false, error: await responseError(response, "No se pudo eliminar el usuario") };
+    await reconcileLocalInternalUserOnClock(userId);
     revalidatePath("/panel/usuarios");
     return { success: true };
+  } catch {
+    return { success: false, error: "Error de conexión con el backend local" };
+  }
+}
+
+export async function registerUserBiometric(userId: string): Promise<{
+  success: boolean;
+  biometricId?: number;
+  pending?: boolean;
+  error?: string;
+}> {
+  try {
+    const access = await getUserAccessContext();
+    if (!access.isAuthenticated) return { success: false, error: "No autenticado" };
+    if (!hasPermission(access, "users.update")) return { success: false, error: "No autorizado" };
+    const response = await fetchAuthBackend(`/users/${encodeURIComponent(userId)}/biometric`, {
+      method: "POST", headers: await backendHeaders(),
+    });
+    if (!response.ok) return { success: false, error: await responseError(response, "No se pudo preparar el registro biométrico") };
+    const payload = await response.json() as { biometric_id: number };
+    const sync = await reconcileLocalInternalUserOnClock(userId);
+    revalidatePath("/panel/usuarios");
+    return { success: true, biometricId: payload.biometric_id, pending: !sync.synced };
   } catch {
     return { success: false, error: "Error de conexión con el backend local" };
   }

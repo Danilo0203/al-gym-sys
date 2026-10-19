@@ -34,8 +34,8 @@ import {
 import { cn } from "@/lib/utils";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
-import { getCustomerDetail } from "@/features/customers/lib/customer-api";
-import { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
+import { getCustomerFormPrefill } from "@/features/customers/lib/customer-form-prefill";
+import type { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
 
 import {
   getCashCustomerSummary,
@@ -200,11 +200,11 @@ export function CashCustomerPaymentDialog({
 
     startCustomerTransition(async () => {
       try {
-        const detail = await getCustomerDetail(selectedCustomerId);
-        setFullCustomerData(detail as unknown as CustomerData);
+        const customer = await getCustomerFormPrefill(selectedCustomerId);
+        setFullCustomerData(customer);
         setOpen(false);
         setRenewOpen(true);
-      } catch (error) {
+      } catch {
         toast.error("No se pudo cargar la información completa del cliente.");
       }
     });
@@ -374,6 +374,7 @@ export function CashCustomerPaymentDialog({
             if (!next) setFullCustomerData(null);
           }}
           entrypoint="cash"
+          cashFlow="renewal"
           legacySubmit={submitLegacyCashCustomer}
         />
       ) : null}

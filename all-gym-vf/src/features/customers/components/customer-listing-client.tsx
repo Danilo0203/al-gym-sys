@@ -19,12 +19,19 @@ interface CustomerListingClientProps {
   canUpdate: boolean;
 }
 
+function selectedFilterValue(value: string | string[] | null): string | null {
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
 export function CustomerListingClient({ canUpdate }: CustomerListingClientProps) {
   const [params] = useQueryStates(searchParams);
 
-  const rawIsActive = params.is_active;
+  const rawIsActive = selectedFilterValue(params.is_active);
   const rawPlanId = Number(params.plan_id);
-  const membershipStatus = customerMembershipStatusSchema.safeParse(params.membership_status);
+  const rawBiometricId = params.biometric_id?.trim() ?? "";
+  const biometricId = /^\d+$/.test(rawBiometricId) ? Number(rawBiometricId) : NaN;
+  const membershipStatus = customerMembershipStatusSchema.safeParse(selectedFilterValue(params.membership_status));
+  const validMembershipStatus = membershipStatus.success ? membershipStatus.data : undefined;
 
   const queryParams = useMemo(() => {
     return mapCustomerListQuery({
@@ -34,7 +41,8 @@ export function CustomerListingClient({ canUpdate }: CustomerListingClientProps)
       sort: sortingStateToBackendSort(params.sort),
       isActive: rawIsActive === "true" ? true : rawIsActive === "false" ? false : undefined,
       planId: Number.isInteger(rawPlanId) && rawPlanId > 0 ? rawPlanId : undefined,
-      membershipStatus: membershipStatus.success ? membershipStatus.data : undefined,
+      biometricId: Number.isSafeInteger(biometricId) ? biometricId : undefined,
+      membershipStatus: validMembershipStatus,
     });
   }, [
     params.page,
@@ -43,7 +51,8 @@ export function CustomerListingClient({ canUpdate }: CustomerListingClientProps)
     params.sort,
     rawIsActive,
     rawPlanId,
-    membershipStatus,
+    biometricId,
+    validMembershipStatus,
   ]);
 
   const customersQuery = useCustomersList(queryParams);

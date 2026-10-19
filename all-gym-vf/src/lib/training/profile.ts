@@ -46,7 +46,7 @@ export function getMissingTrainingProfileRequirements(input: TrainingProfileInpu
   if (!nutrition.weightKg) missing.push("Peso");
   if (!nutrition.heightCm) missing.push("Estatura");
   if (!normalized.primary_goal) missing.push("Objetivo principal");
-  if (normalized.parq_requires_attention === null) missing.push("Screening PAR-Q");
+  if (normalized.parq_requires_attention === null) missing.push("Cuestionario PAR-Q");
   if (normalized.parq_requires_attention === true && !normalized.injuries_or_pain) {
     missing.push("Motivo de la atención especial");
   }

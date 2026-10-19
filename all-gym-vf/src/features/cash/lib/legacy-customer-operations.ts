@@ -11,7 +11,7 @@ import { createCashCustomer, renewCashCustomer } from "@/features/cash/actions/c
 import { buildCashCustomerRenewalPayload } from "@/features/cash/lib/local-customer-intake";
 import type { CustomerSheetFormValues } from "@/features/customers/hooks/use-hook-form-customers";
 import { poundsToKilograms } from "@/lib/fitness/measurements";
-import { combineSessionDuration, DEFAULT_TRAINING_LOCATION } from "@/lib/training/profile-defaults";
+import { combineSessionDuration } from "@/lib/training/profile-defaults";
 
 function normalizeTextFieldValue(value: string | null | undefined) {
   const normalized = value?.trim();
@@ -48,7 +48,7 @@ export async function submitLegacyCashCustomer(
     experience_level: values.experience_level,
     days_per_week: values.days_per_week ? Number(values.days_per_week) : undefined,
     session_minutes: combineSessionDuration(values.session_hours, values.session_minutes_extra) ?? undefined,
-    training_location: DEFAULT_TRAINING_LOCATION,
+    training_location: values.training_location,
     equipment_available: values.equipment_available,
     cardio_preference: values.cardio_preference,
     parq_requires_attention:

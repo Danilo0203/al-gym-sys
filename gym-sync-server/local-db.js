@@ -67,7 +67,9 @@ function createLocalDb(pool) {
     async loadProfilesForReconcile() {
       const result = await pool.query(
         `SELECT id, role::text, full_name, biometric_id, is_active
-         FROM public.profiles WHERE role = 'client' AND biometric_id IS NOT NULL`,
+         FROM public.profiles
+         WHERE role IN ('client', 'owner', 'admin', 'trainer', 'employee', 'custom')
+           AND biometric_id IS NOT NULL`,
       );
       return result.rows;
     },

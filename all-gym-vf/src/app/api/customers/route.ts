@@ -10,6 +10,7 @@ const ALLOWED_QUERY_PARAMS = [
   "sort",
   "is_active",
   "plan_id",
+  "biometric_id",
   "membership_status",
 ];
 

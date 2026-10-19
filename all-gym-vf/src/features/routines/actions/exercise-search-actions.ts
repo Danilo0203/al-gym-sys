@@ -34,9 +34,13 @@ export async function searchExerciseCatalog(filters: {
   targetMuscle?: string;
   equipment?: string;
   limit?: number;
+  offset?: number;
 }) {
+  const limit = Math.min(Math.max(filters.limit ?? 20, 1), 50);
+  const page = searchExerciseCatalogItems(await listLocalExercises(), { ...filters, limit: limit + 1 });
   return {
     success: true as const,
-    data: searchExerciseCatalogItems(await listLocalExercises(), filters),
+    data: page.slice(0, limit),
+    hasMore: page.length > limit,
   };
 }

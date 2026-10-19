@@ -47,6 +47,26 @@ import {
 import { CustomerData, calculateSubscriptionEndDate, useHookFormCustomerSheet, type CustomerSheetFormValues } from "../hooks/use-hook-form-customers";
 export type { CustomerData } from "../hooks/use-hook-form-customers";
 
+type CashFlow = "registration" | "pending_payment" | "renewal";
+
+const cashFlowCopy: Record<CashFlow, { title: string; description: string; submit: string }> = {
+  registration: {
+    title: "Registro de nuevo cliente",
+    description: "Completa la ficha, asigna un plan y cobra dentro del turno actual.",
+    submit: "Registrar y cobrar",
+  },
+  pending_payment: {
+    title: "Cobrar membresía pendiente",
+    description: "Revisa la ficha y la vigencia antes de cobrar la membresía pendiente.",
+    submit: "Cobrar membresía",
+  },
+  renewal: {
+    title: "Renovar suscripción",
+    description: "Revisa la ficha, el plan y la vigencia antes de registrar la renovación y el cobro.",
+    submit: "Renovar y cobrar",
+  },
+};
+
 interface CustomerFormSheetProps {
   mode?: "create" | "edit";
   customer?: CustomerData | null;
@@ -54,6 +74,7 @@ interface CustomerFormSheetProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  cashFlow?: CashFlow;
   legacySubmit?: (
     customerId: string | null,
     values: CustomerSheetFormValues,
@@ -71,6 +92,7 @@ export function CustomerFormSheet({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  cashFlow,
   legacySubmit,
 }: CustomerFormSheetProps) {
   const {
@@ -96,6 +118,7 @@ export function CustomerFormSheet({
     open: controlledOpen,
     onOpenChange: controlledOnOpenChange,
     entrypoint,
+    cashFlow,
     legacySubmit,
   });
 
@@ -108,6 +131,9 @@ export function CustomerFormSheet({
   const parqRequiresAttention = form.watch("parq_requires_attention");
   const showAttentionDetails = parqRequiresAttention === "yes";
   const isLocalCustomerForm = entrypoint === "customers";
+  const cashCopy = entrypoint === "cash"
+    ? cashFlowCopy[cashFlow ?? (isEditing ? "renewal" : "registration")]
+    : null;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -119,16 +145,12 @@ export function CustomerFormSheet({
       <SheetContent className="sm:max-w-xl w-full flex flex-col h-full p-0 gap-0">
         <SheetHeader className="px-6 py-4 border-b space-y-1 sticky top-0 bg-background/80 backdrop-blur-md z-10">
           <SheetTitle>
-            {isEditing ? "Editar Cliente" : entrypoint === "cash" ? "Nuevo cliente + cobro" : "Registro de Nuevo Cliente"}
+            {cashCopy?.title ?? (isEditing ? "Editar Cliente" : "Registro de Nuevo Cliente")}
           </SheetTitle>
           <SheetDescription>
-            {isEditing
-              ? isLocalCustomerForm
-                ? "Edita la ficha del cliente y administra su membresía por el backend local."
-                : "Modifica perfil, membresía, métricas y entrenamiento desde una sola ficha."
-              : entrypoint === "cash"
-                ? "Registra la ficha del cliente, asigna el plan y cobra dentro del turno actual."
-                : "Completa la ficha y, si corresponde, asigna un plan. Pagos y caja se registran por separado."}
+            {cashCopy?.description ?? (isEditing
+              ? "Edita la ficha del cliente y administra su membresía por el backend local."
+              : "Completa la ficha y, si corresponde, asigna un plan. Pagos y caja se registran por separado.")}
           </SheetDescription>
         </SheetHeader>
 
@@ -774,7 +796,7 @@ export function CustomerFormSheet({
             data-testid="customers-submit-button"
           >
             {isPending && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Guardar Cambios" : "Registrar"}
+            {cashCopy?.submit ?? (isEditing ? "Guardar Cambios" : "Registrar")}
           </Button>
         </div>
       </SheetContent>

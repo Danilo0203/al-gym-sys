@@ -37,19 +37,26 @@ export async function listPendingCashMemberships(search = ""): Promise<PendingMe
 
 export async function collectPendingCashMembership(membershipId: string, discountAmount: number,
   paymentMethod: "cash" | "card" | "transfer", intake?: ReturnType<typeof buildCashCustomerIntake>) {
-  const response = await cashMutation(
-    `/payments/membership/pending/${encodeURIComponent(membershipId)}/collect`,
-    { discountAmount, paymentMethod, ...(intake && Object.keys(intake).length > 0 && { intake }) },
-  );
-  const result = await parseCustomerApiResponse(response,
-    (body) => z.object({ customer_id: z.string().uuid(), payment_id: z.string().uuid() }).parse(body));
-  refreshCashViews(result.customer_id);
-  revalidatePath("/panel/pagos");
-  const [routineGeneration, deviceSync] = await Promise.all([
-    generateCashCustomerRoutine(result.customer_id),
-    reconcileLocalCustomerOnClock(result.customer_id),
-  ]);
-  return { routineGeneration, deviceSync };
+  try {
+    const response = await cashMutation(
+      `/payments/membership/pending/${encodeURIComponent(membershipId)}/collect`,
+      { discountAmount, paymentMethod, ...(intake && Object.keys(intake).length > 0 && { intake }) },
+    );
+    const result = await parseCustomerApiResponse(response,
+      (body) => z.object({ customer_id: z.string().uuid(), payment_id: z.string().uuid() }).parse(body));
+    refreshCashViews(result.customer_id);
+    revalidatePath("/panel/pagos");
+    const [routineGeneration, deviceSync] = await Promise.all([
+      generateCashCustomerRoutine(result.customer_id),
+      reconcileLocalCustomerOnClock(result.customer_id),
+    ]);
+    return { success: true, routineGeneration, deviceSync };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "No se pudo cobrar la membresía pendiente.",
+    };
+  }
 }
 
 type CashRoutineResult = {

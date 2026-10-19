@@ -539,7 +539,7 @@ function buildDesiredCommandsForProfile(profile, shouldEnable) {
   ];
 }
 
-async function reconcileDeviceUsers(deviceId, customerId = null) {
+async function reconcileDeviceUsers(deviceId, profileId = null, profileType = null) {
   const sanitizedDeviceId = sanitizeText(deviceId, 80);
   if (!sanitizedDeviceId || sanitizedDeviceId === "Unknown") {
     return {
@@ -560,11 +560,12 @@ async function reconcileDeviceUsers(deviceId, customerId = null) {
     loadActiveSubscriptionUserIds(),
     loadPendingCommandSet(sanitizedDeviceId),
   ]);
-  const profiles = customerId
-    ? allProfiles.filter((profile) => profile.id === customerId)
+  const profiles = profileId
+    ? allProfiles.filter((profile) => profile.id === profileId &&
+      (profileType === "client" ? profile.role === "client" : profile.role !== "client"))
     : allProfiles;
 
-  if (customerId && profiles.length === 0) {
+  if (profileId && profiles.length === 0) {
     return { success: false, reason: "profile_not_found" };
   }
 
@@ -573,7 +574,8 @@ async function reconcileDeviceUsers(deviceId, customerId = null) {
   let disabledUsers = 0;
 
   for (const profile of profiles) {
-    const shouldEnable = profile.is_active !== false && activeSubscriptionUserIds.has(profile.id);
+    const shouldEnable = profile.is_active !== false &&
+      (profile.role !== "client" || activeSubscriptionUserIds.has(profile.id));
     const commands = buildDesiredCommandsForProfile(profile, shouldEnable);
 
     if (commands.length === 0) {
@@ -1361,12 +1363,21 @@ app.post("/api/device-users/reconcile", async (req, res) => {
       return res.status(400).json({ success: false, error: "missing_device_id" });
     }
 
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const customerId = payload.customer_id == null ? null : String(payload.customer_id).trim();
+    const userId = payload.user_id == null ? null : String(payload.user_id).trim();
+    if (customerId && userId) {
+      return res.status(400).json({ success: false, error: "ambiguous_profile_id" });
+    }
     if (customerId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)) {
       return res.status(400).json({ success: false, error: "invalid_customer_id" });
     }
+    if (userId !== null && !uuidPattern.test(userId)) {
+      return res.status(400).json({ success: false, error: "invalid_user_id" });
+    }
 
-    const result = await reconcileDeviceUsers(deviceId, customerId);
+    const result = await reconcileDeviceUsers(deviceId, customerId ?? userId,
+      customerId ? "client" : userId ? "internal" : null);
     if (!result.success) {
       return res.status(404).json(result);
     }

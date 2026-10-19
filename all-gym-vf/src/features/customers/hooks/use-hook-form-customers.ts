@@ -6,7 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import * as z from "zod";
-import { addDays, addMonths, differenceInDays, endOfMonth } from "date-fns";
+import { addMonths, differenceInDays, endOfMonth } from "date-fns";
+import { calculateAutomaticRenewalPeriod, calculateSubscriptionEndDate } from "@/features/customers/lib/subscription-renewal-period";
 import { DEFAULT_SUBSCRIPTION_GRACE_DAYS, normalizeGraceDays } from "@/lib/subscriptions/grace-period";
 import type { DateRange } from "react-day-picker";
 import { toast } from "sonner";
@@ -89,9 +90,7 @@ function normalizeTextFieldValue(
 
 const dateModeValues = ["automatic", "manual"] as const;
 
-export function calculateSubscriptionEndDate(startDate: Date, planDurationDays: number) {
-  return addDays(startDate, planDurationDays);
-}
+export { calculateSubscriptionEndDate } from "@/features/customers/lib/subscription-renewal-period";
 
 export function calculateNextSubscriptionStartDate(previousStartDate?: Date | null) {
   if (!previousStartDate) return new Date();
@@ -873,11 +872,14 @@ interface UseHookFormCustomerSheetParams {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   entrypoint?: "customers" | "cash";
+  cashFlow?: "registration" | "pending_payment" | "renewal";
   legacySubmit?: (
     customerId: string | null,
     values: CustomerSheetFormValues,
     context: { entrypoint: "cash"; suggestedBasePrice?: number; suggestedCycles?: number },
   ) => Promise<{
+    success?: boolean;
+    error?: string;
     deviceSync?: { attempted?: boolean; synced?: boolean; queued?: boolean; method?: string; pending?: boolean };
     routineGeneration?: { status: "draft" | "pending_profile" | "failed"; message?: string };
   }>;
@@ -889,6 +891,7 @@ export function useHookFormCustomerSheet({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   entrypoint = "customers",
+  cashFlow,
   legacySubmit,
 }: UseHookFormCustomerSheetParams) {
   const router = useRouter();
@@ -916,6 +919,22 @@ export function useHookFormCustomerSheet({
   const getDefaultValues = useCallback((): CustomerSheetFormValues => {
     if (isEditing && customer) {
       const sessionDuration = splitSessionMinutes(customer.session_minutes);
+      const previousStart = parseDatabaseDate(localMembership?.start_date || customer.subscription_start_date);
+      const previousEnd = parseDatabaseDate(localMembership?.end_date || customer.subscription_end_date);
+      const guatemalaDateParts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit",
+      }).formatToParts(new Date());
+      const datePart = (type: string) => Number(guatemalaDateParts.find((part) => part.type === type)?.value);
+      const today = new Date(datePart("year"), datePart("month") - 1, datePart("day"));
+      const planDuration = plans.find((plan) => plan.id.toString() ===
+        (localMembership?.plan_id.toString() || customer.plan_id?.toString()))?.duration_days;
+      const automaticRenewal = (cashFlow === "pending_payment" || cashFlow === "renewal")
+        && previousStart && previousEnd
+        ? calculateAutomaticRenewalPeriod(previousStart, previousEnd,
+          planDuration ?? Math.max(1, differenceInDays(previousEnd, previousStart)), today)
+        : null;
+      const subscriptionStart = automaticRenewal?.from ?? previousStart ?? today;
+      const subscriptionEnd = automaticRenewal?.to ?? previousEnd ?? today;
 
       return {
         email: customer.email || "",
@@ -970,8 +989,8 @@ export function useHookFormCustomerSheet({
         leg_right: customer.leg_right ?? undefined,
         leg_left: customer.leg_left ?? undefined,
         subscription_period: {
-          from: parseDatabaseDate(localMembership?.start_date || customer.subscription_start_date) || new Date(),
-          to: parseDatabaseDate(localMembership?.end_date || customer.subscription_end_date) || new Date(),
+          from: subscriptionStart,
+          to: subscriptionEnd,
         },
       };
     }
@@ -1026,7 +1045,7 @@ export function useHookFormCustomerSheet({
         to: new Date(),
       },
     };
-  }, [isEditing, customer, localMembership]);
+  }, [isEditing, customer, localMembership, cashFlow, plans]);
 
   const form = useForm<CustomerSheetFormValues>({
     resolver: zodResolver(createCustomerSheetSchema(entrypoint === "customers")) as Resolver<CustomerSheetFormValues>,
@@ -1331,6 +1350,9 @@ export function useHookFormCustomerSheet({
         suggestedBasePrice: membershipPricing?.suggestedBasePrice,
         suggestedCycles: membershipPricing?.suggestedCycles,
       });
+      if (result.success === false) {
+        throw new Error(result.error || "No se pudo completar el cobro.");
+      }
       router.refresh();
       setOpen(false);
       if (result.deviceSync?.method === "direct" && result.deviceSync.synced) {
@@ -1402,11 +1424,17 @@ interface RenewAssessmentData {
 
 function getRenewSubscriptionDefaultValues(
   previousSubscriptionStartDate?: string | null,
+  previousSubscriptionEndDate?: string | null,
   lastAssessment?: RenewAssessmentData | null,
   trainingProfile?: TrainingProfileInput | null,
 ): RenewSubscriptionFormValues {
   const sessionDuration = splitSessionMinutes(trainingProfile?.session_minutes);
-  const renewalStartDate = calculateNextSubscriptionStartDate(parseDatabaseDate(previousSubscriptionStartDate));
+  const previousStart = parseDatabaseDate(previousSubscriptionStartDate);
+  const previousEnd = parseDatabaseDate(previousSubscriptionEndDate);
+  const renewalStartDate = previousStart && previousEnd
+    ? calculateAutomaticRenewalPeriod(previousStart, previousEnd,
+      Math.max(1, differenceInDays(previousEnd, previousStart)), new Date()).from
+    : calculateNextSubscriptionStartDate(previousStart);
 
   return {
     plan_id: "",
@@ -1491,7 +1519,7 @@ export function useHookFormRenewSubscription({
   customerGender,
   customerBirthDate,
   previousSubscriptionStartDate,
-  previousSubscriptionEndDate: _previousSubscriptionEndDate,
+  previousSubscriptionEndDate,
   lastAssessment,
   trainingProfile,
   open: controlledOpen,
@@ -1501,7 +1529,6 @@ export function useHookFormRenewSubscription({
 }: UseHookFormRenewSubscriptionParams) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  void _previousSubscriptionEndDate;
   const previousDateStateRef = useRef<{ dateMode?: RenewSubscriptionFormValues["date_mode"]; planId: string | null; startTime: number | null }>({
     dateMode: "automatic",
     planId: null,
@@ -1514,7 +1541,7 @@ export function useHookFormRenewSubscription({
 
   const form = useForm<RenewSubscriptionFormValues>({
     resolver: zodResolver(renewSubscriptionSchema) as Resolver<RenewSubscriptionFormValues>,
-    defaultValues: getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, lastAssessment, trainingProfile),
+    defaultValues: getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, previousSubscriptionEndDate, lastAssessment, trainingProfile),
   });
   const {
     reset: resetRenew,
@@ -1585,7 +1612,7 @@ export function useHookFormRenewSubscription({
 
   useEffect(() => {
     if (!open) return;
-    const values = getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, lastAssessment, trainingProfile);
+    const values = getRenewSubscriptionDefaultValues(previousSubscriptionStartDate, previousSubscriptionEndDate, lastAssessment, trainingProfile);
     resetRenew(values);
     priceContextRef.current = null;
     lastSuggestedFinalPriceRef.current = null;
@@ -1595,7 +1622,7 @@ export function useHookFormRenewSubscription({
       planId: values.plan_id || null,
       startTime: values.subscription_period?.from?.getTime() ?? null,
     };
-  }, [lastAssessment, open, previousSubscriptionStartDate, resetRenew, trainingProfile]);
+  }, [lastAssessment, open, previousSubscriptionStartDate, previousSubscriptionEndDate, resetRenew, trainingProfile]);
 
   useEffect(() => {
     if (!membershipPricing) return;

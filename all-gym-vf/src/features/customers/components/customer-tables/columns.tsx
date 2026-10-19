@@ -116,7 +116,9 @@ export function getColumns(options: CustomerColumnsOptions = {}): ColumnDef<Cust
     {
       accessorKey: "biometric_id",
       size: 115,
-      header: "BIOMÉTRICO",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="BIOMÉTRICO" />,
+      enableColumnFilter: true,
+      meta: { label: "Biométrico", placeholder: "ID biométrico", variant: "number" as const },
       cell: ({ row }) => <span className="font-mono text-xs">#{row.original.biometric_id}</span>,
     },
     {

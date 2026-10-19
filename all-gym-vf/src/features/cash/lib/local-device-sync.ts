@@ -20,7 +20,7 @@ function localSyncUrl(): URL | null {
   return url;
 }
 
-export async function reconcileLocalCustomerOnClock(customerId: string): Promise<DeviceSyncResult> {
+async function reconcileLocalProfileOnClock(profileKey: "customer_id" | "user_id", profileId: string): Promise<DeviceSyncResult> {
   const url = localSyncUrl();
   const token = process.env.GYM_SYNC_API_TOKEN?.trim();
   const deviceId = process.env.DEFAULT_ZK_DEVICE_SN?.trim();
@@ -33,7 +33,7 @@ export async function reconcileLocalCustomerOnClock(customerId: string): Promise
         "content-type": "application/json",
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ customer_id: customerId, device_id: deviceId }),
+      body: JSON.stringify({ [profileKey]: profileId, device_id: deviceId }),
       cache: "no-store",
       signal: AbortSignal.timeout(12_000),
     });
@@ -51,4 +51,12 @@ export async function reconcileLocalCustomerOnClock(customerId: string): Promise
   } catch {
     return { attempted: true, synced: false, queued: false, method: "none" };
   }
+}
+
+export async function reconcileLocalCustomerOnClock(customerId: string): Promise<DeviceSyncResult> {
+  return reconcileLocalProfileOnClock("customer_id", customerId);
+}
+
+export async function reconcileLocalInternalUserOnClock(userId: string): Promise<DeviceSyncResult> {
+  return reconcileLocalProfileOnClock("user_id", userId);
 }

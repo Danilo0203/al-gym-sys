@@ -17,6 +17,7 @@ export const searchParams = {
   role: parseAsString,
   plan_name: parseAsString, // Filtro de plan
   plan_id: parseAsString,
+  biometric_id: parseAsString,
   membership_status: parseAsString,
   user_name: parseAsString, // Filtro de cliente en pagos
   session_number: parseAsString, // Filtro de número de sesión en caja

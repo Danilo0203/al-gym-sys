@@ -432,7 +432,7 @@ export function CustomerHistoryClient({
           {history.payments ? <NavTab active={activeSection === "payments"} onClick={() => scrollToSection("payments")} label="Finanzas" icon={<IconCoin />} /> : null}
           <NavTab active={activeSection === "attendance"} onClick={() => scrollToSection("attendance")} label="Accesos" icon={<IconRun />} />
           {profile.capabilities.view_health_profile ? <NavTab active={activeSection === "health"} onClick={() => scrollToSection("health")} label="Salud" icon={<IconHeartbeat />} /> : null}
-          {profile.capabilities.view_body_assessments ? <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evolution" icon={<IconScale />} /> : null}
+          {profile.capabilities.view_body_assessments ? <NavTab active={activeSection === "assessments"} onClick={() => scrollToSection("assessments")} label="Evolución" icon={<IconScale />} /> : null}
         </nav>
       </header>
 
@@ -444,12 +444,12 @@ export function CustomerHistoryClient({
         <div className="mx-auto w-full min-w-0 max-w-7xl space-y-16 px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10">
           <section id="overview" className="min-w-0 scroll-mt-4 space-y-8">
             <div className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard title="Total Gastado (LTV)" value={money(history.kpis.total_spent)} icon={<IconCoin />} description="Valor acumulado histórico" trend="Finanzas" variant="emerald" />
+              <KpiCard title="Gasto total" value={money(history.kpis.total_spent)} icon={<IconCoin />} description="Valor acumulado histórico" trend="Finanzas" variant="emerald" />
               <KpiCard title="Total de Visitas" value={String(history.kpis.total_visits)} icon={<IconCalendarStats />} description="Ingresos registrados" trend="Actividad" variant="blue" />
-              <KpiCard title="Peso Actual" value={history.kpis.current_weight === null ? "N/D" : `${history.kpis.current_weight} kg`} icon={<IconScale />} description={history.kpis.initial_weight === null ? "Sin registro inicial" : `Inicial: ${history.kpis.initial_weight} kg`} trend="Salud" variant="purple" />
+              <KpiCard title="Peso Actual" value={history.kpis.current_weight === null ? "Sin datos" : `${history.kpis.current_weight} kg`} icon={<IconScale />} description={history.kpis.initial_weight === null ? "Sin registro inicial" : `Inicial: ${history.kpis.initial_weight} kg`} trend="Salud" variant="purple" />
               <KpiCard
                 title="Cambio de Peso"
-                value={history.kpis.weight_change === null ? "N/A" : `${history.kpis.weight_change > 0 ? "+" : ""}${history.kpis.weight_change.toFixed(1)} kg`}
+                value={history.kpis.weight_change === null ? "Sin datos" : `${history.kpis.weight_change > 0 ? "+" : ""}${history.kpis.weight_change.toFixed(1)} kg`}
                 icon={history.kpis.weight_change === null ? <IconMinus /> : history.kpis.weight_change > 0 ? <IconTrendingUp /> : history.kpis.weight_change < 0 ? <IconTrendingDown /> : <IconMinus />}
                 description="Desde ingreso"
                 trend="Evolución"

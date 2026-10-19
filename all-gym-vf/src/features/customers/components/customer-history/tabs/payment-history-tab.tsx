@@ -69,7 +69,7 @@ export function PaymentHistoryTab({ paymentHistory, totalPayments, totalPaid }: 
           </CardHeader>
           <CardContent className="relative z-10">
             <p className="text-4xl font-black text-emerald-600">
-              {totalPaid === null ? "N/D" : `Q${totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+              {totalPaid === null ? "Sin datos" : `Q${totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
             </p>
           </CardContent>
         </Card>

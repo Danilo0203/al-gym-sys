@@ -1,12 +1,12 @@
 "use server";
 
-import sharp from "sharp";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
+import { fileToProcessedImageBuffer } from "@/features/exercises/lib/exercise-image";
 
 const exerciseNameSchema = z
   .string()
@@ -50,9 +50,6 @@ const updateExercisePreferencesSchema = z
     message: "No se recibieron cambios para actualizar el ejercicio.",
   });
 
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-
 interface ExerciseCatalogMutationResult {
   success: boolean;
   message?: string;
@@ -79,37 +76,6 @@ async function getLocalHeaders() {
   return cookieHeader ? { cookie: cookieHeader } : undefined;
 }
 
-async function fileToProcessedImageBuffer(uploadedFile: File) {
-  if (!uploadedFile || uploadedFile.size === 0) {
-    throw new Error("Selecciona una imagen para el ejercicio.");
-  }
-
-  if (!ACCEPTED_IMAGE_TYPES.has(uploadedFile.type)) {
-    throw new Error("La imagen debe ser JPG, PNG, WEBP o GIF.");
-  }
-
-  if (uploadedFile.size > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error("La imagen no puede superar los 5 MB.");
-  }
-
-  try {
-    const inputBuffer = Buffer.from(await uploadedFile.arrayBuffer());
-    const outputBuffer = await sharp(inputBuffer)
-      .rotate()
-      .resize(720, 720, {
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 82 })
-      .toBuffer();
-
-    return outputBuffer;
-  } catch (error) {
-    console.error("Error processing exercise image:", error);
-    throw new Error("No se pudo procesar la imagen seleccionada.");
-  }
-}
-
 export async function updateExerciseCatalogItem(input: {
   exerciseId: number;
   displayName: string;
@@ -120,7 +86,7 @@ export async function updateExerciseCatalogItem(input: {
     equipment: string;
     instructions: string;
   }>;
-}): Promise<ExerciseCatalogMutationResult> {
+}, imageFormData?: FormData): Promise<ExerciseCatalogMutationResult> {
   try {
     const authError = await ensureAdminAccess("exercises.update");
     if (authError) {
@@ -137,10 +103,17 @@ export async function updateExerciseCatalogItem(input: {
 
     const nextDisplayName = parsedInput.data.displayName;
     const metadata = parsedInput.data.metadata;
-    const response = await fetchAuthBackend(`/exercises/${parsedInput.data.exerciseId}`, {
-      method: "PATCH",
+    const image = imageFormData?.get("image");
+    const imageBuffer = image instanceof File ? await fileToProcessedImageBuffer(image) : null;
+    const response = await fetchAuthBackend(imageBuffer ? "/exercises/image-attachment" : `/exercises/${parsedInput.data.exerciseId}`, {
+      method: imageBuffer ? "POST" : "PATCH",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
       body: JSON.stringify({
+        ...(imageBuffer ? {
+          exercise_id: parsedInput.data.exerciseId,
+          image_base64: imageBuffer.toString("base64"),
+          original_file_name: (image as File).name,
+        } : {}),
         displayName: nextDisplayName,
         ...(metadata?.exerciseType !== undefined ? { exercise_type: metadata.exerciseType } : {}),
         ...(metadata?.bodyPart !== undefined ? { body_parts: metadata.bodyPart ? [metadata.bodyPart] : [] } : {}),
@@ -151,7 +124,7 @@ export async function updateExerciseCatalogItem(input: {
         } : {}),
       }),
     });
-    if (!response.ok) return { success: false, error: "No se pudo actualizar el nombre del ejercicio." };
+    if (!response.ok) return { success: false, error: "No se pudo actualizar el ejercicio." };
 
     revalidatePath("/panel/ejercicios");
     revalidatePath("/panel/clientes");
@@ -224,35 +197,6 @@ export async function updateExerciseCatalogPreferences(input: {
       success: false,
       error: error instanceof Error ? error.message : "Error inesperado al actualizar las preferencias del ejercicio.",
     };
-  }
-}
-
-export async function attachExerciseImage(exerciseId: number, formData: FormData): Promise<ExerciseCatalogMutationResult> {
-  try {
-    const authError = await ensureAdminAccess("exercises.update");
-    if (authError) return { success: false, error: authError };
-    if (!Number.isInteger(exerciseId) || exerciseId <= 0) {
-      return { success: false, error: "El identificador del ejercicio no es válido." };
-    }
-    const image = formData.get("image");
-    if (!(image instanceof File)) return { success: false, error: "Selecciona una imagen local." };
-    const processedImage = await fileToProcessedImageBuffer(image);
-    const response = await fetchAuthBackend("/exercises/image-attachment", {
-      method: "POST",
-      headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
-      body: JSON.stringify({
-        exercise_id: exerciseId,
-        image_base64: processedImage.toString("base64"),
-        original_file_name: image.name,
-      }),
-    });
-    if (!response.ok) return { success: false, error: "No se pudo vincular la imagen al ejercicio." };
-
-    revalidatePath("/panel/ejercicios");
-    revalidatePath("/panel/clientes");
-    return { success: true, message: "Imagen local guardada en el ejercicio." };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : "No se pudo guardar la imagen." };
   }
 }
 

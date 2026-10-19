@@ -54,13 +54,16 @@ function RoutineBlueprintPickerDialog({
   onOpenChange,
   customerId,
   onAssigned,
+  hasExistingRoutine,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customerId: string;
   onAssigned: () => void;
+  hasExistingRoutine: boolean;
 }) {
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState<string | null>(null);
 
   const blueprintsQuery = useQuery({
     queryKey: ["routine-blueprints", "available"],
@@ -79,7 +82,8 @@ function RoutineBlueprintPickerDialog({
         return;
       }
 
-      toast.success("Plantilla asignada.");
+      toast.success("Plantilla asignada y activada.");
+      setSelectedBlueprintId(null);
       onOpenChange(false);
       onAssigned();
     } catch (error) {
@@ -90,22 +94,60 @@ function RoutineBlueprintPickerDialog({
   };
 
   const blueprints = blueprintsQuery.data ?? [];
+  const selectedBlueprint = blueprints.find((blueprint) => blueprint.id === selectedBlueprintId);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (assigningId) return;
+    if (!nextOpen) setSelectedBlueprintId(null);
+    onOpenChange(nextOpen);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Elegir plantilla</DialogTitle>
+          <DialogTitle>{selectedBlueprint ? "Confirmar plantilla" : "Seleccionar plantilla"}</DialogTitle>
           <DialogDescription>
-            Selecciona una plantilla para generar la rutina de este cliente a partir de una versión reutilizable.
+            {selectedBlueprint
+              ? "La plantilla seleccionada se activará de inmediato y quedará visible para el cliente."
+              : "Elige una de las plantillas de rutina que ya están creadas."}
           </DialogDescription>
         </DialogHeader>
 
-        {blueprintsQuery.isLoading ? (
+        {selectedBlueprint ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+              <p className="font-semibold">{selectedBlueprint.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {selectedBlueprint.day_count} días · {selectedBlueprint.exercise_count} ejercicios
+              </p>
+            </div>
+            {hasExistingRoutine ? (
+              <p className="text-sm text-amber-600">
+                La rutina o el borrador actual se archivará al activar esta plantilla.
+              </p>
+            ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => setSelectedBlueprintId(null)} disabled={Boolean(assigningId)}>
+                Volver a las plantillas
+              </Button>
+              <Button onClick={() => void handleAssign(selectedBlueprint.id)} disabled={Boolean(assigningId)}>
+                {assigningId ? "Asignando..." : "Asignar y activar"}
+              </Button>
+            </div>
+          </div>
+        ) : blueprintsQuery.isLoading ? (
           <div className="grid gap-3">
             {[1, 2, 3].map((item) => (
               <Skeleton key={item} className="h-24 w-full" />
             ))}
+          </div>
+        ) : blueprintsQuery.isError ? (
+          <div className="space-y-3 rounded-2xl border border-destructive/40 p-6 text-sm">
+            <p>No se pudieron cargar las plantillas.</p>
+            <Button variant="outline" size="sm" onClick={() => void blueprintsQuery.refetch()}>
+              Reintentar
+            </Button>
           </div>
         ) : blueprints.length > 0 ? (
           <ScrollArea className="max-h-[60vh] pr-3">
@@ -114,8 +156,7 @@ function RoutineBlueprintPickerDialog({
                 <BlueprintOptionCard
                   key={blueprint.id}
                   blueprint={blueprint}
-                  assigning={assigningId === blueprint.id}
-                  onAssign={() => void handleAssign(blueprint.id)}
+                  onAssign={() => setSelectedBlueprintId(blueprint.id)}
                 />
               ))}
             </div>
@@ -132,11 +173,9 @@ function RoutineBlueprintPickerDialog({
 
 function BlueprintOptionCard({
   blueprint,
-  assigning,
   onAssign,
 }: {
   blueprint: BlueprintWithStats;
-  assigning: boolean;
   onAssign: () => void;
 }) {
   const goalLabel = getPrimaryGoalLabel(blueprint.primary_goal);
@@ -153,8 +192,8 @@ function BlueprintOptionCard({
             {blueprint.day_count} días · {blueprint.exercise_count} ejercicios · {blueprint.assignment_count} asignaciones
           </p>
         </div>
-        <Button onClick={onAssign} disabled={assigning} className="sm:min-w-36">
-          {assigning ? "Asignando..." : "Asignar plantilla"}
+        <Button onClick={onAssign} className="sm:min-w-36">
+          Seleccionar
         </Button>
       </CardContent>
     </Card>
@@ -386,7 +425,7 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
         (detail.block_type === "strength" || detail.block_type === "accessory") && detail.exercise_id === null,
       ).length
     : 0;
-  const canChooseTemplate = !workspace.activeRoutine && !workspace.draftRoutine && !workspace.pendingRoutine;
+  const hasExistingRoutine = Boolean(workspace.activeRoutine || workspace.draftRoutine || workspace.pendingRoutine);
 
   return (
     <div className="space-y-4">
@@ -564,18 +603,18 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
                     <RefreshCw className={cn("size-3.5", isGenerating && "animate-spin")} />
                     {isGenerating ? "Generando..." : generateLabel}
                   </Button>
-                  {canChooseTemplate && canManageBlueprints ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsBlueprintPickerOpen(true)}
-                      className="sm:flex-1"
-                    >
-                      Elegir plantilla
-                    </Button>
-                  ) : null}
                 </div>
               )}
+              {canManageBlueprints ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsBlueprintPickerOpen(true)}
+                  className="w-full"
+                >
+                  Seleccionar plantilla
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -624,6 +663,7 @@ export function RoutineWorkspaceTab({ customerId, workspace }: RoutineWorkspaceT
         onOpenChange={setIsBlueprintPickerOpen}
         customerId={customerId}
         onAssigned={handleAssigned}
+        hasExistingRoutine={hasExistingRoutine}
       />
     </div>
   );

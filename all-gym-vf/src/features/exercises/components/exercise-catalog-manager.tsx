@@ -39,7 +39,6 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import type { ExerciseCatalogItem } from "@/lib/training/types";
 import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import {
-  attachExerciseImage,
   createExerciseCatalogItem,
   updateExerciseCatalogPreferences,
   updateExerciseCatalogItem,
@@ -147,13 +146,13 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
   const [editingExercise, setEditingExercise] = useState<ExerciseCatalogItem | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingImage, setEditingImage] = useState<File | null>(null);
+  const [editingImagePreview, setEditingImagePreview] = useState<string | null>(null);
   const [editingMetadata, setEditingMetadata] = useState<ManualExerciseMetadata>({
     exerciseType: "strength", bodyPart: "", targetMuscle: "", equipment: "", instructions: "",
   });
   const [editingMetadataTouched, setEditingMetadataTouched] = useState<Partial<Record<keyof ManualExerciseMetadata, boolean>>>({});
   const [isCreating, startCreateTransition] = useTransition();
   const [isUpdating, startUpdateTransition] = useTransition();
-  const [isAttachingImage, startAttachImageTransition] = useTransition();
   const [pendingPreference, setPendingPreference] = useState<{
     exerciseId: number;
     action: "favorite" | "preview";
@@ -182,6 +181,12 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       }
     };
   }, [selectedImagePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (editingImagePreview) URL.revokeObjectURL(editingImagePreview);
+    };
+  }, [editingImagePreview]);
 
   const normalizedSearchTerm = deferredSearchTerm.trim().toLowerCase();
   const visibleExercisesCount = exercises.filter((exercise) => !exercise.is_preview_hidden).length;
@@ -257,6 +262,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
     setEditingExercise(exercise);
     setEditingName(getExerciseDisplayName(exercise));
     setEditingImage(null);
+    setEditingImagePreview(null);
     setEditingMetadata({
       exerciseType: EXERCISE_TYPE_OPTIONS.some((option) => option.value === exercise.exercise_type)
         ? exercise.exercise_type as ManualExerciseMetadata["exerciseType"] : "strength",
@@ -270,6 +276,11 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
 
   const touchEditingMetadata = (key: keyof ManualExerciseMetadata) => {
     setEditingMetadataTouched((current) => ({ ...current, [key]: true }));
+  };
+
+  const handleEditImageChange = (file: File | null) => {
+    setEditingImage(file);
+    setEditingImagePreview(file ? URL.createObjectURL(file) : null);
   };
 
   const handleCreateExercise = createForm.handleSubmit((values) => {
@@ -308,6 +319,8 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
     }
 
     startUpdateTransition(async () => {
+      const imageFormData = editingImage ? new FormData() : undefined;
+      if (editingImage) imageFormData?.set("image", editingImage);
       const result = await updateExerciseCatalogItem({
         exerciseId: editingExercise.id,
         displayName: editingName,
@@ -318,7 +331,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
           ...(editingMetadataTouched.equipment ? { equipment: editingMetadata.equipment } : {}),
           ...(editingMetadataTouched.instructions ? { instructions: editingMetadata.instructions } : {}),
         } : undefined,
-      });
+      }, imageFormData);
 
       if (!result.success) {
         toast.error(result.error || "No se pudo actualizar el ejercicio.");
@@ -329,25 +342,8 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
       setEditingExercise(null);
       setEditingName("");
       setEditingImage(null);
+      setEditingImagePreview(null);
       setEditingMetadataTouched({});
-      router.refresh();
-    });
-  };
-
-  const handleAttachImage = () => {
-    if (!editingExercise || !editingImage) return;
-    const formData = new FormData();
-    formData.set("image", editingImage);
-    startAttachImageTransition(async () => {
-      const result = await attachExerciseImage(editingExercise.id, formData);
-      if (!result.success) {
-        toast.error(result.error || "No se pudo guardar la imagen local.");
-        return;
-      }
-      toast.success(result.message || "Imagen local guardada.");
-      setEditingExercise(null);
-      setEditingName("");
-      setEditingImage(null);
       router.refresh();
     });
   };
@@ -481,7 +477,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(250px,320px))]">
               {filteredExercises.map((exercise) => (
                 <ExerciseCard
                   key={exercise.id}
@@ -656,13 +652,14 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
             setEditingExercise(null);
             setEditingName("");
             setEditingImage(null);
+            setEditingImagePreview(null);
           }
         }}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar ejercicio</DialogTitle>
-            <DialogDescription>Actualiza el nombre, los detalles para rutinas o añade una imagen de tu computadora.</DialogDescription>
+            <DialogDescription>Actualiza los datos y cambia la imagen o GIF del ejercicio.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateExercise} className="space-y-5">
             <div className="space-y-2">
@@ -750,18 +747,22 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
             ) : null}
 
             <div className="space-y-2">
-              <Label htmlFor="edit-exercise-image">Imagen local</Label>
+              <Label htmlFor="edit-exercise-image">Imagen del ejercicio</Label>
+              <div className="bg-muted/30 border-border overflow-hidden rounded-xl border">
+                <ExerciseImage
+                  src={editingImagePreview ?? editingExercise?.image_url}
+                  alt={editingName || "Ejercicio"}
+                  className="h-48 w-full object-contain"
+                  fallback={<div className="text-muted-foreground flex h-48 items-center justify-center text-sm">Sin imagen</div>}
+                />
+              </div>
               <Input
                 id="edit-exercise-image"
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(event) => setEditingImage(event.target.files?.[0] ?? null)}
+                onChange={(event) => handleEditImageChange(event.target.files?.[0] ?? null)}
               />
-              <Button type="button" variant="outline" onClick={handleAttachImage} disabled={!editingImage || isAttachingImage || isUpdating}>
-                {isAttachingImage ? <Loader2 className="animate-spin" /> : <ImagePlus />}
-                Guardar imagen
-              </Button>
-              <p className="text-muted-foreground text-xs">El nombre y la imagen se guardan por separado.</p>
+              <p className="text-muted-foreground text-xs">Selecciona una imagen para reemplazar la actual. JPG, PNG, WEBP o GIF animado; máximo 5 MB. Se guardará con los demás cambios.</p>
             </div>
 
             <DialogFooter>
@@ -772,12 +773,13 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                   setEditingExercise(null);
                   setEditingName("");
                   setEditingImage(null);
+                  setEditingImagePreview(null);
                 }}
-                disabled={isUpdating || isAttachingImage}
+                disabled={isUpdating}
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isUpdating || isAttachingImage}>
+              <Button type="submit" disabled={isUpdating}>
                 {isUpdating ? <Loader2 className="animate-spin" /> : <PencilLine />}
                 Guardar cambios
               </Button>
@@ -881,13 +883,13 @@ function ExerciseCard({
   const canShowPreview = Boolean(previewImageUrl) && (!exercise.is_preview_hidden || showHiddenPreview);
 
   return (
-    <Card className="overflow-hidden py-0">
-      <div className="bg-muted/30 relative aspect-[4/3] overflow-hidden">
+    <Card className="self-start gap-0 overflow-hidden py-0">
+      <div className={canShowPreview ? "relative aspect-[4/3] overflow-hidden bg-white" : "bg-muted/30 relative aspect-[4/3] overflow-hidden"}>
         {canShowPreview ? (
           <ExerciseImage
             src={previewImageUrl}
             alt={displayName}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             loading="lazy"
             fallback={
               <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
@@ -909,33 +911,33 @@ function ExerciseCard({
         )}
       </div>
 
-      <CardHeader className="gap-3 px-5 pt-5 pb-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="line-clamp-2 text-base">{displayName}</CardTitle>
-            <CardDescription className="line-clamp-1">
+      <CardHeader className="gap-1 px-4 pt-3 pb-2">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="line-clamp-1 text-sm">{displayName}</CardTitle>
+            <CardDescription className="truncate text-xs">
               {exercise.slug ? `Slug: ${exercise.slug}` : "Ejercicio local"}
             </CardDescription>
           </div>
-          <Badge variant={isStoredLocally ? "success" : "outline"}>{providerLabel}</Badge>
+          <Badge variant={isStoredLocally ? "success" : "outline"} className="shrink-0 text-[10px]">{providerLabel}</Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 px-5 pb-5">
+      <CardContent className="px-4 pb-3">
         {tags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1">
             {tags.map((tag) => (
-              <Badge key={`${exercise.id}-${tag}`} variant="secondary" className="capitalize">
+              <Badge key={`${exercise.id}-${tag}`} variant="secondary" className="max-w-full truncate text-[10px] capitalize">
                 {tag}
               </Badge>
             ))}
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">Este ejercicio no tiene etiquetas adicionales todavía.</p>
+          <p className="text-muted-foreground text-xs">Sin etiquetas</p>
         )}
       </CardContent>
 
-      <CardFooter className="border-border flex items-center justify-between border-t px-5 py-4">
+      <CardFooter className="border-border flex items-center justify-between border-t px-4 py-2 [.border-t]:pt-2">
         <span className="text-muted-foreground text-xs">ID #{exercise.id}</span>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <TooltipIconButton
@@ -958,7 +960,7 @@ function ExerciseCard({
             {isTogglingPreview ? <Loader2 className="animate-spin" /> : exercise.is_preview_hidden ? <Eye /> : <EyeOff />}
           </TooltipIconButton>
           {canUpdate && (
-          <TooltipIconButton label="Editar nombre" onClick={onEdit}>
+          <TooltipIconButton label="Editar ejercicio e imagen" onClick={onEdit}>
             <PencilLine />
           </TooltipIconButton>
           )}
@@ -990,7 +992,7 @@ function TooltipIconButton({
           onClick={onClick}
           disabled={disabled}
           aria-label={label}
-          className={className}
+          className={className ? `size-8 ${className}` : "size-8"}
         >
           {children}
         </Button>

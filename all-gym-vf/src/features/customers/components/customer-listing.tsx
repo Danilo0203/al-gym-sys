@@ -11,6 +11,8 @@ export default async function CustomerListingPage() {
   const access = await getUserAccessContext();
   const rawIsActive = searchParamsCache.get("is_active");
   const rawPlanId = Number(searchParamsCache.get("plan_id"));
+  const rawBiometricId = searchParamsCache.get("biometric_id")?.trim() ?? "";
+  const biometricId = /^\d+$/.test(rawBiometricId) ? Number(rawBiometricId) : NaN;
   const membershipStatus = customerMembershipStatusSchema.safeParse(
     searchParamsCache.get("membership_status"),
   );
@@ -21,6 +23,7 @@ export default async function CustomerListingPage() {
     sort: sortingStateToBackendSort(searchParamsCache.get("sort")),
     isActive: rawIsActive === "true" ? true : rawIsActive === "false" ? false : undefined,
     planId: Number.isInteger(rawPlanId) && rawPlanId > 0 ? rawPlanId : undefined,
+    biometricId: Number.isSafeInteger(biometricId) ? biometricId : undefined,
     membershipStatus: membershipStatus.success ? membershipStatus.data : undefined,
   });
 

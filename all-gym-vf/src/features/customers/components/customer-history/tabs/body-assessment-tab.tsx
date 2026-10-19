@@ -9,7 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   useCreateCustomerBodyAssessment,
   useUpdateCustomerBodyAssessment,
@@ -21,6 +23,7 @@ import {
   type BodyAssessmentWriteInput,
   type CustomerBodyAssessment,
 } from "@/features/customers/lib/customer-health";
+import { displayHealthValue, healthValueOptions } from "@/features/customers/lib/customer-health-labels";
 import { WeightChart } from "./weight-chart";
 
 const measurementFields = [
@@ -163,8 +166,14 @@ export function BodyAssessmentTab({
         <Card className="border-dashed"><CardContent className="flex min-h-52 flex-col items-center justify-center gap-3 text-center"><IconClipboardHeart className="h-10 w-10 text-muted-foreground/40" /><p className="font-medium">Aún no hay evaluaciones corporales</p><p className="text-sm text-muted-foreground">{canManage ? "Puedes registrar una evaluación parcial con al menos una medición, nota o dato nutricional." : "No hay mediciones registradas para mostrar."}</p></CardContent></Card>
       ) : (
         <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-          {response.data.map((assessment) => (
-            <Card key={assessment.id} className="min-w-0 overflow-hidden border-primary/10">
+          {response.data.map((assessment, index) => (
+            <Card
+              key={assessment.id}
+              className={cn(
+                "min-w-0 overflow-hidden border-primary/10",
+                response.data.length % 2 === 1 && index === response.data.length - 1 && "xl:col-span-2",
+              )}
+            >
               <CardHeader className="flex flex-row items-start justify-between gap-4 border-b bg-muted/20">
                 <div><CardTitle className="text-base">{calendarDate(assessment.assessment_date)}</CardTitle><p className="text-xs text-muted-foreground">Evaluación corporal</p></div>
                 {canManage ? <Button size="sm" variant="outline" onClick={() => changeOpen(true, assessment)}><IconEdit className="h-4 w-4" /> Editar</Button> : null}
@@ -180,7 +189,10 @@ export function BodyAssessmentTab({
                   {measurementFields.slice(4).map(([key, label, unit]) => <Row key={key} label={label} value={metric(assessment[key], unit)} />)}
                 </div>
                 {assessment.notes ? <div className="rounded-lg border bg-muted/10 p-3"><p className="text-xs text-muted-foreground">Notas</p><p className="mt-1 whitespace-pre-wrap break-words text-sm">{assessment.notes}</p></div> : null}
-                {assessment.nutrition_snapshot ? <div className="rounded-lg border bg-muted/10 p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instantánea nutricional</p><div className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">{nutritionFields.map(([key, label, type, unit]) => <Row key={key} label={label} value={assessment.nutrition_snapshot?.[key] === null ? "—" : `${assessment.nutrition_snapshot?.[key]}${type === "number" && unit ? ` ${unit}` : ""}`} />)}</div></div> : null}
+                {assessment.nutrition_snapshot ? <div className="rounded-lg border bg-muted/10 p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instantánea nutricional</p><div className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">{nutritionFields.map(([key, label, type, unit]) => {
+                  const value = assessment.nutrition_snapshot?.[key];
+                  return <Row key={key} label={label} value={`${displayHealthValue(key, value, "—")}${typeof value === "number" && type === "number" && unit ? ` ${unit}` : ""}`} />;
+                })}</div></div> : null}
               </CardContent>
             </Card>
           ))}
@@ -195,7 +207,7 @@ export function BodyAssessmentTab({
               <div className="space-y-2"><Label htmlFor="assessment-date">Fecha (opcional)</Label><Input id="assessment-date" type="date" value={form.assessment_date} onChange={(event) => setForm((current) => ({ ...current, assessment_date: event.target.value }))} autoFocus aria-invalid={Boolean(errors.assessment_date)} />{errors.assessment_date ? <p className="text-xs text-destructive">{errors.assessment_date}</p> : null}</div>
               <fieldset className="space-y-3"><legend className="font-semibold">Mediciones</legend><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{measurementFields.map(([key, label, unit, max]) => <NumberField key={key} id={key} label={`${label} (${unit})`} value={form[key]} max={max} error={errors[key]} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} />)}</div></fieldset>
               <div className="space-y-2"><Label htmlFor="assessment-notes">Notas</Label><Textarea id="assessment-notes" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} aria-invalid={Boolean(errors.notes)} />{errors.notes ? <p className="text-xs text-destructive">{errors.notes}</p> : null}</div>
-              <fieldset className="space-y-3"><legend className="font-semibold">Instantánea nutricional (opcional)</legend><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{nutritionFields.map(([key, label, type, unit]) => type === "number" ? <NumberField key={key} id={key} label={`${label}${unit ? ` (${unit})` : ""}`} value={form[key]} error={errors[key]} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} /> : <div key={key} className="space-y-2"><Label htmlFor={`assessment-${key}`}>{label}</Label><Input id={`assessment-${key}`} value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} aria-invalid={Boolean(errors[key])} />{errors[key] ? <p className="text-xs text-destructive">{errors[key]}</p> : null}</div>)}</div></fieldset>
+              <fieldset className="space-y-3"><legend className="font-semibold">Instantánea nutricional (opcional)</legend><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{nutritionFields.map(([key, label, type, unit]) => type === "number" ? <NumberField key={key} id={key} label={`${label}${unit ? ` (${unit})` : ""}`} value={form[key]} error={errors[key]} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} /> : <div key={key} className="space-y-2"><Label htmlFor={`assessment-${key}`}>{label}</Label><Select value={form[key] || "sin_datos"} onValueChange={(value) => setForm((current) => ({ ...current, [key]: value === "sin_datos" ? "" : value }))}><SelectTrigger id={`assessment-${key}`} aria-invalid={Boolean(errors[key])}><SelectValue placeholder="Seleccionar" /></SelectTrigger><SelectContent><SelectItem value="sin_datos">Sin información</SelectItem>{healthValueOptions(key).map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}{form[key] && !healthValueOptions(key).some((option) => option.value === form[key]) ? <SelectItem value={form[key]}>{displayHealthValue(key, form[key])}</SelectItem> : null}</SelectContent></Select>{errors[key] ? <p className="text-xs text-destructive">{errors[key]}</p> : null}</div>)}</div></fieldset>
               {errors.body ? <p className="text-sm text-destructive">{errors.body}</p> : null}
             </div>
             <DialogFooter><Button variant="outline" onClick={() => changeOpen(false)} disabled={pending}>Cancelar</Button><Button onClick={submit} disabled={pending || !isDirty || !hasContent}>{pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear evaluación"}</Button></DialogFooter>

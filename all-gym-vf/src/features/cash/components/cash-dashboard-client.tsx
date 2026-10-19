@@ -253,7 +253,8 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
   );
   const summaryCardsRef = useRef<HTMLDivElement | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [openingAmount, setOpeningAmount] = useState("0.00");
+  const [openingAmount, setOpeningAmount] = useState("");
+  const [openingAmountError, setOpeningAmountError] = useState("");
   const [openingNotes, setOpeningNotes] = useState("");
   const [countedAmount, setCountedAmount] = useState("");
   const [closingNote, setClosingNote] = useState("");
@@ -288,8 +289,21 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
       return;
     }
 
+    if (!openingAmount.trim()) {
+      setOpeningAmountError("Ingresa el fondo inicial para abrir la caja.");
+      return;
+    }
+
+    const amount = Number(openingAmount);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 99_999_999.99 || Math.abs(Math.round(amount * 100) - amount * 100) >= 1e-8) {
+      setOpeningAmountError("Ingresa un monto válido con hasta dos decimales.");
+      return;
+    }
+
+    setOpeningAmountError("");
+
     handleAction(async () => {
-      await openCashSession(data.register!.id, Number(openingAmount || 0), openingNotes);
+      await openCashSession(data.register!.id, amount, openingNotes);
       setOpeningNotes("");
     }, "Caja abierta correctamente");
   };
@@ -456,14 +470,24 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
                   Ingresa el fondo inicial y una observación opcional para el turno.
                 </p>
               </div>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={openingAmount}
-                onChange={(event) => setOpeningAmount(event.target.value)}
-                placeholder="0.00"
-              />
+              <div className="space-y-2">
+                <label htmlFor="opening-amount" className="text-sm font-medium">Fondo inicial (Q)</label>
+                <Input
+                  id="opening-amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={openingAmount}
+                  onChange={(event) => {
+                    setOpeningAmount(event.target.value);
+                    if (openingAmountError) setOpeningAmountError("");
+                  }}
+                  aria-invalid={Boolean(openingAmountError)}
+                  aria-describedby={openingAmountError ? "opening-amount-error" : undefined}
+                />
+                {openingAmountError ? <p id="opening-amount-error" className="text-sm text-destructive" role="alert">{openingAmountError}</p> : null}
+              </div>
               <Textarea
                 rows={4}
                 value={openingNotes}
@@ -549,6 +573,7 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
             >
               <CustomerFormSheet
                 entrypoint="cash"
+                cashFlow="registration"
                 legacySubmit={submitLegacyCashCustomer}
                 trigger={
                   <Button className="w-full">
@@ -563,7 +588,7 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
           {canOperateCash && canManageMembership && (
             <QuickActionCard
               title="Cobrar membresía pendiente"
-              description="Cobra el plan inicial de clientes registrados desde Clientes sin crear otra membresía."
+              description="Cobra las membresías pendientes registradas desde Clientes sin crear otra membresía."
             >
               <PendingMembershipPaymentDialog />
             </QuickActionCard>

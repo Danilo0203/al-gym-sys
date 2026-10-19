@@ -9,8 +9,16 @@ import { Label } from "@/components/ui/label";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
 import { listPendingCashMemberships, type PendingMembership } from "@/features/cash/actions/cash-customer-actions";
-import { getCustomerDetail } from "@/features/customers/lib/customer-api";
-import { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
+import { getCustomerFormPrefill } from "@/features/customers/lib/customer-form-prefill";
+import type { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
+
+function todayInGuatemala(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 
 export function PendingMembershipPaymentDialog() {
   const [open, setOpen] = useState(false);
@@ -19,6 +27,7 @@ export function PendingMembershipPaymentDialog() {
   const [items, setItems] = useState<PendingMembership[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
   const [loading, setLoading] = useState(false);
+  const today = todayInGuatemala();
 
   useEffect(() => {
     if (!open) return;
@@ -39,8 +48,8 @@ export function PendingMembershipPaymentDialog() {
   const handleSelect = async (customerId: string) => {
     setLoading(true);
     try {
-      const detail = await getCustomerDetail(customerId);
-      setSelectedCustomer(detail as unknown as CustomerData);
+      const customer = await getCustomerFormPrefill(customerId);
+      setSelectedCustomer(customer);
       setOpen(false); // Cierra el modal de búsqueda
       setSheetOpen(true); // Abre el sheet
     } catch {
@@ -54,7 +63,9 @@ export function PendingMembershipPaymentDialog() {
     <>
       <Dialog open={open} onOpenChange={(next) => {
         setOpen(next);
-        if (!next) { setSearch(""); }
+        setSearch("");
+        setItems([]);
+        setLoading(next);
       }}>
         <DialogTrigger asChild>
           <Button variant="outline" className="w-full">Cobrar membresía pendiente</Button>
@@ -63,12 +74,16 @@ export function PendingMembershipPaymentDialog() {
           <DialogHeader>
             <DialogTitle>Buscar cliente a cobrar</DialogTitle>
             <DialogDescription>
-              Busca clientes nuevos con un plan pendiente. Al seleccionar uno, podrás completar su ficha y cobrar el plan.
+              Busca clientes con un plan pendiente. Al seleccionar uno, podrás completar su ficha y cobrar el plan.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Label htmlFor="pending-member-search">Buscar por nombre o teléfono</Label>
-            <Input id="pending-member-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cliente..." />
+            <Input id="pending-member-search" value={search} onChange={(event) => {
+              setSearch(event.target.value);
+              setItems([]);
+              setLoading(true);
+            }} placeholder="Buscar cliente..." />
             <div className="max-h-52 space-y-2 overflow-y-auto" role="listbox" aria-label="Clientes a cobrar">
               {items.map((item) => (
                 <button type="button" key={item.id} role="option" aria-selected={false}
@@ -77,10 +92,12 @@ export function PendingMembershipPaymentDialog() {
                   <span className="font-medium">{item.full_name}</span> · {item.phone || "Sin teléfono"}<br />
                   <span className="text-muted-foreground">
                     Membresía pendiente · {item.plan_name}
+                    {item.end_date < today
+                      ? " · Ajusta la vigencia antes de cobrar" : ""}
                   </span>
                 </button>
               ))}
-              {!loading && items.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">No hay membresías pendientes con ese nombre.</p> : null}
+              {!loading && items.length === 0 ? <p className="p-4 text-center text-sm text-muted-foreground">{search.trim() ? "No hay membresías pendientes con ese nombre o teléfono." : "No hay membresías pendientes por cobrar."}</p> : null}
               {loading ? <p className="p-4 text-center text-sm text-muted-foreground">Buscando…</p> : null}
             </div>
           </div>
@@ -98,6 +115,7 @@ export function PendingMembershipPaymentDialog() {
             if (!next) setSelectedCustomer(null);
           }}
           entrypoint="cash"
+          cashFlow="pending_payment"
           legacySubmit={submitLegacyCashCustomer}
         />
       )}

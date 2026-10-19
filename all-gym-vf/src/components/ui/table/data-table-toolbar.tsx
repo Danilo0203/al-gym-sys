@@ -133,6 +133,7 @@ function DataTableToolbarFilter<TData>({
               <Input
                 type='number'
                 inputMode='numeric'
+                aria-label={columnMeta.label ?? column.id}
                 placeholder={columnMeta.placeholder ?? columnMeta.label}
                 value={(column.getFilterValue() as string) ?? ''}
                 onChange={(event) => column.setFilterValue(event.target.value)}

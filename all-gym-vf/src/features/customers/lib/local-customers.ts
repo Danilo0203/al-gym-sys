@@ -6,6 +6,8 @@ export const customerGenderSchema = z.enum(["male", "female", "other"]);
 export const customerListSortSchema = z.enum([
   "full_name",
   "-full_name",
+  "biometric_id",
+  "-biometric_id",
   "created_at",
   "-created_at",
   "updated_at",
@@ -241,6 +243,7 @@ export class CustomerApiError extends Error {
 
 const allowedListSortColumns = new Set([
   "full_name",
+  "biometric_id",
   "created_at",
   "updated_at",
   "last_check_in",
@@ -300,6 +303,7 @@ export function mapCustomerListQuery(params: {
   sort?: CustomerListSort;
   isActive?: boolean;
   planId?: number;
+  biometricId?: number;
   membershipStatus?: z.infer<typeof customerMembershipStatusSchema>;
 }) {
   const searchParams = new URLSearchParams();
@@ -321,6 +325,10 @@ export function mapCustomerListQuery(params: {
 
   if (params.planId !== undefined) {
     searchParams.set("plan_id", String(params.planId));
+  }
+
+  if (params.biometricId !== undefined) {
+    searchParams.set("biometric_id", String(params.biometricId));
   }
 
   if (params.membershipStatus) {
@@ -367,6 +375,14 @@ function getCustomerErrorMessage(status: number, responseText: string): string {
         return "Cliente no encontrado.";
       case "BODY_ASSESSMENT_NOT_FOUND":
         return "Evaluación corporal no encontrada.";
+      case "MEMBERSHIP_EXPIRED":
+        return "La vigencia terminó antes del cobro. Actualiza las fechas de la membresía.";
+      case "MEMBERSHIP_ALREADY_ACTIVE":
+        return "El cliente ya tiene una membresía activa.";
+      case "PENDING_MEMBERSHIP_NOT_FOUND":
+        return "La membresía ya no está pendiente de cobro. Actualiza la Caja.";
+      case "CASH_SESSION_REQUIRED":
+        return "Abre una caja antes de registrar el cobro.";
     }
   } catch {
     return status >= 500 ? "No fue posible completar la operación." : "No fue posible procesar la respuesta del servidor.";
@@ -375,7 +391,7 @@ function getCustomerErrorMessage(status: number, responseText: string): string {
   if (status === 401) return "Tu sesión expiró. Vuelve a iniciar sesión.";
   if (status === 403) return "No tienes autorización para administrar esta cuenta.";
   if (status === 404) return "Cliente no encontrado.";
-  if (status === 409) return "El correo ya está utilizado por otra cuenta.";
+  if (status === 409) return "La operación entra en conflicto con el estado actual. Actualiza la página e inténtalo de nuevo.";
   if (status >= 500) return "No fue posible completar la operación.";
 
   return "No fue posible completar la operación.";

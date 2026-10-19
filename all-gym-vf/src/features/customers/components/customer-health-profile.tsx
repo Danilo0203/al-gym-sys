@@ -19,6 +19,7 @@ import {
   type CustomerHealthProfile,
   type CustomerHealthProfileUpdateInput,
 } from "@/features/customers/lib/customer-health";
+import { displayHealthValue } from "@/features/customers/lib/customer-health-labels";
 
 type HealthFormState = Record<string, string> & { parq: "unset" | "yes" | "no" };
 
@@ -81,11 +82,6 @@ function emptyHealthFormState(): HealthFormState {
 function normalizeArray(value: string): string[] | null {
   const values = [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
   return values.length ? values : null;
-}
-
-function displayValue(value: string | number | string[] | null): string {
-  if (value === null || value === "" || (Array.isArray(value) && value.length === 0)) return "Sin información";
-  return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
 function buildHealthProfilePatch(
@@ -213,7 +209,7 @@ export function CustomerHealthProfileSection({
                 {keys.map((key) => (
                   <div key={key} className="min-w-0 rounded-lg border bg-muted/10 p-3">
                     <p className="text-xs text-muted-foreground">{labels[key]}</p>
-                    <p className="mt-1 break-words text-sm font-medium">{displayValue(profile[key])}</p>
+                    <p className="mt-1 break-words text-sm font-medium">{displayHealthValue(key, profile[key])}</p>
                   </div>
                 ))}
               </div>
