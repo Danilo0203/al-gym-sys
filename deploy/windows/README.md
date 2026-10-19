@@ -223,3 +223,35 @@ ALGYM_INSTALLER_PG_BIN=/ruta/postgresql/bin node --test windows/transfer.integra
 Comprueba rollback, referencias inválidas, precisión de bigint/importes, ajuste
 de secuencias, destino vacío, versión/instancia, repetición sin duplicados y
 compatibilidad con una actualización posterior del instalador.
+
+
+### Resultado del ensayo de importación — 2026-10-19
+
+El usuario completó la actualización 0.2.0 y la importación desde la ventana
+nativa, inició sesión con su cuenta de Hostinger y confirmó clientes y pagos.
+Se verificaron las 29 tablas públicas y `auth.identities` fila por fila contra
+el paquete. En `auth.users`, únicamente cambió `last_sign_in_at` de una cuenta
+tras ese inicio de sesión; los demás valores, incluidos hashes de contraseña,
+coinciden. Son 178 clientes, 9 planes, 524 membresías, 551 pagos, 15 904 asistencias,
+598 movimientos de caja y 133 rutinas. La cola local está vacía y pausada.
+
+Las 38 migraciones, referencias, identidad del paquete, cuatro servicios,
+tres rutas de salud, respaldo previo y tarea diaria pasaron las comprobaciones.
+La prueba aislada incluye reversión ante datos inválidos, FK inválida, versión
+incompatible, precisión de IDs/importes y reintento sin duplicados.
+
+Instalador: `AlGym-Setup-0.2.0-win-x64.exe`, 86 341 675 bytes.
+SHA-256: `d94590f777dbdd07f9b39cbf413a9a16f13f49297e92a29e793a9c5ff4c41726`.
+Fuentes del binario: frontend `08b49cb431c89629f8a2e56fff361f50ed57ad0a`,
+backend `8d9d81358f02a26ac412c35f1b81c037a15f3c06`. Los runtimes de aplicación
+ya compilados para 0.1.0 se reutilizaron: los cambios 0.2.0 son exclusivamente
+las herramientas del instalador y la migración, sin cambios en el runtime web.
+
+El respaldo completo y el paquete permanecen privados en la carpeta ignorada
+`build/windows/migracion-hostinger-20261019`. El dump conserva 4 987 220 órdenes.
+No se ejecutaron escrituras SQL en el VPS. Un intento adicional de exportación
+JSON provocó falta de memoria y recuperación automática de PostgreSQL; se
+informó al usuario y se continuó exclusivamente desde el dump ya descargado.
+La incidencia y el procedimiento de corte están documentados en el informe
+privado `LEEME-TRASLADO.txt`. La copia no reemplaza un respaldo final cuando
+llegue el traslado definitivo al cliente.
