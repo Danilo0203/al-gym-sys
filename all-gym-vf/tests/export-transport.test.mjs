@@ -40,3 +40,21 @@ test('transport verifies its configured certificate and hostname, and streams on
     await rm(folder,{recursive:true,force:true});
   }
 });
+
+
+test('same-origin protection preserves loopback hosts, protocol and port boundaries', async () => {
+  const source = await readFile(new URL('../src/lib/migration/export-origin.ts',import.meta.url),'utf8');
+  const compiled = ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+  const {isSameOriginExport} = await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+  const {NextRequest} = await import('next/server.js');
+  const request = new NextRequest('http://127.0.0.1:3100/api/windows-export/jobs',{headers:{host:'127.0.0.1:3100',origin:'http://127.0.0.1:3100'}});
+  assert.equal(request.nextUrl.hostname,'localhost');
+  assert.equal(isSameOriginExport(request.headers.get('origin'),request.headers.get('host'),request.nextUrl.protocol),true);
+  assert.equal(isSameOriginExport('http://localhost:3100','localhost:3100','http:'),true);
+  assert.equal(isSameOriginExport('http://localhost:3100','127.0.0.1:3100','http:'),false);
+  assert.equal(isSameOriginExport('http://127.0.0.1:3101','127.0.0.1:3100','http:'),false);
+  assert.equal(isSameOriginExport('https://127.0.0.1:3100','127.0.0.1:3100','http:'),false);
+  assert.equal(isSameOriginExport('https://evil.example','127.0.0.1:3100','http:'),false);
+  assert.equal(isSameOriginExport(null,'127.0.0.1:3100','http:'),false);
+  assert.equal(isSameOriginExport('null','127.0.0.1:3100','http:'),false);
+});

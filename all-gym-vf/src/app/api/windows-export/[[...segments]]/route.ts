@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getExportOwner } from "@/lib/migration/owner";
+import { isSameOriginExport } from "@/lib/migration/export-origin";
 import { requestExportService } from "@/lib/migration/export-transport";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,9 +9,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ segments
   const path = "/" + ((await context.params).segments ?? []).join("/");
   if (!/^\/jobs(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\/(?:file|archive))?)?$/.test(path) ||
     (request.method === "POST" && path !== "/jobs")) return json(404, "Ruta no disponible.");
-  if (request.method === "POST") {
-    try { if (new URL(request.headers.get("origin") ?? "").origin !== request.nextUrl.origin) return json(403, "Origen no permitido."); }
-    catch { return json(403, "Origen no permitido."); }
+  if (request.method === "POST" && !isSameOriginExport(request.headers.get("origin"), request.headers.get("host"), request.nextUrl.protocol)) {
+    return json(403, "Origen no permitido.");
   }
   try {
     const owner = await getExportOwner();

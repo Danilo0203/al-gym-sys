@@ -44,6 +44,25 @@ archivos ni su proceso en ejecución.
 - `node --test tests/export-transport.test.mjs`: TLS, nombre del servidor,
   certificado incorrecto y descarga por streaming.
 - Pruebas de permisos y exportación en `hostinger/service.test.mjs` del backend.
-- La conversión de una copia reciente se verificó en PostgreSQL desechable y con
-  el inspector del instalador 0.3.0. La prueba completa del botón con sesión real
-  depende de la activación del servicio y configuración de este frontend.
+- El 19 de octubre de 2026 se probó el botón con una sesión propietaria real,
+  HTTPS verificado y las dos descargas. Las huellas de los archivos descargados
+  coinciden con las del servidor.
+- El `.algym` descargado se restauró en PostgreSQL desechable usando el importador
+  del instalador 0.3.0: 178 clientes, 9 planes, 551 pagos y 15.919 asistencias en
+  esa captura. Una segunda importación del mismo archivo no duplicó registros.
+- La cola del reloj y las sesiones quedan vacías en Windows. Las 4.990.498 órdenes
+  históricas de esa captura permanecen en el respaldo completo.
+
+## Entorno de prueba y actualización del cliente
+
+El exportador de Hostinger ya está activo. Este frontend aislado usa el puerto
+3100 y permite probar el módulo con una sesión propietaria. No contiene la clave
+administrativa de Supabase: otras pantallas del frontend heredado, como Clientes,
+requieren la configuración existente del equipo real. No sustituir su `.env.local`
+por el archivo de este entorno de prueba.
+
+Para el cliente se entrega un parche con los cambios y un archivo que contiene
+únicamente `ALGYM_EXPORT_URL` y el certificado público `ALGYM_EXPORT_CA_BASE64`.
+Agregar esas dos variables a su configuración existente. Aplicar el parche en
+una copia o rama separada y comprobarlo con `git apply --check` antes de aplicarlo.
+Si falla, adaptar a la revisión real del cliente; no forzar ni sobrescribir archivos.
