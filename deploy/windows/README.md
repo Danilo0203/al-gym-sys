@@ -173,3 +173,53 @@ Comprobaciones realizadas:
 La VM usa Windows 11 ARM64 con emulación x64. Quedan por probar el equipo físico
 de destino, el reloj biométrico y el ciclo completo de desinstalación/reinstalación.
 El paquete crea una base nueva; no contiene los datos de la instalación de desarrollo.
+
+## Migración de Hostinger (0.2.0)
+
+El menú Inicio incluye **AlGym → Importar datos de Hostinger**. La ventana se
+abre sin elevación para aceptar arrastrar desde el Explorador; al confirmar,
+el trabajador pide permisos de administrador. También se puede abrir al
+terminar el instalador con la casilla «Importar un respaldo de Hostinger».
+
+El formato `.algym` contiene solamente datos estructurados e imágenes con hash.
+No ejecuta SQL ni scripts del archivo. Comprueba versión y migraciones, cuenta
+propietaria, instancia privada y destino recién instalado. Guarda un respaldo
+previo y realiza la carga en una transacción, verifica llaves foráneas y las
+huellas de todas las filas, ajusta secuencias y registra el hash importado.
+El mismo archivo puede reintentarse sin duplicar filas; otro archivo o un destino
+con operaciones se rechaza. No es un mecanismo para fusionar dos bases activas.
+La cuenta del instalador se sustituye por las cuentas del paquete; no se copian
+sesiones de Supabase. El envío de comandos del reloj queda pausado.
+
+Preparación por el operador (en una copia privada, fuera del repositorio):
+
+```sh
+python3 windows/extract-hostinger-dump.py origen.dump origen.json \
+  --pg-restore /ruta/postgresql/bin/pg_restore \
+  --captured-at FECHA_UTC_ISO --archive-clock-commands
+node windows/prepare-transfer.mjs origen.json destino.algym /ruta/postgresql/bin
+```
+
+Estos comandos pertenecen al backend. El extractor lee COPY sin ejecutar el SQL
+del dump. El preparador crea un clúster temporal nuevo, aplica las migraciones
+locales y compara las columnas originales antes de generar el paquete. Conserva
+la copia temporal detenida para diagnóstico. Si hay imágenes externas, tablas
+o columnas operativas sin correspondencia, o falta una cuenta propietaria local,
+la preparación se detiene; no omite esos registros silenciosamente.
+
+La opción de archivar órdenes requiere una decisión explícita del operador.
+El dump original conserva las órdenes y los datos internos de Supabase; no debe
+borrarse después de crear el paquete. La versión actual contempla el caso
+confirmado para esta entrega: Storage sin archivos y referencias externas de
+imágenes ausentes. La importación de archivos de imagen desde Supabase debe
+prepararse antes de generar un paquete que los necesite.
+
+Prueba aislada, sin la base operativa:
+
+```sh
+ALGYM_INSTALLER_PG_BIN=/ruta/postgresql/bin node --test windows/transfer.integration.test.mjs
+```
+
+Comprueba rollback, referencias inválidas, precisión de bigint/importes, ajuste
+de secuencias, destino vacío, versión/instancia, repetición sin duplicados y
+compatibilidad con una actualización posterior del instalador.

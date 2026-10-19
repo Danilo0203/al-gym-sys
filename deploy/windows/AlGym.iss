@@ -2,7 +2,7 @@
   #error PayloadDir is required. Use Build-WindowsInstaller.ps1.
 #endif
 #ifndef ReleaseVersion
-  #define ReleaseVersion "0.1.0"
+  #define ReleaseVersion "0.2.0"
 #endif
 #ifndef OutputPath
   #define OutputPath "output"
@@ -46,8 +46,12 @@ Name: "{group}\AlGym"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; 
 Name: "{commonstartup}\AlGym"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\tools\Open-AlGym.ps1"""; WorkingDir: "{app}"; Tasks: autostart
 Name: "{group}\Configurar reloj biométrico"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File ""{app}\tools\Configure-Clock.ps1"" -AppRoot ""{app}"" -DataRoot ""{commonappdata}\AlGym"""
 
+Name: "{group}\Importar datos de Hostinger"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File ""{app}\tools\Import-AlGymData.ps1"" -AppRoot ""{app}"" -DataRoot ""{commonappdata}\AlGym"""
+
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\tools\Open-AlGym.ps1"""; Description: "Abrir AlGym"; Flags: postinstall nowait skipifsilent runasoriginaluser
+
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File ""{app}\tools\Import-AlGymData.ps1"" -AppRoot ""{app}"" -DataRoot ""{commonappdata}\AlGym"""; Description: "Importar un respaldo de Hostinger"; Flags: postinstall nowait skipifsilent runasoriginaluser unchecked
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\services"

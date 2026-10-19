@@ -1,7 +1,7 @@
 ﻿param(
     [string]$BackendPath = (Join-Path $PSScriptRoot '..\..\..\algym-local-backend'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\build\windows'),
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.1.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.2.0',
     [string]$InnoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
 )
 . "$PSScriptRoot\Common.ps1"
@@ -118,6 +118,7 @@ finally { Pop-Location }
 Copy-Item "$stage\sources\sync" "$payload\sync" -Recurse
 Copy-Item "$PSScriptRoot\*.ps1" "$payload\tools"
 Copy-Item "$PSScriptRoot\README.md" "$payload\tools\README.md"
+Copy-Item "$PSScriptRoot\README-migration.txt" "$payload\tools\README-migration.txt"
 Copy-Item "$PSScriptRoot\vendors.json" "$payload\vendors.json"
 Copy-Item "$PSScriptRoot\THIRD-PARTY-NOTICES.md" "$payload\THIRD-PARTY-NOTICES.md"
 
