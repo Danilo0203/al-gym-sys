@@ -294,3 +294,32 @@ ALGYM_INSTALLER_PG_BIN=/ruta/postgresql/bin node --test windows/transfer.integra
 
 La API de carga tiene su propia validación de origen y sesión, y está excluida
 del Proxy de Next para no duplicar en memoria el cuerpo de hasta 256 MB.
+
+
+### Ensayo web verificado — 2026-10-19
+
+Se compiló 0.3.0 en Windows y se actualizó la VM conservando los datos de 0.2.0.
+El usuario seleccionó y confirmó el mismo paquete desde Administración →
+Importar datos. El servicio registró `succeeded`; el reintento no duplicó datos
+ni dejó el archivo temporal del trabajo completado. Las 29 tablas públicas y
+`auth.identities` siguen coincidiendo con el paquete; en `auth.users` solo
+difiere `last_sign_in_at` de una cuenta tras el acceso del usuario.
+
+Los cinco servicios y tres rutas de salud respondieron correctamente. Se
+verificaron las cuentas de servicio, heartbeat, tarea diaria, hashes del
+respaldo y accesos directos del escritorio/inicio automático. El acceso al
+importador externo ya no existe en el menú. También se ejecutó un respaldo
+bajo el mismo mutex adquirido por el importador, comprobando su reentrada y
+la recuperación de servicios. El reinicio real se probó en 0.1.0; no se repitió
+en 0.3.0. Esta prueba web fue idempotente; la importación inicial completa se
+había validado en 0.2.0, cuyo motor transaccional se conserva.
+
+La compilación nativa, lint/tipos/frontend y pruebas de rutas y del trabajador
+pasaron. No se ejecutaron pruebas destructivas sobre la base operativa ni se
+accedió a la VPS durante este cambio. Las ramas/HEAD, diffs, estado Git y hashes
+de los archivos originales permanecen iguales a la captura inicial.
+
+Ejecutable: `AlGym-Setup-0.3.0-win-x64.exe`, 86 370 265 bytes.
+SHA-256: `62e03e9c57c4a706fb6a6d6245afe0650fb4b08394db9ccf02c20eacefdd5c1f`.
+Fuentes del binario: frontend `d816993e464bc83bb6b67b67d7cda759d18811d2`,
+backend `a4b9f2945ecbadcc9f06a14b79d09279267f5f63`.
