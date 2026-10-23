@@ -1,5 +1,7 @@
 "use client";
 
+import { ExerciseMedia } from "@/features/exercises/components/exercise-media";
+
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -675,8 +677,7 @@ function SortableExercise({
         <div className="flex items-center gap-4">
           {isExerciseMediaStoredLocally(exercise.exercise_image_url) ? (
             <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl border bg-muted/20">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ExerciseMedia controls={false}
                 src={exercise.exercise_image_url}
                 alt={exercise.exercise_name || "Ejercicio"}
                 className="h-full w-full object-cover"

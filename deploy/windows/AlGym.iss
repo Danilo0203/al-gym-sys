@@ -1,8 +1,8 @@
-﻿#ifndef PayloadDir
+#ifndef PayloadDir
   #error PayloadDir is required. Use Build-WindowsInstaller.ps1.
 #endif
 #ifndef ReleaseVersion
-  #define ReleaseVersion "0.3.0"
+  #define ReleaseVersion "0.3.5"
 #endif
 #ifndef OutputPath
   #define OutputPath "output"
@@ -20,7 +20,8 @@ DisableDirPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.22000
+; Windows 10 22H2 (build 19045) and newer, including Windows 11.
+MinVersion=10.0.19045
 OutputDir={#OutputPath}
 OutputBaseFilename=AlGym-Setup-{#ReleaseVersion}-win-x64
 Compression=lzma2

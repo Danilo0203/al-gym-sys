@@ -1,5 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
+
+import { ExerciseMedia } from "@/features/exercises/components/exercise-media";
 
 import { startTransition, useRef, useState } from "react";
 import Link from "next/link";
@@ -711,7 +712,7 @@ function ReplacementMediaThumb({
   return (
     <div className={`overflow-hidden rounded-lg border bg-muted/20 ${className || "h-24 w-28"}`}>
       {canRender ? (
-        <img
+        <ExerciseMedia controls={false}
           src={src!}
           alt={alt}
           loading="lazy"

@@ -1,0 +1,111 @@
+﻿ALGYM — DESCARGAR UNA COPIA NUEVA DE HOSTINGER DESDE WINDOWS
+Auxiliar para la entrega 0.3.5 — 22 de octubre de 2026
+
+QUÉ ABRIR
+
+Haz doble clic en DESCARGAR-DATOS-HOSTINGER.cmd.
+Conserva la carpeta Herramientas-Hostinger a su lado; contiene sus dos auxiliares.
+Copia a la USB la carpeta de entrega completa. Este auxiliar no cambia el .exe
+ni requiere reinstalar AlGym para generar una copia.
+
+PASOS
+
+1. Conecta Windows a Internet y abre DESCARGAR-DATOS-HOSTINGER.cmd.
+2. Introduce la IP, el usuario SSH y el puerto. Puedes pulsar Enter para usar:
+   IP: 2.25.212.207
+   Usuario: root
+   Puerto: 22
+3. Si es la primera conexión, OpenSSH puede mostrar la huella del servidor.
+   Compárala con la de tu VPS antes de aceptarla. Si la identidad cambió, se
+   detendrá; no desactives esa comprobación ni borres claves para forzarlo.
+4. Cuando aparezca «password:», escribe la contraseña SSH de root y pulsa Enter.
+   No se ven letras ni asteriscos mientras escribes: es normal.
+   No es la contraseña de Google, del panel de Hostinger ni de AlGym.
+5. Espera la preparación y verificación del respaldo. Puede tardar varios minutos.
+6. Para descargar, puede pedir de nuevo la misma contraseña SSH. Escríbela allí.
+7. Espera «COPIA LISTA Y VERIFICADA». Se mostrará la fecha, los conteos y la
+   carpeta con el .algym. La ventana queda abierta hasta pulsar Enter.
+
+El programa no almacena tu contraseña ni la añade a comandos o archivos.
+OpenSSH recibe la contraseña directamente. Si ya tienes una clave SSH válida
+configurada en Windows, puede autenticar con ella sin pedir contraseña.
+
+DÓNDE QUEDA EL ARCHIVO NUEVO
+
+Junto al auxiliar se creará:
+Respaldos-Hostinger\Hostinger-AlGym-FECHA-IDENTIFICADOR\
+
+Cada ejecución crea una carpeta diferente con:
+- Hostinger-AlGym-FECHA-IDENTIFICADOR.algym: archivo para arrastrar a AlGym.
+- SHA256SUMS.txt: hashes de integridad del archivo y sus dos informes.
+- RESUMEN.json y VERIFICACION.json: fecha, conteos y comprobaciones.
+- LEEME-COPIA.txt: instrucciones y ubicación del respaldo completo en la VPS.
+
+Las fechas de los nombres están en UTC (6 horas más que Guatemala).
+Hasta que la verificación termina, la carpeta empieza por INCOMPLETA y el
+archivo termina en .partial. No importes esos archivos ni les cambies el nombre.
+Una contraseña incorrecta, descarga fallida o checksum distinto detiene el
+proceso. No utiliza un respaldo viejo para aparentar que obtuvo uno nuevo.
+
+CARGARLO SIN PERDER LO REGISTRADO EN LA COMPUTADORA DEL CLIENTE
+
+1. Actualiza AlGym con AlGym-Setup-0.3.5-win-x64.exe.
+2. Abre Administración → Importar datos → Actualizar este equipo.
+3. Para la primera actualización, selecciona el .algym ORIGINAL que importaste.
+4. Selecciona como actualizado el .algym que acabas de descargar.
+5. Pulsa «Comparar con este equipo» y revisa el resultado antes de aplicar.
+
+La descarga NO importa automáticamente ni reemplaza la base local.
+Si aparecen conflictos, conserva los archivos y el mensaje para revisarlos.
+Consulta LEEME-ACTUALIZACION.txt y RESPALDO-ORIGINAL-LEER.txt en esta carpeta.
+
+REQUISITOS Y MENSAJES
+
+- Windows 10/11 con Windows PowerShell 5.1 y Cliente OpenSSH.
+- No hace falta ejecutar el auxiliar como administrador.
+- Si falta Cliente OpenSSH, el auxiliar se detiene y muestra cómo habilitarlo:
+  Configuración → Aplicaciones → Características opcionales → Agregar una
+  característica → Cliente OpenSSH. No instales Servidor OpenSSH.
+- La carpeta del auxiliar debe permitir escritura y tener al menos 300 MB libres.
+- La VPS debe tener al menos 4 GiB libres y el exportador que ya instalamos:
+  algym-hostinger-export y /opt/algym-export/config/export.json.
+- Usa root: el exportador actual requiere ese usuario SSH. Una VPS distinta
+  sin esa configuración se rechazará; este auxiliar no la aprovisiona.
+- No ejecutes otra exportación al mismo tiempo. Si la VPS está ocupada,
+  espera a que termine antes de abrir de nuevo el auxiliar.
+- Si falla, conserva el mensaje. El respaldo parcial puede quedar guardado
+  en una carpeta exclusiva de esa ejecución; no se borran respaldos anteriores.
+
+QUÉ HACE EN HOSTINGER
+
+Reutiliza la imagen del exportador ya instalada, sin descargar una nueva.
+La base de origen se lee con algym_export_reader y una transacción READ ONLY.
+La conversión ocurre en PostgreSQL temporal, dentro de un contenedor separado
+limitado a 1 CPU y 1 GiB. No modifica clientes, planes, pagos, asistencias,
+usuarios, contraseñas, permisos, esquema ni configuración de producción.
+Sí crea archivos nuevos de respaldo y un contenedor temporal para prepararlos.
+
+El .dump completo, incluidas las órdenes históricas del reloj, se conserva en:
+/root/algym-exportaciones/windows-IDENTIFICADOR/source.dump
+
+A Windows se descargan únicamente el .algym y los informes. La cola de órdenes
+del reloj en el .algym queda vacía; las asistencias se conservan. No conecta al
+reloj ni obtiene las huellas que estén guardadas únicamente en ese dispositivo.
+Si hay archivos en Supabase Storage, se detiene para preparar también esos
+archivos; un respaldo de base de datos no sustituye sus archivos físicos.
+
+Los respaldos contienen información privada del negocio. Conserva la USB y
+las copias en un lugar seguro. No copies la configuración privada del exportador.
+
+ALCANCE DE LAS PRUEBAS
+
+Consulta PRUEBAS-AUXILIAR-HOSTINGER.txt. Las pruebas se realizan con datos
+ficticios y servicios aislados. En esta entrega no se inició sesión en Hostinger
+ni se generó un respaldo real. La primera ejecución real debe confirmar que
+el exportador instalado sigue disponible y terminar con COPIA LISTA Y VERIFICADA.
+
+REFERENCIAS
+https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh-overview
+https://man.openbsd.org/ssh.1
+https://man.openbsd.org/scp.1
+https://supabase.com/docs/guides/platform/backups

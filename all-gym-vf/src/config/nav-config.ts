@@ -127,6 +127,12 @@ export const navItems: NavItem[] = [
         access: { permissions: ["messages.view"] },
       },
       {
+        title: "Exportar para Windows",
+        url: "/panel/exportar-windows",
+        icon: "settings",
+        access: { role: "owner" },
+      },
+      {
         title: "Importar datos",
         url: "/panel/importar-datos",
         icon: "settings",

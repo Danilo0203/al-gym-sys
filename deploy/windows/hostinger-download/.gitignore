@@ -1,0 +1,6 @@
+/native-fixtures/
+/tests/fixtures/
+*.zip
+*.log
+/transport.json
+__pycache__/

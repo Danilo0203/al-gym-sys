@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
     }];
   },
   experimental: {
-    serverActions: { bodySizeLimit: "8mb" },
+    serverActions: { bodySizeLimit: "22mb" },
   },
   transpilePackages: ['geist'] // generic
 };

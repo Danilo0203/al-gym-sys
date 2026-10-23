@@ -3,8 +3,9 @@
 El instalador instala la web, el backend, sync, Node.js x64 y PostgreSQL 17.
 No requiere Docker, WSL, Node ni PostgreSQL preinstalados en la computadora destino.
 Se compila en Windows; no se deben copiar dependencias compiladas en macOS/Linux.
-Destino: Windows 11 de 64 bits. Windows ARM puede ejecutar el paquete mediante
-emulación x64; se debe probar también el hardware final del gimnasio.
+Destino: Windows 10 22H2 x64 (compilación 19045 o posterior) y Windows 11.
+Windows 11 ARM puede ejecutar el paquete mediante emulación x64; la prueba en
+ARM no sustituye la validación en Windows 10 x64 ni en el hardware del gimnasio.
 
 ## Construir el ejecutable
 
@@ -25,14 +26,14 @@ Desde PowerShell de 64 bits ejecutar:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\Build-WindowsInstaller.ps1 `
-  -BackendPath ..\algym-local-backend -Version 0.1.0
+  -BackendPath ..\algym-local-backend -Version 0.3.5
 ```
 
 La construcción necesita internet para dependencias y herramientas. Descarga los
 componentes fijados en `vendors.json`, verifica SHA-256, instala los paquetes con
 sus lockfiles, compila la aplicación y produce:
 
-`build\windows\AlGym-Setup-0.1.0-win-x64.exe`
+`build\windows\AlGym-Setup-0.3.5-win-x64.exe`
 
 El ejecutable resultante incluye todos los componentes de ejecución y puede
 instalarse sin internet. El build no modifica el código de entrada: copia las
@@ -323,3 +324,120 @@ Ejecutable: `AlGym-Setup-0.3.0-win-x64.exe`, 86 370 265 bytes.
 SHA-256: `62e03e9c57c4a706fb6a6d6245afe0650fb4b08394db9ccf02c20eacefdd5c1f`.
 Fuentes del binario: frontend `d816993e464bc83bb6b67b67d7cda759d18811d2`,
 backend `a4b9f2945ecbadcc9f06a14b79d09279267f5f63`.
+
+
+## Compatibilidad de la versión 0.3.1 con Windows 10
+
+La versión 0.3.0 fijaba `MinVersion=10.0.22000` en `AlGym.iss`; por eso
+Inno Setup rechazaba Windows 10 22H2 (19045) antes de copiar archivos, incluso
+con permisos administrativos. La versión 0.3.1 fija `MinVersion=10.0.19045`,
+conserva `ArchitecturesAllowed=x64compatible` y no establece `OnlyBelowVersion`.
+También admite Windows 11, incluido ARM64 con emulación x64. Windows de 32 bits
+sigue excluido. No se modificaron servicios, importación, copias de seguridad,
+protecciones de datos ni el valor inicial `SYNC_COMMAND_DELIVERY_PAUSED=true`.
+
+Se mantienen los componentes fijados y sus hashes en `vendors.json`:
+
+- Node.js 24.16.0 x64: su [matriz de plataformas de esa versión](https://github.com/nodejs/node/blob/v24.16.0/BUILDING.md#platform-list)
+  incluye Windows 10/Server 2016 o posterior. La política de Node excluye sistemas
+  cuyo fabricante haya terminado su soporte; compatibilidad binaria no equivale
+  a una garantía de soporte del sistema operativo.
+- PostgreSQL 17.11-3 x64, binarios EDB: el [puerto nativo de PostgreSQL 17](https://www.postgresql.org/docs/17/installation-platform-notes.html#PLATFORM-WIN32)
+  requiere Windows 10 o posterior. La [matriz de pruebas del distribuidor](https://www.postgresql.org/download/windows/)
+  lista Windows Server; la comprobación en Windows 10 x64 sigue siendo necesaria.
+- Los scripts usan Windows PowerShell 5.1, WinForms/.NET Framework, servicios,
+  CIM, ScheduledTasks y NetSecurity, disponibles en Windows 10. [Referencia de Microsoft](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1).
+- WinSW 2.12.0 y el redistribuible Visual C++ x64 permanecen sin cambios.
+  [Plataformas de WinSW](https://github.com/winsw/winsw/blob/v2.12.0/README.md#supported-platforms)
+  y [requisitos del runtime de Microsoft](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+
+La única VM disponible para esta entrega es Windows 11 Pro ARM64. Las pruebas
+realizadas y el SHA-256 del ejecutable se entregan por separado con la versión.
+Una prueba allí no certifica instalación ni ejecución en Windows 10 x64.
+
+
+## Exportación desde Windows (0.3.2)
+
+Administración → Exportar para Windows permite conectar una cuenta propietaria
+de Hostinger y descargar un `.algym` o el respaldo completo. La autorización
+local y la de Hostinger se comprueban por separado. La contraseña no se conserva;
+el token remoto permanece solo en memoria durante un máximo de 30 minutos, ligado
+a la sesión propietaria local. El navegador recibe una cookie HttpOnly opaca,
+SameSite=Strict y limitada a `/api/windows-export`. Reiniciar la web elimina
+estas conexiones. Se vuelve a comprobar el propietario activo y la sesión remota
+al crear, consultar o descargar una copia.
+
+El instalador incluye únicamente la URL del exportador y su certificado público
+en `src/lib/migration/hostinger-config.json`. No incluye claves privadas,
+contraseñas de base de datos, claves Supabase ni tokens de usuarios. El cliente
+verifica TLS, hostname y caducidad. Pueden reemplazarse juntos mediante
+`ALGYM_EXPORT_URL` y `ALGYM_EXPORT_CA_BASE64` en el entorno del servicio web.
+
+Requiere el servicio de exportación con `nativeLogin: true` en `/health` y
+`POST /session` habilitado sobre el listener HTTPS existente. El cambio de ese
+servicio se prepara en la rama `codex/hostinger-windows-export` del backend y
+no forma parte del despliegue del instalador. No ejecutar cambios en la VPS
+como efecto de compilar Windows. Las tablas del negocio siguen siendo de lectura
+para el exportador; GoTrue gestiona la sesión normal de inicio de sesión.
+
+Se conserva el mínimo Windows 10 22H2 x64, build 19045, y la actualización sobre
+0.3.1 usa el respaldo y las protecciones existentes. Instalar una actualización
+no requiere volver a importar datos ni cambia la configuración del reloj.
+
+
+## Ejercicios con MP4 (0.3.3)
+
+El paquete incluye carga y edición de videos MP4 de hasta 20 MB, vista previa
+en el catálogo y reproducción con controles en la rutina del cliente. Los GIF
+conservan sus bytes y animación; JPG, PNG, WEBP y GIF mantienen el límite de 5 MB.
+El servidor y el proxy web soportan peticiones por fragmentos para avanzar en el video.
+
+Los archivos quedan en `C:\ProgramData\AlGym\media\exercises`, con los mismos
+permisos y respaldos que las imágenes. La importación `.algym` admite MP4 locales
+de ejercicios, verifica su formato, tamaño y hash, y sigue aceptando paquetes
+con GIF. No se añaden migraciones ni dependencias de video al instalador.
+
+Al actualizar una instalación existente se utiliza el respaldo y la conservación
+de datos del instalador. La versión anterior del EXE no incorpora estos cambios;
+se debe usar `AlGym-Setup-0.3.3-win-x64.exe`.
+
+## Carga de ejercicios por lote — 0.3.4
+
+En Ejercicios, el botón **Subir varios archivos** abre una lista previa. Permite
+seleccionar varios archivos, seleccionar una carpeta o arrastrarla, incluidas sus
+subcarpetas. Cada archivo crea un ejercicio con su nombre sin la extensión; el
+nombre se puede corregir antes de subir. Los archivos inválidos y los nombres ya
+existentes en el catálogo o repetidos en el lote se señalan y se omiten.
+
+Se procesan uno por uno para conservar los límites individuales (5 MB por imagen
+y 20 MB por MP4). Se informa el resultado por archivo y se puede detener la cola
+después del archivo actual. No se alteran los GIF/MP4 existentes ni las migraciones.
+Las cinco pruebas de la cola se ejecutan como requisito de compilación de Windows.
+
+
+## Actualizacion incremental y auxiliar SSH — 0.3.5
+
+Administracion > Importar datos > Actualizar este equipo compara el respaldo
+original, la base local y la copia nueva. Conserva registros y cambios locales,
+reconoce datos ya aplicados y bloquea conflictos para revision. La primera vez
+exige el archivo original cuyo SHA-256 coincide con la importacion; luego guarda
+la referencia siguiente dentro de la base. La vista previa no aplica cambios.
+La aplicacion crea un respaldo, revalida el plan y usa una transaccion. El envio
+de comandos al reloj permanece pausado.
+
+El auxiliar independiente esta en `hostinger-download/DESCARGAR-DATOS-HOSTINGER.cmd`.
+Lee sus instrucciones y conserva la subcarpeta `Herramientas-Hostinger` a su lado.
+Usa OpenSSH de Windows; la contrasena la recibe el cliente SSH directamente.
+Reutiliza el exportador ya configurado, crea una copia mediante lectura y solo
+publica el archivo descargado tras verificar hashes. No importa automaticamente.
+
+Para clonar los dos repositorios y compilar en la PC del cliente, lee
+[CONTINUAR-DESDE-WINDOWS.txt](../../CONTINUAR-DESDE-WINDOWS.txt).
+El trabajo debe permanecer separado de los datos instalados. No ejecutar el
+preparador general de pruebas sobre bases operativas. Las ramas del exportador
+son independientes y no deben desplegarse en la VPS al compilar Windows.
+
+Esta publicacion agrega proteccion de finales de linea para SQL y shell, evitando
+que Git para Windows cambie los hashes de migraciones ya instaladas. No modifica
+el ejecutable 0.3.5 entregado ni los respaldos privados de la USB. Las pruebas de
+Windows disponibles fueron en Windows 11 ARM; Windows 10 x64 sigue pendiente.

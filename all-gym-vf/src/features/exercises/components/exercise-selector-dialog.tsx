@@ -1,5 +1,7 @@
 "use client";
 
+import { ExerciseMedia } from "@/features/exercises/components/exercise-media";
+
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ImageIcon } from "lucide-react";
@@ -133,8 +135,7 @@ export function ExerciseSelectorDialog({ open, onOpenChange, onSelect }: Exercis
                     >
                       {isExerciseMediaStoredLocally(exercise.image_url) ? (
                         <span className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/20">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={exercise.image_url} alt="" loading="lazy" className="h-full w-full object-contain" />
+                          <ExerciseMedia controls={false} src={exercise.image_url} alt="" loading="lazy" className="h-full w-full object-contain" />
                         </span>
                       ) : (
                         <span className="flex size-16 shrink-0 items-center justify-center rounded-md border bg-muted/20">

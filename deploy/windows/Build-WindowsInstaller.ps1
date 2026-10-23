@@ -1,7 +1,7 @@
 ﻿param(
     [string]$BackendPath = (Join-Path $PSScriptRoot '..\..\..\algym-local-backend'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\..\build\windows'),
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.3.5',
     [string]$InnoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
 )
 . "$PSScriptRoot\Common.ps1"
@@ -89,7 +89,14 @@ Copy-Source $frontend 'gym-sync-server' "$stage\sources\sync"
 Copy-Source $backend '' "$stage\sources\backend"
 
 Push-Location "$stage\sources\web"
-try { Invoke-Checked $node @($npm, 'ci', '--no-audit', '--no-fund'); Invoke-Checked $node @($npm, 'run', 'build') }
+try {
+    Invoke-Checked $node @($npm, 'ci', '--no-audit', '--no-fund')
+    Invoke-Checked $node @('node_modules/tsx/dist/cli.mjs', '--test',
+        'src/features/exercises/lib/exercise-image.test.ts', 'src/lib/training/exercise-media.test.ts',
+        'src/lib/training/catalog.test.ts', 'src/features/customers/lib/local-customer-routine.test.ts',
+        'src/features/exercises/components/exercise-media.test.tsx', 'src/features/exercises/lib/exercise-batch.test.ts')
+    Invoke-Checked $node @($npm, 'run', 'build')
+}
 finally { Pop-Location }
 Copy-Item "$stage\sources\web\.next\standalone" "$payload\web" -Recurse
 Copy-Item "$stage\sources\web\.next\static" "$payload\web\.next\static" -Recurse
@@ -99,7 +106,10 @@ Push-Location "$stage\sources\backend"
 try {
     Invoke-Checked $node @($pnpm, 'install', '--frozen-lockfile')
     Invoke-Checked $node @($pnpm, 'build')
-    Invoke-Checked $node @('--test', 'windows/bootstrap.test.mjs')
+    Invoke-Checked $node @('--test', 'windows/bootstrap.test.mjs', 'windows/transfer-media.test.mjs', 'windows/migration-worker.test.mjs')
+    $env:ALGYM_INSTALLER_PG_BIN = "$payload\runtime\postgres\bin"
+    try { Invoke-Checked $node @('--test', 'windows/update-transfer.integration.test.mjs') }
+    finally { Remove-Item Env:ALGYM_INSTALLER_PG_BIN -ErrorAction SilentlyContinue }
 } finally { Pop-Location }
 [IO.Directory]::CreateDirectory("$payload\backend") | Out-Null
 foreach ($folder in @('dist', 'database', 'windows')) { Copy-Item "$stage\sources\backend\$folder" "$payload\backend\$folder" -Recurse }

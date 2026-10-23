@@ -37,3 +37,11 @@ test("los detalles de rutina no entregan imágenes ni videos remotos al navegado
   assert.equal(local.exercise_image_url, localImage);
   assert.equal(local.exercise_video_url, null);
 });
+
+test("la rutina del cliente conserva demostraciones GIF y MP4 locales", () => {
+  for (const extension of ["gif", "mp4"]) {
+    const url = `/api/media/exercises/${"a".repeat(64)}.${extension}`;
+    const parsed = routineDetailSchema.parse({ ...detail, exercise_image_url: url, exercise_video_url: null });
+    assert.equal(parsed.exercise_image_url, url);
+  }
+});

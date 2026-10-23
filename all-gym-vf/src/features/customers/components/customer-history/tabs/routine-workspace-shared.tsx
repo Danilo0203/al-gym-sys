@@ -1,5 +1,7 @@
 "use client";
 
+import { ExerciseMedia } from "@/features/exercises/components/exercise-media";
+
 import { useState } from "react";
 import {
   IconBarbell,
@@ -503,9 +505,7 @@ function ExerciseMediaPreview({ detail }: { detail: RoutineDetailRecord }) {
         <div className="overflow-hidden rounded-3xl border border-border/70 bg-muted/20 shadow-sm">
           <div className="relative aspect-[4/3] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]">
             <div className="absolute inset-3 rounded-2xl bg-background/35" />
-            {/* Render local GIF files directly to preserve animation. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ExerciseMedia
               src={mediaUrl!}
               alt={`Demostración visual de ${title}`}
               loading="lazy"

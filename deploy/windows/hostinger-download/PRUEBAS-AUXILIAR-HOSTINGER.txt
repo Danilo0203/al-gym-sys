@@ -1,0 +1,79 @@
+﻿ALGYM — VERIFICACIÓN DEL AUXILIAR SSH PARA WINDOWS
+Fecha: 22 de octubre de 2026
+
+ARCHIVOS DE USO
+DESCARGAR-DATOS-HOSTINGER.cmd
+Herramientas-Hostinger\Descargar-Hostinger.ps1
+Herramientas-Hostinger\Exportar-Hostinger.sh
+DESCARGAR-HOSTINGER-LEER.txt
+
+El instalador 0.3.5 y los .algym históricos no se recompilaron ni alteraron.
+El nuevo auxiliar es independiente y se inicia con el archivo .cmd.
+
+PRUEBAS COMPLETADAS
+
+1. PowerShell 5.1.26100.8655 en la VM Windows 11 ARM: 43 comprobaciones
+   correctas, con transporte simulado y archivos ficticios.
+   Incluyen validación de IP/usuario/puerto, rechazo de comandos inyectados,
+   ruta exclusiva por ejecución, fallos SSH y descarga, archivos incompletos,
+   SHA-256 incorrecto, informe de otra ejecución, rutas inesperadas, manifiesto
+   repetido, archivos faltantes/sobrantes y conservación de copias anteriores.
+   Un fallo no publica un archivo con extensión .algym listo para importar.
+
+2. Cliente OpenSSH real de Windows 9.5p2 y servidor aislado de prueba en la Mac:
+   tres escenarios correctos: SSH + SFTP, SCP clásico y rechazo de una clave
+   de servidor distinta. Se verificó que el script remoto llegó sin alteraciones
+   y que los archivos se descargaron y comprobaron en rutas con espacios y ñ.
+   Se usó una clave efímera ficticia; ninguna credencial ni servidor de Hostinger.
+   La opción SCP clásico se activó solo en la prueba para cubrir el protocolo de
+   clientes anteriores. El auxiliar usa el protocolo predeterminado de Windows.
+
+3. Node/Bash: 10 pruebas correctas. Sintaxis del auxiliar Linux, rechazo al
+   ejecutarlo por error en macOS, configuración del lector/versión PostgreSQL,
+   SHA-256, migraciones, cola del reloj vacía, identificador de ejecución y
+   ocultación de errores que pudieran incluir secretos.
+
+Las primeras pruebas SFTP detectaron que al simulador le faltaba emitir el
+código de salida. Se corrigió el servidor de prueba y se repitió el ensayo;
+la versión entregada conserva la comprobación estricta del resultado de SSH/SCP.
+
+PROTECCIONES VERIFICADAS EN EL CÓDIGO
+
+- Contraseña manejada por OpenSSH, sin capturarla ni escribirla en archivos.
+- Comprobación de identidad del servidor activada.
+- IP y puerto validados; root obligatorio para la configuración existente.
+- Comando remoto construido solo con el script codificado y un ID aleatorio.
+- El auxiliar se ejecuta por SSH sin instalarlo sobre archivos existentes.
+- Reutilización de la imagen del exportador instalado, sin actualizaciones.
+- Cuenta algym_export_reader y origen en transacción READ ONLY.
+- PostgreSQL temporal separado para convertir; producción no se restaura.
+- Archivos nuevos en /root/algym-exportaciones/windows-ID; sin usar «ultima».
+- .dump completo conservado en la VPS; .algym y reportes descargados a Windows.
+- Verificación de tres hashes, ID de ejecución, fecha, conteos y cola vacía.
+- Nombres .partial hasta la verificación; no sustituye respaldos anteriores.
+- Sin importación automática, cambios de contraseñas ni operaciones sobre el reloj.
+
+LÍMITES DE ESTA VERIFICACIÓN
+
+No se inició sesión en la VPS, no se ejecutó una exportación real ni se probó
+una contraseña de producción en esta entrega. El servidor de prueba simuló
+la generación del paquete; no sustituye comprobar la instalación real del
+exportador y sus recursos cuando se ejecute por primera vez.
+
+Solo estaba disponible Windows 11 ARM. Falta probar directamente en Windows 10
+x64; se utilizó Windows PowerShell 5.1 y se comprobó también el protocolo SCP
+clásico. La disponibilidad de Cliente OpenSSH en la computadora del cliente
+se revisa al abrir el auxiliar; si falta, muestra instrucciones para activarlo.
+
+El auxiliar necesita la configuración existente de AlGym en la VPS. No funciona
+como exportador universal para cualquier servidor ingresando solo su IP.
+No descarga archivos físicos de Supabase Storage. Si aparecen objetos allí, el
+exportador se detiene para preparar un procedimiento que también los conserve.
+
+FUENTES Y ALCANCE
+
+Código y pruebas guardados como archivos nuevos en el worktree separado:
+/Users/danilocalderon/.codex/worktrees/windows-native-installer/al-gym-sys/
+  deploy/windows/hostinger-download/
+Rama: codex/windows-native-installer. Sin commits ni publicación.
+No se modificaron los checkouts originales, el backend ni Hostinger.

@@ -1,4 +1,12 @@
 import sharp from "sharp";
+import { getExerciseMediaUploadError, isExerciseVideoFile } from "@/lib/training/exercise-media";
+
+export async function fileToProcessedExerciseMediaBuffer(file: File): Promise<Buffer> {
+  const error = getExerciseMediaUploadError(file);
+  if (error) throw new Error(error);
+  if (isExerciseVideoFile(file)) return Buffer.from(await file.arrayBuffer());
+  return fileToProcessedImageBuffer(file);
+}
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);

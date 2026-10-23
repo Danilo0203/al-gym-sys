@@ -20,3 +20,11 @@ test("al subir un GIF conserva todos sus fotogramas", async () => {
   assert.deepEqual(processed, animatedGif);
   assert.equal((await sharp(processed, { animated: true }).metadata()).pages, 2);
 });
+
+test("MP4 conserva sus bytes y no pasa por el conversor de imágenes", async () => {
+  const { fileToProcessedExerciseMediaBuffer } = await import("./exercise-image");
+  const bytes = Buffer.from("MP4 passthrough; content validation is enforced by the backend");
+  assert.deepEqual(await fileToProcessedExerciseMediaBuffer(new File([bytes], "demo.mp4", { type: "video/mp4" })), bytes);
+  assert.deepEqual(await fileToProcessedExerciseMediaBuffer(new File([bytes], "demo.MP4")), bytes);
+  await assert.rejects(fileToProcessedExerciseMediaBuffer(new File([bytes], "demo.mov", { type: "video/quicktime" })), /MP4/);
+});

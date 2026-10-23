@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { buildCookieHeader, fetchAuthBackend } from "@/lib/auth/backend-auth";
-import { fileToProcessedImageBuffer } from "@/features/exercises/lib/exercise-image";
+import { fileToProcessedExerciseMediaBuffer } from "@/features/exercises/lib/exercise-image";
 
 const exerciseNameSchema = z
   .string()
@@ -104,7 +104,7 @@ export async function updateExerciseCatalogItem(input: {
     const nextDisplayName = parsedInput.data.displayName;
     const metadata = parsedInput.data.metadata;
     const image = imageFormData?.get("image");
-    const imageBuffer = image instanceof File ? await fileToProcessedImageBuffer(image) : null;
+    const imageBuffer = image instanceof File ? await fileToProcessedExerciseMediaBuffer(image) : null;
     const response = await fetchAuthBackend(imageBuffer ? "/exercises/image-attachment" : `/exercises/${parsedInput.data.exerciseId}`, {
       method: imageBuffer ? "POST" : "PATCH",
       headers: { ...(await getLocalHeaders()), "content-type": "application/json" },
@@ -128,6 +128,7 @@ export async function updateExerciseCatalogItem(input: {
 
     revalidatePath("/panel/ejercicios");
     revalidatePath("/panel/clientes");
+    revalidatePath("/mi/rutina");
 
     return {
       success: true,
@@ -186,6 +187,7 @@ export async function updateExerciseCatalogPreferences(input: {
 
     revalidatePath("/panel/ejercicios");
     revalidatePath("/panel/clientes");
+    revalidatePath("/mi/rutina");
 
     return {
       success: true,
@@ -260,7 +262,7 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
     }
 
     const image = rawImage instanceof File && rawImage.size > 0 ? rawImage : null;
-    const processedImage = image ? await fileToProcessedImageBuffer(image) : null;
+    const processedImage = image ? await fileToProcessedExerciseMediaBuffer(image) : null;
 
     const createResponse = await fetchAuthBackend(image ? "/exercises/with-image" : "/exercises", {
       method: "POST",
@@ -287,7 +289,7 @@ export async function createExerciseCatalogItem(formData: FormData): Promise<Exe
 
     return {
       success: true,
-      message: image ? "Ejercicio e imagen guardados localmente." : "Ejercicio creado sin imagen; puedes agregarla después.",
+      message: image ? "Ejercicio y archivo guardados localmente." : "Ejercicio creado sin archivo; puedes agregar una imagen o un video después.",
     };
   } catch (error) {
     console.error("Unexpected error creating exercise catalog item:", error);

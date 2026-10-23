@@ -1,5 +1,4 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { useDeferredValue, useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,7 +15,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -37,20 +36,21 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import type { ExerciseCatalogItem } from "@/lib/training/types";
-import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
+import { EXERCISE_MEDIA_ACCEPT, getExerciseMediaUploadError, isExerciseVideoFile, isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import {
   createExerciseCatalogItem,
   updateExerciseCatalogPreferences,
   updateExerciseCatalogItem,
 } from "@/features/exercises/actions/exercise-actions";
 
+import { ExerciseMedia } from "./exercise-media";
+import { ExerciseBatchUpload } from "./exercise-batch-upload";
+
 interface ExerciseCatalogManagerProps {
   exercises: ExerciseCatalogItem[];
   totalCount: number;
 }
 
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const EXERCISE_TYPE_OPTIONS = [
   { value: "strength", label: "Fuerza" },
   { value: "cardio", label: "Cardio" },
@@ -90,7 +90,7 @@ const createExerciseFormSchema = z
       .min(2, "Ingresa un nombre de al menos 2 caracteres.")
       .max(120, "El nombre no puede superar los 120 caracteres."),
     image: z.custom<File | undefined>((value) => value === undefined || value instanceof File, {
-      message: "Selecciona una imagen válida.",
+      message: "Selecciona una imagen o un video MP4 válido.",
     }),
     exerciseType: z.enum(["strength", "cardio", "mobility", "stretching", "balance"]),
     bodyPart: z.string(),
@@ -108,21 +108,8 @@ const createExerciseFormSchema = z
       });
     }
     if (value.image instanceof File) {
-      if (!ACCEPTED_IMAGE_TYPES.has(value.image.type)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["image"],
-          message: "La imagen debe ser JPG, PNG, WEBP o GIF.",
-        });
-      }
-
-      if (value.image.size > MAX_IMAGE_SIZE_BYTES) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["image"],
-          message: "La imagen no puede superar los 5 MB.",
-        });
-      }
+      const error = getExerciseMediaUploadError(value.image);
+      if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["image"], message: error });
     }
 
   });
@@ -172,6 +159,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
     mode: "onSubmit",
     reValidateMode: "onChange",
   });
+  const selectedFile = useWatch({ control: createForm.control, name: "image" });
   const shouldValidateCreateForm = createForm.formState.submitCount > 0;
 
   useEffect(() => {
@@ -279,6 +267,10 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
   };
 
   const handleEditImageChange = (file: File | null) => {
+    if (file) {
+      const error = getExerciseMediaUploadError(file);
+      if (error) { toast.error(error); return; }
+    }
     setEditingImage(file);
     setEditingImagePreview(file ? URL.createObjectURL(file) : null);
   };
@@ -401,12 +393,15 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
             Actualmente hay <strong>{totalCount}</strong> ejercicios importados o creados en la base local.
           </CardDescription>
         </CardHeader>
-        <CardFooter className="flex justify-end">
+        <CardFooter className="flex flex-wrap justify-end gap-2">
           {canCreate && (
+          <>
+          <ExerciseBatchUpload existingNames={exercises.flatMap((exercise) => [exercise.name, exercise.display_name, exercise.display_name_es].filter((name): name is string => Boolean(name)))} />
           <Button onClick={() => setIsCreateDialogOpen(true)}>
             <Plus />
             Nuevo ejercicio
           </Button>
+          </>
           )}
         </CardFooter>
       </Card>
@@ -509,7 +504,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
           <DialogHeader className="border-border border-b px-6 pt-6 pb-4">
             <DialogTitle>Nuevo ejercicio</DialogTitle>
             <DialogDescription>
-              Crea un ejercicio ahora y añade una imagen de tu computadora cuando la tengas. Todo se guardará en el equipo local.
+              Crea un ejercicio ahora y añade una imagen o un video de tu computadora cuando lo tengas. Todo se guardará en el equipo local.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -601,16 +596,16 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                         name="image"
                         render={({ fieldState }) => (
                           <Field data-invalid={fieldState.invalid} className="space-y-3">
-                            <FieldLabel htmlFor="new-exercise-image">Imagen opcional</FieldLabel>
+                            <FieldLabel htmlFor="new-exercise-image">Imagen o video opcional</FieldLabel>
                             <Input
                               id="new-exercise-image"
                               type="file"
-                              accept="image/png,image/jpeg,image/webp,image/gif"
+                              accept={EXERCISE_MEDIA_ACCEPT}
                               aria-invalid={fieldState.invalid}
                               onChange={(event) => handleCreateImageChange(event.target.files?.[0] ?? null)}
                             />
                             <FieldDescription>
-                              Puedes crear el ejercicio sin imagen y añadir un archivo local después. Formatos: JPG, PNG, WEBP o GIF; máximo 5 MB.
+                              Puedes añadir JPG, PNG, WEBP o GIF de hasta 5 MB, o MP4 de hasta 20 MB. El archivo es opcional.
                             </FieldDescription>
                             <FieldError errors={[fieldState.error]} />
                           </Field>
@@ -620,8 +615,9 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                       <ExerciseCreatePreview
                         title="Vista previa"
                         src={selectedImagePreview}
+                        isVideo={selectedFile ? isExerciseVideoFile(selectedFile) : false}
                         emptyLabel="La vista previa aparecerá aquí"
-                        helper="Si seleccionas una imagen, se guardará junto al ejercicio."
+                        helper="Si seleccionas una imagen o un video, se guardará junto al ejercicio."
                       />
                     </div>
                 </div>
@@ -659,7 +655,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar ejercicio</DialogTitle>
-            <DialogDescription>Actualiza los datos y cambia la imagen o GIF del ejercicio.</DialogDescription>
+            <DialogDescription>Actualiza los datos y cambia la imagen, GIF o video MP4 del ejercicio.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUpdateExercise} className="space-y-5">
             <div className="space-y-2">
@@ -747,22 +743,23 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
             ) : null}
 
             <div className="space-y-2">
-              <Label htmlFor="edit-exercise-image">Imagen del ejercicio</Label>
+              <Label htmlFor="edit-exercise-image">Imagen o video del ejercicio</Label>
               <div className="bg-muted/30 border-border overflow-hidden rounded-xl border">
                 <ExerciseImage
                   src={editingImagePreview ?? editingExercise?.image_url}
+                  isVideo={editingImage ? isExerciseVideoFile(editingImage) : undefined}
                   alt={editingName || "Ejercicio"}
                   className="h-48 w-full object-contain"
-                  fallback={<div className="text-muted-foreground flex h-48 items-center justify-center text-sm">Sin imagen</div>}
+                  fallback={<div className="text-muted-foreground flex h-48 items-center justify-center text-sm">Sin imagen o video</div>}
                 />
               </div>
               <Input
                 id="edit-exercise-image"
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept={EXERCISE_MEDIA_ACCEPT}
                 onChange={(event) => handleEditImageChange(event.target.files?.[0] ?? null)}
               />
-              <p className="text-muted-foreground text-xs">Selecciona una imagen para reemplazar la actual. JPG, PNG, WEBP o GIF animado; máximo 5 MB. Se guardará con los demás cambios.</p>
+              <p className="text-muted-foreground text-xs">Selecciona una imagen o un video para reemplazar el archivo actual. JPG, PNG, WEBP o GIF animado: hasta 5 MB. MP4: hasta 20 MB. Se guardará con los demás cambios.</p>
             </div>
 
             <DialogFooter>
@@ -792,11 +789,13 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
 }
 
 function ExerciseCreatePreview({
+  isVideo,
   title,
   src,
   emptyLabel,
   helper,
 }: {
+  isVideo?: boolean;
   title: string;
   src: string | null;
   emptyLabel: string;
@@ -808,6 +807,7 @@ function ExerciseCreatePreview({
       <div className="bg-muted/30 border-border overflow-hidden rounded-xl border">
         <ExerciseImage
           src={src}
+          isVideo={isVideo}
           alt={title}
           className="h-56 w-full object-cover lg:h-[320px]"
           fallback={
@@ -824,12 +824,14 @@ function ExerciseCreatePreview({
 }
 
 function ExerciseImage({
+  isVideo,
   src,
   alt,
   className,
   fallback,
   loading,
 }: {
+  isVideo?: boolean;
   src?: string | null;
   alt: string;
   className: string;
@@ -846,7 +848,8 @@ function ExerciseImage({
   }
 
   return (
-    <img
+    <ExerciseMedia
+      isVideo={isVideo}
       src={normalizedSrc}
       alt={alt}
       className={className}
@@ -894,7 +897,7 @@ function ExerciseCard({
             fallback={
               <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
                 <ImagePlus className="size-8" />
-                <span className="text-sm">Sin imagen</span>
+                <span className="text-sm">Sin imagen o video</span>
               </div>
             }
           />
@@ -906,7 +909,7 @@ function ExerciseCard({
         ) : (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
             <ImagePlus className="size-8" />
-            <span className="text-sm">Sin imagen</span>
+            <span className="text-sm">Sin imagen o video</span>
           </div>
         )}
       </div>
@@ -960,7 +963,7 @@ function ExerciseCard({
             {isTogglingPreview ? <Loader2 className="animate-spin" /> : exercise.is_preview_hidden ? <Eye /> : <EyeOff />}
           </TooltipIconButton>
           {canUpdate && (
-          <TooltipIconButton label="Editar ejercicio e imagen" onClick={onEdit}>
+          <TooltipIconButton label="Editar ejercicio y archivo" onClick={onEdit}>
             <PencilLine />
           </TooltipIconButton>
           )}

@@ -9,7 +9,7 @@ async function proxy(request: NextRequest, context: Context) {
   const suffix = segments.join("/");
   const id = "[a-f0-9-]{36}";
   const allowed = request.method === "GET" ? suffix === "" :
-    suffix === "packages" || new RegExp(`^packages/${id}/import$`).test(suffix) || new RegExp(`^jobs/${id}/status$`).test(suffix);
+    suffix === "packages" || new RegExp(`^packages/${id}/(import|review|update)$`).test(suffix) || new RegExp(`^jobs/${id}/status$`).test(suffix);
   if (!allowed) return NextResponse.json({ error: { message: "Ruta no encontrada." } }, { status: 404 });
   const origin = request.headers.get("origin");
   // This streaming endpoint bypasses Next Proxy's body buffering. Enforce CSRF here.
