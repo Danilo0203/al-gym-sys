@@ -135,7 +135,9 @@ function getBlockTone(blockType: RoutineDetailRecord["block_type"]) {
   }
 }
 
-const WORKOUTX_API_KEY = "wx_6caf560e0d5e686d09bc51046f268764d0937fb5a4d51fa50f8526f0";
+// Do not ship the legacy provider credential to browsers.
+// Existing exercise media remains available; the external fallback stays disabled.
+const WORKOUTX_API_KEY = "";
 
 function normalizeMediaSearchText(value: string) {
   return value
@@ -149,7 +151,7 @@ function normalizeMediaSearchText(value: string) {
 
 async function fetchExerciseMediaFallback(query: string): Promise<string | null> {
   const normalized = normalizeMediaSearchText(query);
-  if (!normalized) return null;
+  if (!normalized || !WORKOUTX_API_KEY) return null;
 
   try {
     const url = new URL("https://api.workoutxapp.com/v1/exercises");
