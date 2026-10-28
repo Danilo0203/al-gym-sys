@@ -4,6 +4,9 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const { createLocalDbFromEnvironment } = require("./local-db");
 const { isLocalClockAddress } = require("./local-clock-address");
+const { createAttendanceParsers } = require("./attendance-parser");
+const { createClockUserInventory } = require("./clock-user-inventory");
+const { parseCommandConfirmations } = require("./command-confirmations");
 const ZKAttendanceClient = require("zk-attendance-sdk");
 
 const app = express();
@@ -11,6 +14,7 @@ const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.SYNC_HOST || "0.0.0.0";
 const REGISTRY_CODE = String(process.env.ZK_REGISTRY_CODE || "1");
 const COMMAND_LOCK_MS = Number(process.env.COMMAND_LOCK_MS || 25000);
+const COMMAND_BATCH_SIZE = Math.max(1, Math.min(20, Number(process.env.ZK_COMMAND_BATCH_SIZE || 1) || 1));
 const SUCCESS_RETURNS = new Set(
   String(process.env.ZK_SUCCESS_RETURNS || "0")
     .split(",")
@@ -20,6 +24,7 @@ const SUCCESS_RETURNS = new Set(
 const API_TOKEN = process.env.SYNC_API_TOKEN || "";
 const ZK_TIME_UTC_OFFSET = process.env.ZK_TIME_UTC_OFFSET || "-06:00";
 const ZK_DEVICE_IP = String(process.env.ZK_DEVICE_IP || "").trim();
+const ZK_DEVICE_SERIAL = String(process.env.ZK_DEVICE_SERIAL || "").trim();
 const ZK_DEVICE_PORT = Number(process.env.ZK_DEVICE_PORT || 4370);
 const ZK_DEVICE_TIMEOUT = Number(process.env.ZK_DEVICE_TIMEOUT || 5000);
 const ZK_DEVICE_INPORT = Number(process.env.ZK_DEVICE_INPORT || 5200);
@@ -30,6 +35,8 @@ const DEVICE_RECONCILE_COOLDOWN_MS = Number(process.env.DEVICE_RECONCILE_COOLDOW
 const COMMAND_DELIVERY_PAUSED_SETTING = process.env.SYNC_COMMAND_DELIVERY_PAUSED || "true";
 
 const db = createLocalDbFromEnvironment();
+const clockInventory = createClockUserInventory({ ip: ZK_DEVICE_IP, port: ZK_DEVICE_PORT, serial: ZK_DEVICE_SERIAL });
+const getKnownUserPins = (deviceId) => clockInventory.getKnownUserPins(deviceId);
 
 if (!API_TOKEN || API_TOKEN === "TU_SYNC_API_TOKEN") {
   throw new Error("SYNC_API_TOKEN debe configurarse para las rutas administrativas del sync");
@@ -57,6 +64,7 @@ const inflightByCommandId = new Map();
 const recentQueryResults = [];
 const reconcilePromiseByDevice = new Map();
 const lastReconcileAtByDevice = new Map();
+const reconcileQueueByDevice = new Map();
 
 function setPlainText(res) {
   res.setHeader("Content-Type", "text/plain");
@@ -72,15 +80,6 @@ function parsePushVersion(value) {
     .replace(/[^\d.]/g, "");
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function toIsoOrNull(value) {
-  if (!value) return null;
-  const normalized = String(value).replace(" ", "T");
-  const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
-  const date = new Date(explicitZone ? normalized : `${normalized}${ZK_TIME_UTC_OFFSET}`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
 }
 
 function pickSn(req) {
@@ -212,112 +211,8 @@ function rememberQueryResult(entry) {
   }
 }
 
-function splitAttlogLine(rawLine) {
-  if (rawLine.includes("\t")) {
-    return rawLine.split("\t").map((t) => t.trim());
-  }
-  return rawLine
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-function parseTabbedKvLine(rawLine) {
-  return String(rawLine || "")
-    .split("\t")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .reduce((acc, part) => {
-      const separatorIndex = part.indexOf("=");
-      if (separatorIndex === -1) return acc;
-
-      const key = part.slice(0, separatorIndex).trim().toLowerCase();
-      const value = part.slice(separatorIndex + 1).trim();
-      if (!key) return acc;
-
-      acc[key] = value;
-      return acc;
-    }, {});
-}
-
-function parseAttlogLine(rawLine, sn) {
-  const line = String(rawLine || "").trim();
-  if (!line) return null;
-
-  const tokens = splitAttlogLine(line);
-  if (tokens.length < 2) return null;
-
-  let offset = 0;
-  if (tokens[0].toUpperCase() === "ATTLOG") {
-    offset = 1;
-  }
-
-  const biometricId = parsePositiveBiometricIdOrNull(tokens[offset]);
-  if (biometricId == null) return null;
-
-  const firstTimestampToken = tokens[offset + 1] || "";
-  const secondTimestampToken = tokens[offset + 2] || "";
-  const hasCombinedTimestamp = /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/.test(firstTimestampToken);
-  const hasSplitTimestamp = /\d{4}-\d{2}-\d{2}/.test(firstTimestampToken) && /\d{2}:\d{2}:\d{2}/.test(secondTimestampToken);
-
-  let punchTimeCandidate = "";
-  let statusIndex = offset + 2;
-  if (hasCombinedTimestamp) {
-    punchTimeCandidate = firstTimestampToken;
-    statusIndex = offset + 2;
-  } else if (hasSplitTimestamp) {
-    punchTimeCandidate = `${firstTimestampToken} ${secondTimestampToken}`;
-    statusIndex = offset + 3;
-  } else {
-    return null;
-  }
-
-  const punchTime = toIsoOrNull(punchTimeCandidate);
-  if (!punchTime) return null;
-
-  const status1 = parseIntOrNull(tokens[statusIndex]);
-  const status2 = parseIntOrNull(tokens[statusIndex + 1]);
-  const status3 = parseIntOrNull(tokens[statusIndex + 2]);
-  const status4 = parseIntOrNull(tokens[statusIndex + 3]);
-  const status5 = parseIntOrNull(tokens[statusIndex + 4]);
-
-  return {
-    device_id: sanitizeText(sn, 80),
-    biometric_id: biometricId,
-    punch_time: punchTime,
-    status1,
-    status2,
-    status3,
-    status4,
-    status5,
-    raw_line: line,
-    created_at: new Date().toISOString(),
-  };
-}
-
-function parseAccessEventLine(rawLine, sn) {
-  const line = String(rawLine || "").trim();
-  if (!line || !line.includes("=")) return null;
-
-  const fields = parseTabbedKvLine(line);
-  const biometricId = parsePositiveBiometricIdOrNull(fields.pin);
-  const punchTime = toIsoOrNull(fields.time);
-
-  if (biometricId == null || !punchTime) return null;
-
-  return {
-    device_id: sanitizeText(sn, 80),
-    biometric_id: biometricId,
-    punch_time: punchTime,
-    status1: parseIntOrNull(fields.event),
-    status2: parseIntOrNull(fields.verifytype),
-    status3: parseIntOrNull(fields.inoutstatus),
-    status4: parseIntOrNull(fields.index),
-    status5: parseIntOrNull(fields.eventaddr),
-    raw_line: line,
-    created_at: new Date().toISOString(),
-  };
-}
+const { parseAttlogLine, parseAccessEventLine, parseNonPersonAccessEvent, isAccessEventLine, describeInvalidAccessBatch } =
+  createAttendanceParsers(ZK_TIME_UTC_OFFSET);
 
 function isAuthorizedApiRequest(req) {
   const auth = String(req.headers.authorization || "");
@@ -339,7 +234,7 @@ function cleanupStaleInflight(sn) {
   if (Date.now() - lock.sentAt <= COMMAND_LOCK_MS) return;
 
   inflightByDevice.delete(sn);
-  inflightByCommandId.delete(lock.commandId);
+  for (const id of lock.commandIds || [lock.commandId]) inflightByCommandId.delete(id);
   console.warn(`⚠️ [${nowTime()}] Lock expirado para SN=${sn}, cmd=${lock.commandId}`);
 }
 
@@ -507,26 +402,18 @@ async function loadActiveSubscriptionUserIds() {
   }
 }
 
-async function loadPendingCommandSet(deviceId) {
-  try {
-    const commands = await db.loadPendingCommandSet(deviceId);
-    return new Set(commands.map(normalizeCommandForDedupe));
-  } catch (error) {
-    console.error(`❌ Error consultando comandos pendientes para reconciliación (${deviceId}):`, error.message);
-    throw error;
-  }
-}
+const { planDeviceReconciliation } = require("./reconcile-plan");
 
-function buildDesiredCommandsForProfile(profile, shouldEnable) {
+function buildDesiredCommandsForProfile(profile, shouldEnable, knownUserPins = null) {
   const biometricId = parseIntOrNull(profile?.biometric_id);
   if (biometricId == null || biometricId <= 0) return [];
 
   if (shouldEnable) {
     return [
-      buildZkDataUserCommand({
+      ...(!knownUserPins?.has(biometricId) ? [buildZkDataUserCommand({
         biometricId,
         fullName: profile?.full_name,
-      }),
+      })] : []),
       buildZkUserAuthorizeCommand({
         biometricId,
       }),
@@ -540,7 +427,18 @@ function buildDesiredCommandsForProfile(profile, shouldEnable) {
   ];
 }
 
-async function reconcileDeviceUsers(deviceId, profileId = null, profileType = null) {
+function reconcileDeviceUsers(deviceId, profileId = null, profileType = null, options = {}) {
+  const key = String(deviceId || "").trim();
+  const previous = reconcileQueueByDevice.get(key) || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => reconcileDeviceUsersUnlocked(deviceId, profileId, profileType, options));
+  reconcileQueueByDevice.set(key, next);
+  void next.finally(() => {
+    if (reconcileQueueByDevice.get(key) === next) reconcileQueueByDevice.delete(key);
+  }).catch(() => {});
+  return next;
+}
+
+async function reconcileDeviceUsersUnlocked(deviceId, profileId = null, profileType = null, options = {}) {
   const sanitizedDeviceId = sanitizeText(deviceId, 80);
   if (!sanitizedDeviceId || sanitizedDeviceId === "Unknown") {
     return {
@@ -555,11 +453,10 @@ async function reconcileDeviceUsers(deviceId, profileId = null, profileType = nu
     };
   }
 
-  const [expiredSubscriptions, allProfiles, activeSubscriptionUserIds, pendingCommandSet] = await Promise.all([
+  const [expiredSubscriptions, allProfiles, activeSubscriptionUserIds] = await Promise.all([
     expirePastDueSubscriptions(),
     loadProfilesForDeviceReconcile(),
     loadActiveSubscriptionUserIds(),
-    loadPendingCommandSet(sanitizedDeviceId),
   ]);
   const profiles = profileId
     ? allProfiles.filter((profile) => profile.id === profileId &&
@@ -570,14 +467,16 @@ async function reconcileDeviceUsers(deviceId, profileId = null, profileType = nu
     return { success: false, reason: "profile_not_found" };
   }
 
-  const rowsToInsert = [];
+  const desiredStates = [];
+  const observedPins = options.knownUserPins ?? await getKnownUserPins(sanitizedDeviceId);
+  const knownUserPins = observedPins == null ? null : new Set([...observedPins].map(Number));
   let enabledUsers = 0;
   let disabledUsers = 0;
 
   for (const profile of profiles) {
     const shouldEnable = profile.is_active !== false &&
       (profile.role !== "client" || activeSubscriptionUserIds.has(profile.id));
-    const commands = buildDesiredCommandsForProfile(profile, shouldEnable);
+    const commands = buildDesiredCommandsForProfile(profile, shouldEnable, knownUserPins);
 
     if (commands.length === 0) {
       continue;
@@ -589,28 +488,28 @@ async function reconcileDeviceUsers(deviceId, profileId = null, profileType = nu
       disabledUsers += 1;
     }
 
-    for (const command of commands) {
-      const normalizedCommand = normalizeCommandForDedupe(command);
-      if (pendingCommandSet.has(normalizedCommand)) {
-        continue;
-      }
+    desiredStates.push({
+      pin: Number(profile.biometric_id),
+      commands,
+      // A live inventory reporting absence is stronger evidence than an old ACK.
+      invalidateConfirmedFamilies: knownUserPins && !knownUserPins.has(Number(profile.biometric_id)) ? ["profile"] : [],
+    });
+  }
 
-      pendingCommandSet.add(normalizedCommand);
-      rowsToInsert.push({
-        device_id: sanitizedDeviceId,
-        command,
-        executed: false,
+  const result = await db.reconcileCommandState(sanitizedDeviceId, desiredStates.map((state) => state.pin),
+    (history) => {
+      return planDeviceReconciliation({
+        desiredStates,
+        history,
+        successReturns: SUCCESS_RETURNS,
+        protectedCommandIds: [...inflightByCommandId.entries()]
+          .filter(([, serial]) => serial === sanitizedDeviceId).map(([id]) => id),
       });
-    }
-  }
-
-  if (rowsToInsert.length > 0) {
-    await db.insertCommands(rowsToInsert);
-  }
+    });
 
   return {
     success: true,
-    queued_commands: rowsToInsert.length,
+    ...result,
     enabled_users: enabledUsers,
     disabled_users: disabledUsers,
     profiles_considered: profiles.length,
@@ -786,6 +685,11 @@ app.all("/iclock/registry", (req, res) => {
 });
 
 // 3) Polling de comandos
+app.all("/iclock/ping", (_req, res) => {
+  setPlainText(res);
+  res.send("OK");
+});
+
 app.get("/iclock/getrequest", async (req, res) => {
   const sn = pickSn(req);
   setPlainText(res);
@@ -794,7 +698,8 @@ app.get("/iclock/getrequest", async (req, res) => {
     if (isCommandDeliveryPaused()) {
       return res.send("OK");
     }
-    void maybeReconcileDeviceUsers(sn, "getrequest");
+    if (ZK_DEVICE_SERIAL && sn !== ZK_DEVICE_SERIAL) return res.status(400).send("ERROR");
+    await maybeReconcileDeviceUsers(sn, "getrequest");
 
     cleanupStaleInflight(sn);
 
@@ -809,7 +714,7 @@ app.get("/iclock/getrequest", async (req, res) => {
       return res.send("OK");
     }
 
-    let data = null;
+    const selected = [];
     const skipped = [];
     const seen = new Set();
 
@@ -827,13 +732,8 @@ app.get("/iclock/getrequest", async (req, res) => {
       }
       seen.add(key);
 
-      if (!data) {
-        data = row;
-      } else {
-        // Solo enviamos un comando por poll; el resto únicos quedan para siguientes polls.
-        // No los marcamos como duplicados aquí para no perder trabajo válido.
-        break;
-      }
+      selected.push(row);
+      if (selected.length >= COMMAND_BATCH_SIZE) break;
     }
 
     if (skipped.length > 0) {
@@ -849,15 +749,16 @@ app.get("/iclock/getrequest", async (req, res) => {
       );
     }
 
-    if (!data) {
+    if (selected.length === 0) {
       return res.send("OK");
     }
 
-    inflightByDevice.set(sn, { commandId: data.id, sentAt: Date.now() });
-    inflightByCommandId.set(data.id, sn);
-
-    console.log(`🚀 [${nowTime()}] ENVIANDO COMANDO id=${data.id} SN=${sn}`);
-    return res.send(`C:${data.id}:${data.command}`);
+    inflightByDevice.set(sn, { commandId: selected[0].id, commandIds: new Set(selected.map((row) => row.id)), sentAt: Date.now() });
+    for (const row of selected) {
+      inflightByCommandId.set(row.id, sn);
+      console.log(`🚀 [${nowTime()}] ENVIANDO COMANDO id=${row.id} SN=${sn}`);
+    }
+    return res.send(selected.map((row) => `C:${row.id}:${row.command}`).join("\n") + "\n");
   } catch (error) {
     console.error("❌ Exception en /iclock/getrequest:", error);
     return res.status(503).send("ERROR");
@@ -870,33 +771,28 @@ app.post("/iclock/devicecmd", async (req, res) => {
 
   try {
     const sn = pickSn(req);
-    const bodyKv = parseKvPayload(req.body);
-
-    const rawId = req.query.ID || req.query.id || bodyKv.ID || bodyKv.id;
-    const rawReturn = req.query.Return || req.query.RETURN || bodyKv.Return || bodyKv.RETURN;
-
-    const commandId = Number(String(rawId || "").match(/\d+/)?.[0]);
-    const returnCode = rawReturn != null ? String(rawReturn).trim() : "";
-
-    console.log(`🧐 [${nowTime()}] devicecmd SN=${sn} ID=${rawId} Return=${returnCode}`);
-
-    if (!Number.isFinite(commandId)) {
-      return res.send("OK");
-    }
-
-    const updated = await db.markCommandExecuted(commandId, returnCode, sn);
-    if (!updated) {
-      console.warn(`⚠️ Confirmación sin comando pendiente id=${commandId} SN=${sn}`);
-    } else if (!returnCode || SUCCESS_RETURNS.has(returnCode)) {
-      console.log(`✅ [${nowTime()}] Comando confirmado id=${commandId} Return=${returnCode || "0"}`);
-    } else {
-      console.warn(`⚠️ [${nowTime()}] Comando ejecutado con error id=${commandId} Return=${returnCode}`);
-    }
-
-    const lockedSn = inflightByCommandId.get(commandId);
-    if (updated && lockedSn === sn) {
-      inflightByDevice.delete(lockedSn);
-      inflightByCommandId.delete(commandId);
+    if (ZK_DEVICE_SERIAL && sn !== ZK_DEVICE_SERIAL) return res.status(400).send("ERROR");
+    const confirmations = parseCommandConfirmations(req.body, req.query);
+    for (const { id: commandId, returnCode } of confirmations) {
+      console.log(`🧐 [${nowTime()}] devicecmd SN=${sn} ID=${commandId} Return=${returnCode}`);
+      const updated = await db.markCommandExecuted(commandId, returnCode, sn);
+      if (!updated) {
+        console.warn(`⚠️ Confirmación sin comando pendiente id=${commandId} SN=${sn}`);
+    } else if (SUCCESS_RETURNS.has(returnCode)) {
+        console.log(`✅ [${nowTime()}] Comando confirmado id=${commandId} Return=${returnCode}`);
+        clockInventory.invalidate();
+      } else {
+        console.warn(`⚠️ [${nowTime()}] Comando ejecutado con error id=${commandId} Return=${returnCode}`);
+      }
+      const lockedSn = inflightByCommandId.get(commandId);
+      if (updated && lockedSn === sn) {
+        const lock = inflightByDevice.get(sn);
+        if (lock?.commandIds) {
+          lock.commandIds.delete(commandId);
+          if (lock.commandIds.size === 0) inflightByDevice.delete(sn);
+        } else inflightByDevice.delete(sn);
+        inflightByCommandId.delete(commandId);
+      }
     }
 
     return res.send("OK");
@@ -925,7 +821,7 @@ app.post("/iclock/cdata", async (req, res) => {
       .filter(Boolean);
     const attlogLines = lines.filter((line) => line.includes("ATTLOG") || /^\d+\s+\d{4}-\d{2}-\d{2}/.test(line));
     const accessEventLines = lines.filter(
-      (line) => !attlogLines.includes(line) && line.toLowerCase().includes("time=") && line.toLowerCase().includes("pin="),
+      (line) => !attlogLines.includes(line) && isAccessEventLine(line),
     );
 
     if (attlogLines.length > 0) {
@@ -957,11 +853,16 @@ app.post("/iclock/cdata", async (req, res) => {
     if (accessEventLines.length > 0) {
       console.log(`📥 [${nowTime()}] ACCESS EVENT recibido SN=${sn} registros=${accessEventLines.length}`);
 
-      const parsedRows = accessEventLines.map((line) => parseAccessEventLine(line, sn));
-      if (parsedRows.some((row) => !row)) {
+      const classifiedRows = accessEventLines.map((line) => ({
+        attendance: parseAccessEventLine(line, sn),
+        deviceEvent: parseNonPersonAccessEvent(line, sn),
+      }));
+      if (classifiedRows.some((row) => !row.attendance && !row.deviceEvent)) {
         console.error(`❌ ACCESS EVENT inválido SN=${sn}; el reloj debe reintentar el lote`);
+        console.error("ACCESS_EVENT_DIAGNOSTIC", JSON.stringify(describeInvalidAccessBatch(accessEventLines)));
         return res.status(503).send("ERROR");
       }
+      const parsedRows = classifiedRows.map((row) => row.attendance).filter(Boolean);
       if (parsedRows.length > 0) {
         const upsertPayload = parsedRows.map((row) => ({
           device_id: row.device_id,
@@ -978,6 +879,9 @@ app.post("/iclock/cdata", async (req, res) => {
 
         await db.insertAttendance(upsertPayload);
       }
+      for (const { deviceEvent } of classifiedRows) {
+        if (deviceEvent) console.info("DEVICE_EVENT_NO_PERSON", JSON.stringify(deviceEvent));
+      }
     }
 
     return res.send("OK");
@@ -992,7 +896,8 @@ app.post("/iclock/querydata", async (req, res) => {
 
   try {
     const sn = pickSn(req);
-    const payload = String(req.body || "").trim();
+    const rawPayload = String(req.body || "");
+    const payload = rawPayload.replace(/\0+$/g, "").trim();
     const queryResult = {
       device_id: sanitizeText(sn, 80),
       type: sanitizeText(req.query.type, 40),
@@ -1001,17 +906,20 @@ app.post("/iclock/querydata", async (req, res) => {
       count: parseIntOrNull(req.query.count),
       pack_count: parseIntOrNull(req.query.packcnt),
       pack_index: parseIntOrNull(req.query.packidx),
-      body: payload,
+      body: payload.length <= 262144 ? payload : "",
+      body_truncated: payload.length > 262144,
+      padding_bytes: rawPayload.length - rawPayload.replace(/\0+$/g, "").length,
       created_at: new Date().toISOString(),
     };
 
     rememberQueryResult(queryResult);
 
-    console.log(
-      `\n\n=== RAW QUERYDATA PUSH (SN: ${sn}, table=${queryResult.table_name || "?"}, cmd=${queryResult.command_id ?? "?"}) ===\n${payload}\n=================================\n`,
-    );
-
-    return res.send("OK");
+    const receivedCount = payload.split(/\r?\n/).filter((line) => line.trim()).length;
+    console.log(`QUERYDATA SN=${sn} table=${queryResult.table_name || "?"} cmd=${queryResult.command_id ?? "?"} records=${receivedCount}`);
+    // Security PUSH expects the table name and received record count. A plain
+    // OK here can leave query uploads retrying even after their data arrived.
+    const tableName = String(queryResult.table_name || "");
+    return res.send(/^[a-z][a-z0-9_]{0,39}$/i.test(tableName) ? `${tableName}=${receivedCount}` : "OK");
   } catch (error) {
     console.error("❌ Exception en /iclock/querydata:", error);
     return res.send("OK");
@@ -1174,7 +1082,7 @@ app.post("/api/device-users/register", async (req, res) => {
 
     return res.json({
       success: true,
-      synced: true,
+      synced: false,
       queued: true,
       method: "queue",
       biometric_id: resolved.biometricId,

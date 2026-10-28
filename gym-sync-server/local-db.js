@@ -1,5 +1,4 @@
 const { isIP } = require("node:net");
-const { Pool } = require("pg");
 
 function isPrivateDatabaseHost(host) {
   const value = String(host || "").trim().toLowerCase();
@@ -91,6 +90,49 @@ function createLocalDb(pool) {
       );
       return result.rows.map((row) => row.command);
     },
+    async reconcileCommandState(deviceId, pins, buildPlan) {
+      if (pins.length === 0) return { queued_commands: 0, superseded_commands: 0, command_ids: [] };
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`device-reconcile:${deviceId}`]);
+        const history = await client.query(
+          `SELECT id, command, executed, return_code, created_at
+           FROM public.device_commands
+           WHERE device_id = $1
+             AND ltrim(substring(command FROM '(?i)Pin=([0-9]+)'), '0') = ANY($2::text[])
+           ORDER BY id FOR UPDATE`,
+          [deviceId, pins.map(String)],
+        );
+        const plan = await buildPlan(history.rows);
+        let supersededCount = 0;
+        if (plan.supersededIds.length > 0) {
+          const updated = await client.query(
+            `UPDATE public.device_commands SET executed = true, return_code = $3
+             WHERE device_id = $1 AND id = ANY($2::bigint[]) AND executed = false`,
+            [deviceId, plan.supersededIds.map(String), plan.supersededReturnCode],
+          );
+          supersededCount = updated.rowCount;
+        }
+        let insertedIds = [];
+        if (plan.commands.length > 0) {
+          const inserted = await client.query(
+            `INSERT INTO public.device_commands (device_id, command, executed)
+             SELECT $1, command, false FROM unnest($2::text[]) AS commands(command)
+             RETURNING id`,
+            [deviceId, plan.commands],
+          );
+          insertedIds = inserted.rows.map((row) => String(row.id));
+        }
+        await client.query("COMMIT");
+        return { queued_commands: insertedIds.length, superseded_commands: supersededCount, command_ids: insertedIds };
+      } catch (error) {
+        try { await client.query("ROLLBACK"); } catch {}
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
     async listPendingCommands(deviceId) {
       const result = await pool.query(
         `SELECT id, device_id, command, executed, created_at
@@ -155,6 +197,7 @@ function createLocalDb(pool) {
 }
 
 function createLocalDbFromEnvironment(environment = process.env) {
+  const { Pool } = require("pg");
   const pool = new Pool(readDatabaseConfig(environment));
   pool.on("error", (error) => console.error("Error en PostgreSQL del sync:", error));
   return createLocalDb(pool);
