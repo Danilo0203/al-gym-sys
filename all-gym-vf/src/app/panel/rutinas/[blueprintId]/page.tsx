@@ -30,7 +30,7 @@ export default async function BlueprintDetailPage({ params }: BlueprintDetailPag
       pageDescription="Vista detallada de la plantilla de rutina."
     >
       <Suspense>
-        <BlueprintDetailView data={data} />
+        <BlueprintDetailView data={data} canManage={hasPermission(access, "routines.manage_blueprints")} />
       </Suspense>
     </PageContainer>
   );

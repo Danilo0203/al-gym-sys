@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseJsonText } from "@/lib/auth/contracts";
+import { normalizeGuatemalaPhoneForAuth } from "@/lib/auth/identifiers";
 import { customerBodyAssessmentSchema, customerHealthProfileStatusSchema } from "./customer-health";
 
 export const customerGenderSchema = z.enum(["male", "female", "other"]);
@@ -186,9 +187,9 @@ export const createCustomerInputSchema = z.object({
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }).strict().optional(),
 }).strict().refine(
-  (value) => value.password === undefined || Boolean(value.email?.trim()),
+  (value) => value.password === undefined || Boolean(value.email?.trim()) || normalizeGuatemalaPhoneForAuth(value.phone) !== null,
   {
-    message: "PASSWORD_REQUIRES_EMAIL",
+    message: "PASSWORD_REQUIRES_IDENTIFIER",
     path: ["password"],
   },
 );
@@ -363,7 +364,8 @@ function getCustomerErrorMessage(status: number, responseText: string): string {
       case "EMAIL_ALREADY_EXISTS":
         return "El correo ya está utilizado por otra cuenta.";
       case "PASSWORD_REQUIRES_EMAIL":
-        return "La contraseña requiere un correo configurado.";
+      case "PASSWORD_REQUIRES_IDENTIFIER":
+        return "La contraseña requiere un correo o teléfono válido.";
       case "VALIDATION_ERROR":
         return "Revisa los datos ingresados.";
       case "UNAUTHORIZED":

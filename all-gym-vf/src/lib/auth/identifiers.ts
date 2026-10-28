@@ -11,6 +11,7 @@ export function normalizeAuthEmail(value: string | null | undefined): string | n
 export function normalizeGuatemalaPhoneForAuth(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
 
+  if (!/^\+?[\d ()-]+$/.test(value.trim())) return null;
   const digits = value.replace(/\D/g, "");
 
   if (digits.length === 8) {

@@ -40,6 +40,9 @@ Name: "autostart"; Description: "Abrir AlGym al iniciar sesión en Windows"; Fla
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#PayloadDir}\tools\Prepare-Upgrade.ps1"; Flags: dontcopy
+Source: "{#PayloadDir}\tools\Common.ps1"; Flags: dontcopy
+Source: "{#PayloadDir}\tools\Backup-AlGym.ps1"; Flags: dontcopy
 
 [Icons]
 Name: "{autodesktop}\AlGym"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\tools\Open-AlGym.ps1"""; WorkingDir: "{app}"; Tasks: desktopicon
@@ -76,11 +79,20 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Code: Integer;
 begin
   Result := '';
-  if FileExists(ExpandConstant('{app}\tools\Prepare-Upgrade.ps1')) then
-    if not RunTool('Prepare-Upgrade.ps1') then
+  if FileExists(ExpandConstant('{app}\tools\Prepare-Upgrade.ps1')) then begin
+    ExtractTemporaryFile('Prepare-Upgrade.ps1');
+    ExtractTemporaryFile('Common.ps1');
+    ExtractTemporaryFile('Backup-AlGym.ps1');
+    if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\Prepare-Upgrade.ps1') +
+      '" -AppRoot "' + ExpandConstant('{app}') + '" -DataRoot "' + ExpandConstant('{commonappdata}\AlGym') + '"',
+      ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, Code) then
       Result := 'No se pudo preparar el respaldo y detener los servicios. No se actualizaron los archivos.';
+    if Code <> 0 then Result := 'Falló el respaldo previo. No se actualizaron los archivos; revise los servicios y el respaldo.';
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

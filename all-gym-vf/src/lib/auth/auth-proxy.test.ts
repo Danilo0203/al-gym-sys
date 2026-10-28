@@ -5,6 +5,8 @@ import { NextRequest } from "next/server";
 
 import { POST as changePassword } from "@/app/api/auth/change-password/route";
 import { POST as login } from "@/app/api/auth/login/route";
+import { POST as phoneAccess } from "@/app/api/auth/phone-access/route";
+import { POST as firstAccess } from "@/app/api/auth/first-access/route";
 import { POST as logout } from "@/app/api/auth/logout/route";
 import { GET as getSession } from "@/app/api/auth/me/route";
 import { AuthBackendTransportError, fetchAuthBackend } from "@/lib/auth/backend-auth";
@@ -64,6 +66,38 @@ async function withMockFetch<T>(
     globalThis.fetch = originalFetch;
   }
 }
+
+test("acceso telefónico normaliza el número y permite sesión sin correo", async () => {
+  let requestBody: unknown;
+  const access = await withMockFetch((async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return jsonResponse({ requiresPasswordSetup: true });
+  }) as typeof fetch, () => phoneAccess(nextRequest("/api/auth/phone-access", {
+    method: "POST", body: { phone: "5555-1234" },
+  })));
+  assert.equal(access.status, 200);
+  assert.deepEqual(requestBody, { phone: "+50255551234" });
+  assert.deepEqual(await access.json(), { requiresPasswordSetup: true });
+  const clientContext = { user: { ...authContext.user, email: null, profile: { ...authContext.user.profile, role: "client" } },
+    authorization: { roleSlug: "client", scope: "client", permissions: [], isOwner: false } };
+  const activated = await withMockFetch((async () => jsonResponse(clientContext, 200,
+    ["algym_session=first; Path=/; HttpOnly; SameSite=Lax"])) as typeof fetch,
+    () => firstAccess(nextRequest("/api/auth/first-access", { method: "POST", body: { phone: "55551234", password: "PrimeraClave123" } })));
+  assert.equal(activated.status, 200);
+  assert.deepEqual(await activated.json(), clientContext);
+  assert.match(activated.headers.get("set-cookie") ?? "", /algym_session=first/);
+});
+
+test("proxy conserva bloqueos de primer ingreso y cambio exclusivo del administrador", async () => {
+  for (const [status, code] of [[409, "FIRST_ACCESS_COMPLETED"], [409, "PHONE_NOT_UNIQUE"], [403, "PASSWORD_ADMIN_REQUIRED"]] as const) {
+    const response = await withMockFetch((async () => jsonResponse({ error: { code, message: "privado" } }, status)) as typeof fetch,
+      () => firstAccess(nextRequest("/api/auth/first-access", { method: "POST", body: { phone: "55551234", password: "PrimeraClave123" } })));
+    assert.equal(response.status, status);
+    const payload = await response.json();
+    assert.equal(payload.error.code, code);
+    assert.notEqual(payload.error.message, "privado");
+  }
+});
 
 test("login exitoso reenvía solo credenciales y propaga la cookie de sesión", async () => {
   let capturedUrl = "";

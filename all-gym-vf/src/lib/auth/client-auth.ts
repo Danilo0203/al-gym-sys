@@ -5,6 +5,9 @@ import {
   authContextSchema,
   authErrorResponseSchema,
   authLoginRequestSchema,
+  authPhoneAccessRequestSchema,
+  authPhoneAccessResponseSchema,
+  authFirstAccessRequestSchema,
   isJsonContentType,
   type AuthChangePasswordRequest,
   type AuthContext,
@@ -63,6 +66,32 @@ export async function loginWithLocalAuth(input: AuthLoginRequest): Promise<AuthC
   if (!parsed.success) {
     throw new LocalAuthProxyError(502, "El servicio de autenticación devolvió una sesión inválida.");
   }
+  return parsed.data;
+}
+
+export async function getPhoneAccess(phone: string): Promise<{ requiresPasswordSetup: boolean }> {
+  const body = authPhoneAccessRequestSchema.parse({ phone });
+  const response = await fetch("/api/auth/phone-access", {
+    method: "POST", credentials: "include", cache: "no-store",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  const payload = await readProxyPayload(response);
+  if (!response.ok) throwProxyError(response, payload);
+  const parsed = authPhoneAccessResponseSchema.safeParse(payload);
+  if (!parsed.success) throw new LocalAuthProxyError(502, "No se pudo consultar el acceso.");
+  return parsed.data;
+}
+
+export async function activatePhoneAccess(phone: string, password: string): Promise<AuthContext> {
+  const body = authFirstAccessRequestSchema.parse({ phone, password });
+  const response = await fetch("/api/auth/first-access", {
+    method: "POST", credentials: "include", cache: "no-store",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  const payload = await readProxyPayload(response);
+  if (!response.ok) throwProxyError(response, payload);
+  const parsed = authContextSchema.safeParse(payload);
+  if (!parsed.success) throw new LocalAuthProxyError(502, "El servicio devolvió una sesión inválida.");
   return parsed.data;
 }
 

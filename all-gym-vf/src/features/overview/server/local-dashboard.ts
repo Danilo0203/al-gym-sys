@@ -58,7 +58,7 @@ export const getLocalDashboardOverview = cache(
     const response = await fetchAuthBackend(pathname, {
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
       cache: "no-store",
-    });
+    }, 15000);
 
     const responseText = await response.text();
 

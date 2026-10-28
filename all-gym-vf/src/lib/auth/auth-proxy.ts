@@ -32,6 +32,10 @@ const safeErrorMessages: Record<string, string> = {
   USER_NOT_FOUND: "Usuario no encontrado",
   RATE_LIMITED: "Demasiados intentos. Inténtalo de nuevo más tarde.",
   METHOD_NOT_ALLOWED: "Método no permitido",
+  PHONE_ACCESS_UNAVAILABLE: "Revisa tu teléfono o consulta en recepción para habilitar tu acceso.",
+  PHONE_NOT_UNIQUE: "Este teléfono está asociado a más de un cliente. Consulta en recepción.",
+  FIRST_ACCESS_COMPLETED: "Tu cuenta ya tiene contraseña. Inicia sesión o solicita el cambio al administrador.",
+  PASSWORD_ADMIN_REQUIRED: "Solicita el cambio de contraseña al administrador.",
 };
 
 function safeErrorForStatus(status: number, payload: unknown): SafeAuthError {
@@ -49,6 +53,9 @@ function safeErrorForStatus(status: number, payload: unknown): SafeAuthError {
   }
 
   if (status === 403) {
+    if (upstreamError?.code === "PASSWORD_ADMIN_REQUIRED") {
+      return { status, code: upstreamError.code, message: safeErrorMessages.PASSWORD_ADMIN_REQUIRED };
+    }
     const code = upstreamError?.code === "PROFILE_INACTIVE" ? "PROFILE_INACTIVE" : "FORBIDDEN";
     return {
       status,
@@ -63,6 +70,10 @@ function safeErrorForStatus(status: number, payload: unknown): SafeAuthError {
 
   if (status === 429) {
     return { status, code: "RATE_LIMITED", message: safeErrorMessages.RATE_LIMITED };
+  }
+
+  if (status === 409 && safeMessage && ["PHONE_NOT_UNIQUE", "FIRST_ACCESS_COMPLETED"].includes(upstreamError!.code)) {
+    return { status, code: upstreamError!.code, message: safeMessage };
   }
 
   if (status === 405) {

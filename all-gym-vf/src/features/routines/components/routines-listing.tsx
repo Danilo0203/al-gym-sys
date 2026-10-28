@@ -4,6 +4,7 @@ import {
   IconCalendar,
   IconListDetails,
   IconPlus,
+  IconPencil,
   IconTargetArrow,
   IconUsers,
 } from "@tabler/icons-react";
@@ -20,7 +21,6 @@ import {
   getAllRoutineBlueprints,
   type BlueprintWithStats,
 } from "../actions/blueprint-actions";
-import { BlueprintRenameDialog } from "./blueprint-rename-dialog";
 
 function getPrimaryGoalLabel(value: string | null) {
   if (!value) return null;
@@ -54,7 +54,7 @@ function getTooltipLabel(name: string | null) {
   return name?.trim() || "Cliente";
 }
 
-function BlueprintCard({ blueprint }: { blueprint: BlueprintWithStats }) {
+function BlueprintCard({ blueprint, canManage }: { blueprint: BlueprintWithStats; canManage: boolean }) {
   const goalLabel = getPrimaryGoalLabel(blueprint.primary_goal);
   const updatedAt = formatDate(blueprint.updated_at ?? blueprint.created_at);
   const hasAssignments = blueprint.assignment_count > 0;
@@ -162,7 +162,11 @@ function BlueprintCard({ blueprint }: { blueprint: BlueprintWithStats }) {
           {updatedAt ? `Creada ${updatedAt}` : "Sin fecha"}
         </span>
         <div className="flex items-center gap-2">
-          <BlueprintRenameDialog blueprintId={blueprint.id} currentName={blueprint.name} />
+          {canManage && (
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link href={`${href}/editar`}><IconPencil className="size-3.5" />Editar</Link>
+            </Button>
+          )}
           <Button asChild size="sm" variant="ghost">
             <Link href={href}>Ver plantilla</Link>
           </Button>
@@ -230,7 +234,7 @@ export default async function RoutinesListing({ canManage }: { canManage: boolea
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {blueprints.map((blueprint) => (
-          <BlueprintCard key={blueprint.id} blueprint={blueprint} />
+          <BlueprintCard key={blueprint.id} blueprint={blueprint} canManage={canManage} />
         ))}
       </div>
     </div>

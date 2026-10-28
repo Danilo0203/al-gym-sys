@@ -116,7 +116,11 @@ export default function ProfileViewPage({ user }: ProfileViewPageProps) {
       <div className="grid gap-4 lg:grid-cols-2">
         <ProfileForm profile={user} canEditProfile={canEditProfile} />
         <div className="space-y-4">
-          <PasswordForm />
+          {user.role === "client" ? (
+            <Card><CardHeader><CardTitle>Contraseña</CardTitle>
+              <CardDescription>Para cambiar tu contraseña, solicita ayuda al administrador en recepción.</CardDescription>
+            </CardHeader></Card>
+          ) : <PasswordForm />}
           {accountInfoCard}
         </div>
       </div>

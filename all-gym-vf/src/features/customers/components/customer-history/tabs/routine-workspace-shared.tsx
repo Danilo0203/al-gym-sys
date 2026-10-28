@@ -7,6 +7,9 @@ import {
   IconBarbell,
   IconBolt,
   IconClockHour4,
+  IconCircleCheck,
+  IconCircle,
+  IconLoader2,
   IconDeviceFloppy,
   IconExternalLink,
   IconFlame,
@@ -25,6 +28,15 @@ import { formatSessionDuration } from "@/lib/training/profile-defaults";
 import { isExerciseMediaStoredLocally } from "@/lib/training/exercise-media";
 import type { RoutineDetailRecord, RoutineRecord, TrainingProfileRecord } from "@/lib/training/types";
 import { cn } from "@/lib/utils";
+import { getDayProgress } from "@/lib/training/routine-progress";
+
+export interface RoutineCompletionControls {
+  completedDetailIds: number[];
+  isSaving: boolean;
+  pendingDetailId: number | null;
+  onToggle: (detailId: number, completed: boolean) => void;
+  onResetDay: (day: number) => void;
+}
 
 export interface DetailEditorState {
   sets: string;
@@ -207,6 +219,7 @@ export function RoutineViewer({
   onSave,
   onReplace,
   busyDetailId,
+  completion,
 }: {
   title: string;
   routine: RoutineRecord;
@@ -218,6 +231,7 @@ export function RoutineViewer({
   onSave: (detailId: number) => Promise<void>;
   onReplace: (detail: RoutineDetailRecord) => void;
   busyDetailId: number | null;
+  completion?: RoutineCompletionControls;
 }) {
   const grouped = groupDetailsByDay(details);
   const days = Object.keys(grouped)
@@ -225,6 +239,7 @@ export function RoutineViewer({
     .sort((a, b) => a - b);
   const defaultOpenDays = days.length > 0 ? [`day-${days[0]}`] : [];
   const primaryGoalLabel = getPrimaryGoalLabel(routine.primary_goal);
+  const completedIds = new Set(completion?.completedDetailIds ?? []);
 
   return (
     <Card className="border-border/70 bg-card/80 shadow-sm backdrop-blur-sm">
@@ -279,11 +294,13 @@ export function RoutineViewer({
 
         {days.length > 0 ? (
           <Accordion type="multiple" defaultValue={defaultOpenDays} className="space-y-4">
-            {days.map((day) => (
+            {days.map((day) => {
+              const progress = getDayProgress(grouped[day], completedIds);
+              return (
               <AccordionItem
                 key={day}
                 value={`day-${day}`}
-                className="overflow-hidden rounded-2xl border border-border/70 bg-background/40 px-0 shadow-sm"
+                className={cn("overflow-hidden rounded-2xl border border-border/70 bg-background/40 px-0 shadow-sm", completion && progress.isComplete && "border-emerald-500/50")}
               >
                 <AccordionTrigger className="px-5 py-5 hover:bg-muted/20 hover:no-underline">
                   <div className="flex flex-1 flex-wrap items-center justify-between gap-3 pr-2 text-left">
@@ -297,10 +314,28 @@ export function RoutineViewer({
                           : "Expande este día para ver el detalle."}
                       </p>
                     </div>
-                    <Badge variant="secondary">{grouped[day].length} ejercicios</Badge>
+                    <Badge variant={completion && progress.isComplete ? "success" : "secondary"}>
+                      {completion ? (progress.isComplete ? "Día completado" : `${progress.completed} de ${progress.total} completados`) : `${grouped[day].length} ejercicios`}
+                    </Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="px-5 pb-5">
+                  {completion ? (
+                    <div className="mb-5 space-y-3 rounded-2xl border border-border/60 bg-background/50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p role="status" className="flex items-center gap-2 text-sm font-medium">
+                          {progress.isComplete ? <IconCircleCheck className="h-5 w-5 text-emerald-500" /> : null}
+                          {progress.isComplete ? "¡Completaste todos los ejercicios!" : `${progress.completed} de ${progress.total} ejercicios completados`}
+                        </p>
+                        <Button type="button" variant="outline" size="sm" className="min-h-11 rounded-full" disabled={completion.isSaving || progress.completed === 0} onClick={() => completion.onResetDay(day)} aria-label={`Reiniciar día ${day}`}>
+                          <IconRefresh className="h-4 w-4" /> Reiniciar día
+                        </Button>
+                      </div>
+                      <div role="progressbar" aria-label={`Avance del día ${day}`} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.completed} className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${progress.completed / progress.total * 100}%` }} />
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="space-y-4">
                     {grouped[day].map((detail) => {
                       const editor = editors[detail.id] || buildEditorState(detail);
@@ -317,13 +352,16 @@ export function RoutineViewer({
                           onEditorChange={onEditorChange}
                           onReplace={onReplace}
                           onSave={onSave}
+                          completion={completion}
+                          completed={completedIds.has(detail.id)}
                         />
                       );
                     })}
                   </div>
                 </AccordionContent>
               </AccordionItem>
-            ))}
+              );
+            })}
           </Accordion>
         ) : null}
       </CardContent>
@@ -340,6 +378,8 @@ function ExerciseCard({
   onEditorChange,
   onReplace,
   onSave,
+  completion,
+  completed,
 }: {
   detail: RoutineDetailRecord;
   editable: boolean;
@@ -349,12 +389,14 @@ function ExerciseCard({
   onEditorChange: (detailId: number, patch: Partial<DetailEditorState>) => void;
   onReplace: (detail: RoutineDetailRecord) => void;
   onSave: (detailId: number) => Promise<void>;
+  completion?: RoutineCompletionControls;
+  completed: boolean;
 }) {
   const tone = getBlockTone(detail.block_type);
   const demoHref = isExerciseMediaStoredLocally(detail.exercise_image_url) ? detail.exercise_image_url : null;
 
   return (
-    <article className="group relative overflow-hidden rounded-[28px] border border-border/70 bg-card/75 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:bg-card/90 hover:shadow-lg hover:shadow-black/10">
+    <article className={cn("group relative overflow-hidden rounded-[28px] border border-border/70 bg-card/75 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:bg-card/90 hover:shadow-lg hover:shadow-black/10", completion && completed && "border-emerald-500/50 bg-emerald-500/5")}>
       <div className={cn("absolute inset-x-0 top-0 h-px bg-gradient-to-r to-transparent", tone.glow)} />
       <div className={cn("absolute bottom-0 left-0 top-0 w-1", tone.rail)} />
 
@@ -426,6 +468,21 @@ function ExerciseCard({
             <ExerciseMetric icon={<IconBolt className="h-4 w-4" />} label="Duración" value={detail.duration_minutes ? `${detail.duration_minutes} min` : "-"} />
             <ExerciseMetric icon={<IconFlame className="h-4 w-4" />} label="RIR" value={detail.target_rir?.toString() || "-"} />
           </div>
+
+          {completion ? (
+            <Button
+              type="button"
+              variant="outline"
+              className={cn("min-h-12 w-full whitespace-normal rounded-2xl px-4 py-3 text-sm font-semibold", completed && "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300")}
+              aria-pressed={completed}
+              aria-label={`${completed ? "Desmarcar" : "Marcar como completado"}: ${detail.exercise_name_snapshot || "Ejercicio"}`}
+              disabled={completion.isSaving}
+              onClick={() => completion.onToggle(detail.id, !completed)}
+            >
+              {completion.isSaving && completion.pendingDetailId === detail.id ? <IconLoader2 className="h-5 w-5 animate-spin" /> : completed ? <IconCircleCheck className="h-5 w-5" /> : <IconCircle className="h-5 w-5" />}
+              {completion.isSaving && completion.pendingDetailId === detail.id ? "Guardando..." : completed ? "Completado · Desmarcar" : "Marcar como completado"}
+            </Button>
+          ) : null}
 
           {editable ? (
             <div className="rounded-3xl border border-border/70 bg-background/45 p-4 shadow-inner shadow-black/5">

@@ -49,12 +49,10 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
   const membership = customer.current_membership;
   const accountStatus = customer.account.login_enabled ? "Acceso configurado" : "Acceso pendiente";
   const credentialsStatus = customer.account.login_enabled
-    ? "Correo y contraseña configurados"
-    : customer.account.email && !customer.account.has_password
-      ? "Tiene correo y no tiene contraseña"
-      : !customer.account.email
-        ? "No tiene correo configurado"
-        : "Contraseña registrada; acceso pendiente";
+    ? "Contraseña configurada; acceso con correo o teléfono registrado"
+    : !customer.account.has_password
+      ? "Primer ingreso pendiente; verifica su teléfono registrado"
+      : "Revisa el correo o teléfono registrado";
   const initials = customer.full_name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   return (

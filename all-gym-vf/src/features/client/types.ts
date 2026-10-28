@@ -1,4 +1,5 @@
 import type { CustomerRoutineWorkspace } from "@/lib/training/types";
+import type { RoutineProgress } from "@/features/client/lib/routine-progress";
 
 export interface ClientApiMeta {
   fetched_at: string;
@@ -60,4 +61,5 @@ export interface ClientMembershipPayload {
 export interface ClientRoutinePayload {
   customer_name: string;
   workspace: CustomerRoutineWorkspace;
+  progress: RoutineProgress;
 }

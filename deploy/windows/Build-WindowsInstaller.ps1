@@ -62,7 +62,8 @@ $signature = Get-AuthenticodeSignature "$payload\runtime\vc_redist.x64.exe"
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
     throw 'El redistribuible de Microsoft no tiene una firma válida.'
 }
-Expand-Archive -LiteralPath $nodeZip -DestinationPath "$stage\node"
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::ExtractToDirectory($nodeZip, "$stage\node")
 Move-Item "$stage\node\node-v24.16.0-win-x64" "$payload\runtime\node"
 [IO.Directory]::CreateDirectory("$payload\runtime\postgres") | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -101,6 +102,21 @@ finally { Pop-Location }
 Copy-Item "$stage\sources\web\.next\standalone" "$payload\web" -Recurse
 Copy-Item "$stage\sources\web\.next\static" "$payload\web\.next\static" -Recurse
 Copy-Item "$stage\sources\web\public" "$payload\web\public" -Recurse
+# Next's dependency tracing may omit native DLLs loaded dynamically by sharp.
+$sharpLib = 'node_modules\@img\sharp-win32-x64\lib'
+foreach ($dll in @('libvips-42.dll', 'libvips-cpp-8.17.3.dll')) {
+    $sourceDll = Join-Path "$stage\sources\web\$sharpLib" $dll
+    if (-not (Test-Path -LiteralPath $sourceDll)) { throw "Falta dependencia nativa de sharp: $dll" }
+    Copy-Item -LiteralPath $sourceDll -Destination "$payload\web\$sharpLib\$dll" -Force
+}
+Write-Utf8File "$stage\verify-sharp.cjs" @'
+const path = require('node:path');
+const sharp = require('node:module').createRequire(path.join(process.argv[2], 'package.json'))('sharp');
+sharp({create:{width:2,height:2,channels:3,background:'#000'}}).png().toBuffer()
+  .then(buffer => { if (buffer.length < 8) process.exit(1); })
+  .catch(error => { console.error(error.message); process.exit(1); });
+'@
+Invoke-Checked $node @("$stage\verify-sharp.cjs", "$payload\web")
 
 Push-Location "$stage\sources\backend"
 try {

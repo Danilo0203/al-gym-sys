@@ -1,11 +1,25 @@
 import { z } from "zod";
+import { normalizeGuatemalaPhoneForAuth } from "./identifiers";
+
+const authPhoneSchema = z.string().trim().max(40)
+  .refine((value) => normalizeGuatemalaPhoneForAuth(value) !== null, "Teléfono inválido")
+  .transform((value) => normalizeGuatemalaPhoneForAuth(value)!);
+
+export const authPhoneAccessRequestSchema = z.object({ phone: authPhoneSchema }).strict();
+export const authPhoneAccessResponseSchema = z.object({ requiresPasswordSetup: z.boolean() }).strict();
+export const authFirstAccessRequestSchema = z.object({
+  phone: authPhoneSchema, password: z.string().min(8).max(128),
+}).strict();
 
 export const authLoginRequestSchema = z
   .object({
-    email: z.string().trim().toLowerCase().email(),
+    email: z.string().trim().toLowerCase().email().optional(),
+    phone: authPhoneSchema.optional(),
     password: z.string().min(1).max(256),
   })
-  .strict();
+  .strict().refine((value) => Boolean(value.email) !== Boolean(value.phone), {
+    message: "Indica un correo o un teléfono",
+  });
 
 export const authChangePasswordRequestSchema = z
   .object({

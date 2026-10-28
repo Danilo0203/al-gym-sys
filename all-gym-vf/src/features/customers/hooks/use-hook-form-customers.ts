@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { normalizeGuatemalaPhoneForAuth } from "@/lib/auth/identifiers";
 import { useQueryClient } from "@tanstack/react-query";
 import * as z from "zod";
 import { addMonths, differenceInDays, endOfMonth } from "date-fns";
@@ -280,11 +281,11 @@ function createCustomerSheetSchema(localAccountValidation: boolean) {
         });
       }
 
-      if (value.password && !value.email) {
+      if (value.password && !value.email && !normalizeGuatemalaPhoneForAuth(value.phone)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["email"],
-          message: "La contraseña requiere correo",
+          message: "La contraseña requiere correo o teléfono válido",
         });
       }
 

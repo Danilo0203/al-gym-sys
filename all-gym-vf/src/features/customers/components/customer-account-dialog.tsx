@@ -32,14 +32,6 @@ const accountFormSchema = z
     confirm_new_password: z.string(),
   })
   .superRefine((value, context) => {
-    if (value.new_password && !value.email) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["email"],
-        message: "La contraseña requiere correo",
-      });
-    }
-
     if (value.new_password !== value.confirm_new_password) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -140,7 +132,7 @@ export function CustomerAccountDialog({
         <DialogHeader>
           <DialogTitle>Editar cuenta</DialogTitle>
           <DialogDescription>
-            Administra el correo y las credenciales locales de {customer.full_name}.
+            Administra el acceso de {customer.full_name}. También puede ingresar con su teléfono registrado: {customer.phone || "sin teléfono"}.
           </DialogDescription>
         </DialogHeader>
 

@@ -16,6 +16,7 @@ import {
   IconBarbell,
   IconLoader2,
   IconPlus,
+  IconPencil,
   IconUser,
 } from "@tabler/icons-react";
 
@@ -122,6 +123,7 @@ function detailToRoutineDetail(d: BlueprintDetailRecord): RoutineDetailRecord {
 }
 
 interface BlueprintDetailViewProps {
+  canManage: boolean;
   data: {
     blueprint: BlueprintRecord;
     details: BlueprintDetailRecord[];
@@ -360,7 +362,7 @@ function AssignDialog({ blueprintId }: { blueprintId: string }) {
   );
 }
 
-export function BlueprintDetailView({ data }: BlueprintDetailViewProps) {
+export function BlueprintDetailView({ data, canManage }: BlueprintDetailViewProps) {
   const { blueprint, details, assignments } = data;
   const routineRecord = blueprintToRoutineRecord(blueprint);
   const detailRecords = details.map(detailToRoutineDetail);
@@ -378,7 +380,16 @@ export function BlueprintDetailView({ data }: BlueprintDetailViewProps) {
             Volver a plantillas
           </Link>
         </Button>
-        <AssignDialog blueprintId={blueprint.id} />
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/panel/rutinas/${blueprint.id}/editar`}>
+                <IconPencil className="size-4" />Editar plantilla
+              </Link>
+            </Button>
+            <AssignDialog blueprintId={blueprint.id} />
+          </div>
+        )}
       </div>
 
       <RoutineViewer

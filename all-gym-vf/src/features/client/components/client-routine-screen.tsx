@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   IconBarbell,
   IconChecklist,
@@ -12,7 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientErrorState, ClientLoadingState } from "@/features/client/components/client-resource-state";
 import { ClientSyncStatus } from "@/features/client/components/client-sync-status";
-import { useClientRoutine } from "@/features/client/hooks/use-client-api";
+import { useClientRoutine, useRoutineProgress } from "@/features/client/hooks/use-client-api";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { getDayProgress } from "@/lib/training/routine-progress";
 import {
   buildTrainingContextHelper,
   getPrimaryGoalLabel,
@@ -25,12 +29,14 @@ import {
 
 export function ClientRoutineScreen() {
   const routineQuery = useClientRoutine();
+  const progressMutation = useRoutineProgress();
+  const [resetTarget, setResetTarget] = useState<{ routineId: string; day: number } | null>(null);
 
   if (routineQuery.isPending) {
     return <ClientLoadingState title="Cargando tu rutina actual..." />;
   }
 
-  if (routineQuery.isError) {
+  if (!routineQuery.data) {
     return (
       <ClientErrorState
         title="No fue posible cargar tu rutina"
@@ -45,6 +51,10 @@ export function ClientRoutineScreen() {
   const dayCount = getRoutineDayCount(data.workspace.activeDetails);
   const exerciseCount = getRoutineExerciseCount(data.workspace.activeDetails);
   const primaryGoalLabel = getPrimaryGoalLabel(activeRoutine?.primary_goal);
+  const completedDetailIds = data.progress?.routineId === activeRoutine?.id ? data.progress?.completedDetailIds ?? [] : [];
+  const completedIds = new Set(completedDetailIds);
+  const completedDays = [...new Set(data.workspace.activeDetails.map((detail) => detail.day_of_week))]
+    .filter((day) => getDayProgress(data.workspace.activeDetails.filter((detail) => detail.day_of_week === day), completedIds).isComplete).length;
 
   return (
     <div className="space-y-6 pb-4">
@@ -55,7 +65,7 @@ export function ClientRoutineScreen() {
           <div className="flex flex-col gap-6 p-5 md:p-7">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-4">
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                   <IconSparkles className="h-3.5 w-3.5" />
                   Rutina lista para entrenar
                 </div>
@@ -98,9 +108,9 @@ export function ClientRoutineScreen() {
                 />
                 <ClientMetricCard
                   icon={<IconChecklist className="h-4 w-4" />}
-                  label="Carga total"
-                  value={`${exerciseCount} ejercicios`}
-                  helper={`${dayCount} días planificados esta semana`}
+                  label="Tu avance"
+                  value={`${completedDays} de ${dayCount} días completados`}
+                  helper={`${getDayProgress(data.workspace.activeDetails, completedIds).completed} de ${exerciseCount} ejercicios completados`}
                 />
                 <ClientMetricCard
                   icon={<IconClockHour4 className="h-4 w-4" />}
@@ -152,10 +162,16 @@ export function ClientRoutineScreen() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs text-primary">
                 <IconMoodSmile className="h-3.5 w-3.5" />
-                Sigue el orden por día y bloque para aprovechar mejor la sesión.
+                Tu avance se conserva hasta que elijas reiniciar el día.
               </div>
             </div>
           </div>
+
+          {progressMutation.isError ? (
+            <p role="alert" className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+              {progressMutation.error.message}
+            </p>
+          ) : null}
 
           <RoutineViewer
             title="Rutina aprobada"
@@ -167,7 +183,38 @@ export function ClientRoutineScreen() {
             onSave={async () => undefined}
             onReplace={() => undefined}
             busyDetailId={null}
+            completion={{
+              completedDetailIds,
+              isSaving: progressMutation.isPending,
+              pendingDetailId: progressMutation.variables && "detailId" in progressMutation.variables ? progressMutation.variables.detailId : null,
+              onToggle: (detailId, completed) => progressMutation.mutate({ routineId: activeRoutine.id, detailId, completed }, {
+                onError: (error) => toast.error(error.message),
+              }),
+              onResetDay: (day) => { progressMutation.reset(); setResetTarget({ routineId: activeRoutine.id, day }); },
+            }}
           />
+
+          <AlertDialog open={resetTarget !== null} onOpenChange={(open) => { if (!open && !progressMutation.isPending) setResetTarget(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Reiniciar día {resetTarget?.day}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Los ejercicios de este día volverán a estar pendientes para que puedas repetir la sesión. El avance de los demás días se conservará.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {progressMutation.isError ? <p role="alert" className="text-sm text-destructive">{progressMutation.error.message}</p> : null}
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={progressMutation.isPending}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction disabled={progressMutation.isPending} onClick={(event) => {
+                  event.preventDefault();
+                  if (resetTarget === null) return;
+                  progressMutation.mutate(resetTarget, { onSuccess: () => setResetTarget(null) });
+                }}>
+                  {progressMutation.isPending ? "Reiniciando..." : "Reiniciar día"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       )}
     </div>

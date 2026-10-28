@@ -82,6 +82,7 @@ export interface CreateBlueprintDayInput {
     rest_seconds: number | null;
     duration_minutes: number | null;
     target_rir: number | null;
+    notes?: string | null;
   }>;
 }
 
@@ -114,6 +115,7 @@ async function requestBlueprints(path: string, init: RequestInit = {}) {
 function refreshBlueprint(blueprintId: string) {
   revalidatePath("/panel/rutinas");
   revalidatePath(`/panel/rutinas/${blueprintId}`);
+  revalidatePath(`/panel/rutinas/${blueprintId}/editar`);
 }
 
 function refreshCustomer(userId: string) {
@@ -138,6 +140,15 @@ export async function getRoutineBlueprintDetail(blueprintId: string) {
 export async function createRoutineBlueprintFromScratch(input: CreateBlueprintInput) {
   const response = await requestBlueprints("", {
     method: "POST", body: JSON.stringify(input),
+  });
+  const result = await parseCustomerApiResponse(response, (value) => idResultSchema.parse(value));
+  refreshBlueprint(result.blueprintId);
+  return result;
+}
+
+export async function updateRoutineBlueprint(blueprintId: string, input: CreateBlueprintInput) {
+  const response = await requestBlueprints(`/${encodeURIComponent(blueprintId)}`, {
+    method: "PUT", body: JSON.stringify(input),
   });
   const result = await parseCustomerApiResponse(response, (value) => idResultSchema.parse(value));
   refreshBlueprint(result.blueprintId);

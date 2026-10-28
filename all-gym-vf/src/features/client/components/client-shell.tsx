@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconCreditCard, IconUserCircle, IconBarbell, IconWifi, IconWifiOff } from "@tabler/icons-react";
+import { ModeToggle } from "@/components/layout/ThemeToggle/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ClientSignOutButton } from "@/features/client/components/client-sign-out-button";
@@ -37,26 +38,27 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto flex min-h-svh max-w-4xl flex-col">
         <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="flex items-center justify-between gap-3 rounded-[24px] border border-border/60 bg-card/65 px-4 py-3 shadow-sm">
-            <div className="space-y-1 min-w-0">
+            <div className="min-w-0 flex-1 space-y-1">
               <p className="text-[10px] uppercase tracking-[0.28em] text-muted-foreground">All Gym Member</p>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black tracking-tight">Mi espacio</h1>
-                <span className="text-muted-foreground/50">/</span>
+                <h1 className="shrink-0 text-lg font-black tracking-tight">Mi espacio</h1>
+                <span className="shrink-0 text-muted-foreground/50">/</span>
                 <p className="truncate text-sm font-medium text-muted-foreground">{activeItem.label}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <span
                 className={cn(
                   "hidden items-center gap-1.5 rounded-full border px-3 py-1 text-xs sm:inline-flex",
                   isOnline
-                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
-                    : "border-amber-500/25 bg-amber-500/10 text-amber-300",
+                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
                 )}
               >
                 {isOnline ? <IconWifi className="h-3.5 w-3.5" /> : <IconWifiOff className="h-3.5 w-3.5" />}
                 {isOnline ? "Conectado" : "Sin conexión"}
               </span>
+              <ModeToggle />
               <ClientSignOutButton />
             </div>
           </div>

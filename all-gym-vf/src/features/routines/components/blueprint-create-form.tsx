@@ -24,7 +24,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,8 +42,11 @@ import { cn } from "@/lib/utils";
 import { ExerciseSelectorDialog } from "@/features/exercises/components/exercise-selector-dialog";
 import {
   createRoutineBlueprintFromScratch,
+  updateRoutineBlueprint,
   type CreateBlueprintInput,
 } from "@/features/routines/actions/blueprint-actions";
+import { blueprintDays, optionalMetric, validateBlueprintDays,
+  type BlueprintEditorData, type LocalDay, type LocalExercise } from "../lib/blueprint-editor";
 
 const BLOCK_TYPE_OPTIONS: Array<{ label: string; value: RoutineBlockType }> = [
   { label: "Calentamiento", value: "warmup" },
@@ -60,24 +62,6 @@ function tempId(): string {
   return `temp_${nextTempId}`;
 }
 
-interface LocalExercise {
-  tempId: string;
-  exercise_id: number | null;
-  exercise_name: string | null;
-  exercise_image_url: string | null;
-  block_type: RoutineBlockType;
-  sets: string;
-  reps: string;
-  rest_seconds: string;
-  duration_minutes: string;
-  target_rir: string;
-}
-
-interface LocalDay {
-  tempId: string;
-  exercises: LocalExercise[];
-}
-
 function emptyExercise(): LocalExercise {
   return {
     tempId: tempId(),
@@ -90,6 +74,7 @@ function emptyExercise(): LocalExercise {
     rest_seconds: "",
     duration_minutes: "",
     target_rir: "",
+    notes: null,
   };
 }
 
@@ -102,16 +87,25 @@ function emptyDay(): LocalDay {
 
 type GoalMode = "preset" | "custom";
 
-export function BlueprintCreateForm() {
+function goalMode(value: string | null | undefined): GoalMode {
+  return value && !PRIMARY_GOAL_OPTIONS.some((option) => option.value === value) ? "custom" : "preset";
+}
+
+export function BlueprintCreateForm({ initialData }: { initialData?: BlueprintEditorData }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [primaryGoalMode, setPrimaryGoalMode] = useState<GoalMode>("preset");
-  const [primaryGoalValue, setPrimaryGoalValue] = useState("");
-  const [primaryGoalCustom, setPrimaryGoalCustom] = useState("");
-  const [secondaryGoalMode, setSecondaryGoalMode] = useState<GoalMode | "empty">("empty");
-  const [secondaryGoalValue, setSecondaryGoalValue] = useState("");
-  const [secondaryGoalCustom, setSecondaryGoalCustom] = useState("");
-  const [days, setDays] = useState<LocalDay[]>([emptyDay()]);
+  const blueprintId = initialData?.blueprint.id;
+  const primaryGoal = initialData?.blueprint.primary_goal;
+  const secondaryGoal = initialData?.blueprint.secondary_goal;
+  const [title, setTitle] = useState(initialData?.blueprint.name ?? "");
+  const [primaryGoalMode, setPrimaryGoalMode] = useState<GoalMode>(goalMode(primaryGoal));
+  const [primaryGoalValue, setPrimaryGoalValue] = useState(primaryGoal ?? "");
+  const [primaryGoalCustom, setPrimaryGoalCustom] = useState(primaryGoal ?? "");
+  const [secondaryGoalMode, setSecondaryGoalMode] = useState<GoalMode | "empty">(secondaryGoal ? goalMode(secondaryGoal) : "empty");
+  const [secondaryGoalValue, setSecondaryGoalValue] = useState(secondaryGoal ?? "");
+  const [secondaryGoalCustom, setSecondaryGoalCustom] = useState(secondaryGoal ?? "");
+  const [days, setDays] = useState<LocalDay[]>(() => initialData?.details.length
+    ? blueprintDays(initialData.details)
+    : [{ tempId: "initial_day", exercises: [{ ...emptyExercise(), tempId: "initial_exercise" }] }]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Exercise selector dialog state
@@ -149,7 +143,7 @@ export function BlueprintCreateForm() {
   );
 
   const addDay = useCallback(() => {
-    setDays((prev) => [...prev, emptyDay()]);
+    setDays((prev) => prev.length < 7 ? [...prev, emptyDay()] : prev);
   }, []);
 
   const removeDay = useCallback((dayTempId: string) => {
@@ -163,7 +157,7 @@ export function BlueprintCreateForm() {
     setDays((prev) =>
       prev.map((day) => {
         if (day.tempId !== dayTempId) return day;
-        return { ...day, exercises: [...day.exercises, emptyExercise()] };
+        return day.exercises.length < 60 ? { ...day, exercises: [...day.exercises, emptyExercise()] } : day;
       }),
     );
   }, []);
@@ -246,15 +240,10 @@ export function BlueprintCreateForm() {
     if (!pg) return "El objetivo principal es obligatorio.";
     if (primaryGoalMode === "custom" && !primaryGoalCustom.trim()) return "Debes escribir el objetivo principal personalizado.";
     if (secondaryGoalMode === "custom" && !secondaryGoalCustom.trim()) return "Debes escribir el objetivo secundario personalizado.";
-    if (days.length === 0) return "Debe tener al menos un día.";
-    if (totalExercises === 0) return "Debe tener al menos un ejercicio.";
-    for (const day of days) {
-      for (const ex of day.exercises) {
-        if (!ex.exercise_id) return "Todos los ejercicios deben tener un ejercicio seleccionado.";
-      }
-    }
-    return null;
-  }, [title, days, primaryGoalMode, primaryGoalCustom, secondaryGoalMode, secondaryGoalCustom, totalExercises, getPrimaryGoal]);
+    if (title.trim().length > 160) return "El título no puede superar los 160 caracteres.";
+    if (pg.length > 80 || (getSecondaryGoal()?.length ?? 0) > 80) return "Los objetivos no pueden superar los 80 caracteres.";
+    return validateBlueprintDays(days);
+  }, [title, days, primaryGoalMode, primaryGoalCustom, secondaryGoalMode, secondaryGoalCustom, getPrimaryGoal, getSecondaryGoal]);
 
   const handleSave = useCallback(async () => {
     const error = validate();
@@ -273,29 +262,39 @@ export function BlueprintCreateForm() {
           exercises: day.exercises.map((ex) => ({
             exercise_id: ex.exercise_id!,
             block_type: ex.block_type,
-            sets: ex.sets.trim() ? Number(ex.sets.trim()) || null : null,
+            sets: optionalMetric(ex.sets),
             reps: ex.reps.trim() || null,
-            rest_seconds: ex.rest_seconds.trim() ? Number(ex.rest_seconds.trim()) || null : null,
-            duration_minutes: ex.duration_minutes.trim() ? Number(ex.duration_minutes.trim()) || null : null,
-            target_rir: ex.target_rir.trim() ? Number(ex.target_rir.trim()) || null : null,
+            rest_seconds: optionalMetric(ex.rest_seconds),
+            duration_minutes: optionalMetric(ex.duration_minutes),
+            target_rir: optionalMetric(ex.target_rir),
+            notes: ex.notes,
           })),
         })),
       };
 
-      const result = await createRoutineBlueprintFromScratch(input);
+      const result = blueprintId
+        ? await updateRoutineBlueprint(blueprintId, input)
+        : await createRoutineBlueprintFromScratch(input);
       if (result.success) {
-        toast.success("Plantilla creada correctamente.");
+        toast.success(blueprintId ? "Plantilla actualizada correctamente." : "Plantilla creada correctamente.");
         router.push(`/panel/rutinas/${result.blueprintId}`);
+        router.refresh();
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al crear la plantilla.");
+      toast.error(err instanceof Error ? err.message : "Error al guardar la plantilla.");
     } finally {
       setIsSaving(false);
     }
-  }, [title, days, validate, getPrimaryGoal, getSecondaryGoal, router]);
+  }, [blueprintId, title, days, validate, getPrimaryGoal, getSecondaryGoal, router]);
 
   return (
-    <div className="space-y-6">
+    <fieldset disabled={isSaving} className="min-w-0 space-y-6">
+      {blueprintId && (
+        <p className="rounded-xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+          Los cambios se aplicarán a las próximas asignaciones. Los clientes que ya tienen esta plantilla
+          conservarán su rutina actual y su progreso.
+        </p>
+      )}
       {/* Metadata section */}
       <Card className="border-border/70 bg-card/80 shadow-sm">
         <CardHeader className="border-b border-border/60 pb-5">
@@ -399,7 +398,7 @@ export function BlueprintCreateForm() {
                 <span>·</span>
                 <span>{totalExercises} ejercicio{totalExercises !== 1 ? "s" : ""}</span>
               </div>
-              <Button size="sm" onClick={addDay} variant="outline">
+              <Button size="sm" onClick={addDay} variant="outline" disabled={days.length >= 7}>
                 <IconPlus className="size-4" />
                 Agregar día
               </Button>
@@ -438,13 +437,13 @@ export function BlueprintCreateForm() {
 
       {/* Footer */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/80 p-4 shadow-sm">
-        <Button variant="outline" onClick={() => router.back()}>
+        <Button variant="outline" onClick={() => blueprintId ? router.push(`/panel/rutinas/${blueprintId}`) : router.back()}>
           <IconArrowLeft className="size-4" />
           Cancelar
         </Button>
         <Button onClick={handleSave} disabled={isSaving}>
           <IconDeviceFloppy className="size-4" />
-          {isSaving ? "Guardando..." : "Guardar plantilla"}
+          {isSaving ? "Guardando..." : blueprintId ? "Guardar cambios" : "Guardar plantilla"}
         </Button>
       </div>
 
@@ -453,7 +452,7 @@ export function BlueprintCreateForm() {
         onOpenChange={setSelectorOpen}
         onSelect={handleExerciseSelect}
       />
-    </div>
+    </fieldset>
   );
 }
 
@@ -506,44 +505,40 @@ function SortableDay({
           value={`day-${day.tempId}`}
           className="overflow-hidden rounded-2xl border border-border/70 bg-background/40 px-0 shadow-sm"
         >
-          <AccordionTrigger className="px-5 py-5 hover:bg-muted/20 hover:no-underline">
-            <div className="flex flex-1 flex-wrap items-center justify-between gap-3 pr-2 text-left">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="cursor-grab touch-none text-muted-foreground/60 hover:text-muted-foreground"
-                  {...attributes}
-                  {...listeners}
-                >
-                  <IconGripVertical className="size-5" />
-                </button>
-                <div className="space-y-1">
-                  <h4 className="text-base font-semibold uppercase tracking-[0.18em] text-foreground/90">
+          <div className="flex items-center gap-2 px-5">
+            <button
+              type="button"
+              aria-label={`Mover día ${dayIndex + 1}`}
+              className="cursor-grab touch-none text-muted-foreground/60 hover:text-muted-foreground"
+              {...attributes}
+              {...listeners}
+            >
+              <IconGripVertical className="size-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <AccordionTrigger className="py-5 hover:bg-muted/20 hover:no-underline">
+                <span className="space-y-1 text-left">
+                  <span className="block text-base font-semibold uppercase tracking-[0.18em] text-foreground/90">
                     Día {dayIndex + 1}
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
+                  </span>
+                  <span className="block text-sm text-muted-foreground">
                     {day.exercises.length} ejercicio{day.exercises.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{day.exercises.length} ejercicios</Badge>
-                {!isOnlyDay ? (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemove();
-                    }}
-                  >
-                    <IconTrash className="size-4" />
-                  </Button>
-                ) : null}
-              </div>
+                  </span>
+                </span>
+              </AccordionTrigger>
             </div>
-          </AccordionTrigger>
+            {!isOnlyDay ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={`Quitar día ${dayIndex + 1}`}
+                className="size-8 text-muted-foreground hover:text-destructive"
+                onClick={onRemove}
+              >
+                <IconTrash className="size-4" />
+              </Button>
+            ) : null}
+          </div>
           <AccordionContent className="px-5 pb-5">
             <DndContext
               sensors={useSensors(
@@ -570,7 +565,7 @@ function SortableDay({
               </SortableContext>
             </DndContext>
             <div className="mt-4">
-              <Button variant="outline" size="sm" onClick={onAddExercise}>
+              <Button variant="outline" size="sm" onClick={onAddExercise} disabled={day.exercises.length >= 60}>
                 <IconPlus className="size-4" />
                 Agregar ejercicio
               </Button>
@@ -666,6 +661,7 @@ function SortableExercise({
                 variant="ghost"
                 className="size-8 text-muted-foreground hover:text-destructive"
                 onClick={onRemove}
+                aria-label={`Quitar ejercicio ${exIndex + 1}`}
               >
                 <IconTrash className="size-4" />
               </Button>
@@ -737,6 +733,7 @@ function ExerciseField({
         <span className="text-[10px] font-semibold uppercase tracking-[0.15em]">{label}</span>
       </div>
       <Input
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         inputMode={inputMode}

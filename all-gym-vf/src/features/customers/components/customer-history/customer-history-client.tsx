@@ -210,12 +210,10 @@ export function CustomerHistoryClient({
     ? "Acceso configurado"
     : "Acceso pendiente";
   const credentialsStatus = profile.account.login_enabled
-    ? "Correo y contraseña configurados"
-    : profile.account.email && !profile.account.has_password
-      ? "Tiene correo y no tiene contraseña"
-      : !profile.account.email
-        ? "No tiene correo configurado"
-        : "Contraseña registrada; acceso pendiente";
+    ? "Contraseña configurada; acceso con correo o teléfono registrado"
+    : !profile.account.has_password
+      ? "Primer ingreso pendiente; verifica su teléfono registrado"
+      : "Revisa el correo o teléfono registrado";
 
   const handleStatusChange = async () => {
     try {
