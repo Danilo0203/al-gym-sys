@@ -1,6 +1,6 @@
 "use client";
 
-import { deleteUser, registerUserBiometric, type UserData } from "../actions/user-actions";
+import { deleteUser, registerUserBiometric, updateUser, type UserData } from "../actions/user-actions";
 import { DataTable } from "@/components/ui/table/data-table";
 import { DataTableToolbar } from "@/components/ui/table/data-table-toolbar";
 import { useDataTable } from "@/hooks/use-data-table";
@@ -12,6 +12,7 @@ import { es } from "date-fns/locale";
 import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { UserFormSheet } from "./user-form-sheet";
+import { RoleTransitionButton } from "./role-transition-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +27,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DataTableColumnHeader } from "@/components/ui/table/data-table-column-header";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { IconEdit, IconFingerprint, IconTrash } from "@tabler/icons-react";
+import { IconEdit, IconFingerprint, IconTrash, IconUserCheck, IconUserOff } from "@tabler/icons-react";
 import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 
 interface UsersTableProps {
@@ -47,6 +48,27 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
   const [userForBiometric, setUserForBiometric] = useState<UserData | null>(null);
   const [isBiometricOpen, setIsBiometricOpen] = useState(false);
   const [isRegisteringBiometric, setIsRegisteringBiometric] = useState(false);
+  const [userForStatus, setUserForStatus] = useState<UserData | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  const handleStatusChange = async () => {
+    if (!userForStatus || isUpdatingStatus) return;
+    setIsUpdatingStatus(true);
+    try {
+      const result = await updateUser({ id: userForStatus.id, is_active: !userForStatus.is_active });
+      if (!result.success) {
+        toast.error(result.error ?? "No se pudo cambiar el estado");
+        return;
+      }
+      toast.success(userForStatus.is_active ? "Usuario desactivado. Se conservó su historial." : "Usuario reactivado.");
+      setUserForStatus(null);
+      router.refresh();
+    } catch {
+      toast.error("No se pudo cambiar el estado");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const handleRegisterBiometric = async () => {
     if (!userForBiometric || isRegisteringBiometric) return;
@@ -225,6 +247,22 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
                 </TooltipProvider>
               )}
 
+              {canUpdateUsers && user.id !== currentUser?.id && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8"
+                        onClick={() => setUserForStatus(user)}>
+                        {user.is_active ? <IconUserOff className="h-4 w-4 text-amber-500" /> : <IconUserCheck className="h-4 w-4 text-emerald-500" />}
+                        <span className="sr-only">{user.is_active ? "Desactivar usuario" : "Reactivar usuario"}</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{user.is_active ? "Desactivar usuario" : "Reactivar usuario"}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {user.role === "trainer" && <RoleTransitionButton profile={{ ...user, role: "trainer" }} compact />}
+
               {canDeleteUsers && (
                 <TooltipProvider>
                   <Tooltip>
@@ -253,7 +291,7 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
         },
       },
     ],
-    [canDeleteUsers, canUpdateUsers, roleNameMap],
+    [canDeleteUsers, canUpdateUsers, currentUser?.id, roleNameMap],
   );
 
   const { table } = useDataTable({
@@ -270,6 +308,26 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
       </DataTable>
 
       <UserFormSheet open={isFormOpen} onOpenChange={setIsFormOpen} user={selectedUser} />
+
+      <AlertDialog open={Boolean(userForStatus)} onOpenChange={(open) => { if (!open && !isUpdatingStatus) setUserForStatus(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{userForStatus?.is_active ? "Desactivar usuario" : "Reactivar usuario"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {userForStatus?.full_name || userForStatus?.email}: {userForStatus?.is_active
+                ? "se cerrarán sus sesiones y se bloqueará el acceso. Podrás reactivar esta misma cuenta después."
+                : "volverá a tener acceso con su rol actual."}
+              {" "}Se conservarán sus datos e historial y se solicitará actualizar el acceso en el reloj.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isUpdatingStatus}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction disabled={isUpdatingStatus} onClick={(event) => { event.preventDefault(); void handleStatusChange(); }}>
+              {isUpdatingStatus ? "Guardando…" : userForStatus?.is_active ? "Desactivar" : "Reactivar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={isBiometricOpen} onOpenChange={(open) => { if (!isRegisteringBiometric) setIsBiometricOpen(open); }}>
         <AlertDialogContent>
@@ -292,10 +350,11 @@ export function UsersTable({ data, roleNameMap = {} }: UsersTableProps) {
       <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Está seguro?</AlertDialogTitle>
+            <AlertDialogTitle>Eliminar acceso del usuario</AlertDialogTitle>
             <AlertDialogDescription>
-              Se desactivará la cuenta de <span className="font-bold">{userToDelete?.email}</span>
+              Se retirará de Usuarios la cuenta de <span className="font-bold">{userToDelete?.email}</span>
               {" "}y se cerrarán sus sesiones. Se conservará su historial.
+              {" "}Si podría volver, usa Desactivar. Para pasar a Clientes, usa Cambiar a cliente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

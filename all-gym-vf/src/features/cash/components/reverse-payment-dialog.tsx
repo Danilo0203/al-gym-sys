@@ -342,6 +342,7 @@ export function ReversePaymentDialog({
                               min="0"
                               step="0.01"
                               value={amountPaid}
+                              disabled={sourceCategory === "enrollment"}
                               onChange={(event) => setAmountPaid(event.target.value)}
                               placeholder="0.00"
                             />
@@ -367,6 +368,7 @@ export function ReversePaymentDialog({
                             min="0"
                             step="0.01"
                             value={discountAmount}
+                            disabled={sourceCategory === "enrollment"}
                             onChange={(event) => setDiscountAmount(event.target.value)}
                             placeholder="0.00"
                           />

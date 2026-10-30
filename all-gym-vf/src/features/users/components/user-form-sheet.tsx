@@ -41,7 +41,7 @@ export function UserFormSheet({ open, onOpenChange, user }: UserFormSheetProps) 
           <SheetDescription>
             {isEditing
               ? "Modifica los datos del usuario. Deja la contraseña en blanco para mantener la actual."
-              : "Crea un nuevo usuario interno para el sistema. Los clientes se registran desde Clientes."}
+              : "Crea un nuevo usuario interno. Si ya existe en Clientes, usa Cambiar a entrenador desde su ficha para conservar su cuenta e historial."}
           </SheetDescription>
         </SheetHeader>
 

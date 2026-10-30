@@ -1,5 +1,9 @@
 "use client";
 
+import { useCallback, useState } from "react";
+import { EnrollmentPanel } from "@/features/enrollment/enrollment-panel";
+import { collectionTotal, type EnrollmentQuote } from "@/features/enrollment/enrollment-types";
+
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -95,6 +99,20 @@ export function CustomerFormSheet({
   cashFlow,
   legacySubmit,
 }: CustomerFormSheetProps) {
+  const [enrollment, setEnrollment] = useState<EnrollmentQuote>();
+  const [enrollmentReady, setEnrollmentReady] = useState(false);
+  const [enrollmentRevision, setEnrollmentRevision] = useState(0);
+  const enrollmentChanged = useCallback((quote: EnrollmentQuote | undefined, ready: boolean) => {
+    setEnrollment(quote); setEnrollmentReady(ready);
+  }, []);
+  const submitWithEnrollment: CustomerFormSheetProps["legacySubmit"] = legacySubmit ? async (id, values, context) => {
+    if (!enrollmentReady) throw new Error("Espera a que se consulte la inscripción antes de cobrar.");
+    try {
+      const result = await legacySubmit(id, { ...values, enrollment }, context);
+      if ("success" in result && result.success === false) setEnrollmentRevision((n) => n + 1);
+      return result;
+    } catch (error) { setEnrollmentRevision((n) => n + 1); throw error; }
+  } : undefined;
   const {
     open,
     setOpen,
@@ -119,7 +137,7 @@ export function CustomerFormSheet({
     onOpenChange: controlledOnOpenChange,
     entrypoint,
     cashFlow,
-    legacySubmit,
+    legacySubmit: submitWithEnrollment,
   });
 
   // Trigger por defecto para modo crear
@@ -153,6 +171,11 @@ export function CustomerFormSheet({
               : "Completa la ficha y, si corresponde, asigna un plan. Pagos y caja se registran por separado.")}
           </SheetDescription>
         </SheetHeader>
+
+        {open && (entrypoint === "cash" || customer?.id) && <div className="px-6 pt-3">
+          <EnrollmentPanel key={`${customer?.id ?? "new"}-${enrollmentRevision}`} customerId={customer?.id}
+            selectForMembership={entrypoint === "cash"} disabled={isPending} onChange={enrollmentChanged} />
+        </div>}
 
         {isEditing && customer?.is_active === false && (
           <div className="bg-destructive/10 px-6 py-3 flex items-center justify-between border-b border-destructive/20">
@@ -457,7 +480,7 @@ export function CustomerFormSheet({
                     />
 
                     <div className="flex flex-col gap-2">
-                      <label className="text-xs font-medium text-primary">Precio Final</label>
+                      <label className="text-xs font-medium text-primary">Total mensualidad</label>
                       <Controller
                         control={form.control}
                         name="final_price"
@@ -485,6 +508,12 @@ export function CustomerFormSheet({
                       />
                     </div>
                   </div>
+
+                  {entrypoint === "cash" && enrollmentReady && <div className="rounded-md border p-3 text-sm space-y-1" aria-live="polite">
+                    <div className="flex justify-between"><span>Mensualidad</span><span>Q{(form.watch("final_price") ?? 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Inscripción{enrollment ? ` ${enrollment.year}` : ""}</span><span>Q{(enrollment?.fee ?? 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between border-t pt-2 font-semibold"><span>Total a cobrar</span><span>Q{collectionTotal(form.watch("final_price") ?? 0, enrollment).toFixed(2)}</span></div>
+                  </div>}
 
                   {allowManualFinalPrice && membershipPricing && (
                     <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -791,7 +820,7 @@ export function CustomerFormSheet({
           </SheetClose>
           <Button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || (entrypoint === "cash" && !enrollmentReady)}
             onClick={form.handleSubmit(onSubmit)}
             data-testid="customers-submit-button"
           >

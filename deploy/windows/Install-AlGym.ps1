@@ -122,6 +122,7 @@ try {
     Protect-Directory (Join-Path $DataRoot 'migration\outbox') @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'config') @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'media') @() @('S-1-5-19')
+    Protect-Directory (Join-Path $DataRoot 'cash-device') @() @('S-1-5-19')
     Protect-Directory (Join-Path $DataRoot 'postgres') @() @('S-1-5-20')
     Protect-Directory (Join-Path $DataRoot 'logs') @() @('S-1-5-19', 'S-1-5-20')
     Protect-Directory (Join-Path $DataRoot 'backups')
@@ -183,7 +184,7 @@ password_encryption = 'scram-sha-256'
     if ($proc.ExitCode -ne 0) { throw 'Falló la preparación de la base. Consulte el registro de instalación.' }
     $owner = $null; $request = $null
     $media = (Join-Path $DataRoot 'media').Replace('\', '/')
-    Write-Utf8File (Join-Path $DataRoot 'config\backend.env') @"
+    Initialize-EnvironmentFile (Join-Path $DataRoot 'config\backend.env') @"
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=4000
@@ -193,12 +194,17 @@ DB_NAME=algym_windows
 DB_USER=algym_app
 DB_PASSWORD=$($state.appPassword)
 LOCAL_MEDIA_ROOT=$media
+CASH_DRAWER_ENABLED=false
+CASH_PRINTER_NAME=
+CASH_DEVICE_DATA_DIR=$($DataRoot.Replace('\', '/'))/cash-device
 ALGYM_MIGRATION_ROOT=$($DataRoot.Replace('\', '/'))/migration
 CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAME_SITE=lax
 "@
-    Write-Utf8File (Join-Path $DataRoot 'config\web.env') @"
+    $webEnv = Join-Path $DataRoot 'config\web.env'
+    $webEnvironmentExists = Test-Path -LiteralPath $webEnv
+    Initialize-EnvironmentFile $webEnv @"
 NODE_ENV=production
 NEXT_TELEMETRY_DISABLED=1
 HOSTNAME=127.0.0.1
@@ -208,7 +214,7 @@ GYM_SYNC_SERVER_URL=http://127.0.0.1:8080
 GYM_SYNC_API_TOKEN=$($state.syncToken)
 "@
     $clockFile = Join-Path $DataRoot 'private\clock.json'
-    if (Test-Path $clockFile) {
+    if (-not $webEnvironmentExists -and (Test-Path $clockFile)) {
         $clock = Get-Content $clockFile -Raw | ConvertFrom-Json
         Add-Content (Join-Path $DataRoot 'config\web.env') -Encoding UTF8 -Value "`nDEFAULT_ZK_DEVICE_SN=$($clock.serial)"
     }

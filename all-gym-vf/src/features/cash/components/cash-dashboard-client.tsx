@@ -24,6 +24,7 @@ import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 import { QuickProductSalePanel } from "@/features/cash/components/quick-product-sale-panel";
 import { ReversePaymentDialog } from "@/features/cash/components/reverse-payment-dialog";
 import { ReverseProductSaleDialog } from "@/features/cash/components/reverse-product-sale-dialog";
+import { CashDrawerControl } from "./cash-drawer-control";
 
 function formatMoney(amount: number | null | undefined) {
   const safeAmount = typeof amount === "number" ? amount : 0;
@@ -399,6 +400,7 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
   if (!data.currentSession) {
     return (
       <div className="space-y-6">
+        <div className="flex justify-end"><Button asChild variant="outline"><Link href="/panel/caja/ventas">Historial de ventas y recibos</Link></Button></div>
         {!data.register ? (
           <Card>
             <CardHeader>
@@ -529,6 +531,8 @@ export function CashDashboardClient({ data }: { data: CashDashboardData }) {
         </CardContent>
       </Card>
 
+      <CashDrawerControl />
+      <div className="flex justify-end"><Button asChild variant="outline"><Link href="/panel/caja/ventas">Historial de ventas y recibos</Link></Button></div>
       {data.outOfSessionMovements.length > 0 ? (
         <Alert className="border-amber-300 bg-amber-50/60 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
           <IconAlertCircle className="h-4 w-4" />

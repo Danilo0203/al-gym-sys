@@ -106,6 +106,7 @@ export function buildCashCustomerCreatePayload(data: CreateCustomerData) {
     ...(nonEmpty(data.injuries) && { injuries: nonEmpty(data.injuries) }),
     ...(nonEmpty(data.medical_clearance_notes) && { medical_notes: nonEmpty(data.medical_clearance_notes) }),
     paid_membership: {
+      ...(data.enrollment && { enrollment: data.enrollment }),
       planId: data.plan_id,
       startDate: calendarDate(data.start_date, "La fecha de inicio"),
       endDate: calendarDate(data.end_date, "La fecha de fin"),
@@ -126,6 +127,7 @@ export function buildCashCustomerRenewalPayload(customerId: string, data: RenewS
     customerId,
     planId: data.plan_id,
     operation: "renew" as const,
+    ...(data.enrollment && { enrollment: data.enrollment }),
     startDate: calendarDate(data.start_date, "La fecha de inicio"),
     endDate: calendarDate(data.end_date, "La fecha de fin"),
     amountOriginal: data.price,

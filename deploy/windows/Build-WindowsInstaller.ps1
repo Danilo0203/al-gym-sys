@@ -9,6 +9,8 @@ if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitProcess -or $env:PRO
     throw 'Compile en Windows de 64 bits. Se utilizará Node x64, también en Windows ARM con emulación x64.'
 }
 if (-not (Test-Path $InnoCompiler)) { throw 'Instale Inno Setup 6.4 o posterior y especifique -InnoCompiler si es necesario.' }
+Invoke-Checked "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PSScriptRoot\tests\Test-PreservedEnvironment.ps1")
 $frontend = (Resolve-Path "$PSScriptRoot\..\..").Path
 $backend = (Resolve-Path $BackendPath).Path
 if (-not (Test-Path "$backend\windows\bootstrap.mjs")) { throw 'Seleccione la rama Windows del backend, que incluye windows/bootstrap.mjs.' }
@@ -96,6 +98,8 @@ try {
         'src/features/exercises/lib/exercise-image.test.ts', 'src/lib/training/exercise-media.test.ts',
         'src/lib/training/catalog.test.ts', 'src/features/customers/lib/local-customer-routine.test.ts',
         'src/features/exercises/components/exercise-media.test.tsx', 'src/features/exercises/lib/exercise-batch.test.ts')
+    Invoke-Checked $node @('node_modules/tsx/dist/cli.mjs', '--test', 'src/features/enrollment/enrollment.test.ts',
+        'src/features/client/lib/routine-view.test.ts')
     Invoke-Checked $node @($npm, 'run', 'build')
 }
 finally { Pop-Location }
@@ -122,9 +126,10 @@ Push-Location "$stage\sources\backend"
 try {
     Invoke-Checked $node @($pnpm, 'install', '--frozen-lockfile')
     Invoke-Checked $node @($pnpm, 'build')
+    Invoke-Checked $node @('--test', 'dist/modules/cash/receipt.test.js')
     Invoke-Checked $node @('--test', 'windows/bootstrap.test.mjs', 'windows/transfer-media.test.mjs', 'windows/migration-worker.test.mjs')
     $env:ALGYM_INSTALLER_PG_BIN = "$payload\runtime\postgres\bin"
-    try { Invoke-Checked $node @('--test', 'windows/update-transfer.integration.test.mjs') }
+    try { Invoke-Checked $node @('--test', '--test-concurrency=1', 'windows/update-transfer.integration.test.mjs', 'windows/cash-devices.integration.test.mjs', 'windows/unified-upgrade.integration.test.mjs') }
     finally { Remove-Item Env:ALGYM_INSTALLER_PG_BIN -ErrorAction SilentlyContinue }
 } finally { Pop-Location }
 [IO.Directory]::CreateDirectory("$payload\backend") | Out-Null

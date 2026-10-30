@@ -7,6 +7,7 @@ import { searchParamsCache } from '@/lib/searchparams';
 import { SearchParams } from 'nuqs/server';
 import { getUserAccessContext, hasPermission } from '@/lib/auth/authorization';
 import { redirect } from 'next/navigation';
+import { EnrollmentSettings } from '@/features/enrollment/enrollment-settings';
 
 export const metadata = {
   title: 'Panel: Planes'
@@ -36,6 +37,7 @@ export default async function Page(props: pageProps) {
       pageDescription='Administra los planes y precios del gimnasio.'
       pageHeaderAction={hasPermission(access, "plans.create") ? <PlanFormSheet /> : null}
     >
+      {hasPermission(access, "enrollment.manage") && <EnrollmentSettings />}
       <Suspense
         fallback={
           <DataTableSkeleton columnCount={5} rowCount={8} filterCount={2} />

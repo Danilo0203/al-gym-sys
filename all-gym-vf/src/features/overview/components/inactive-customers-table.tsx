@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { IconCopy, IconUserOff, IconRefresh } from '@tabler/icons-react';
+import { IconBrandWhatsapp, IconUserOff, IconRefresh } from '@tabler/icons-react';
 import type { InactiveCustomer } from '../actions/panel-actions';
 import { CustomerWhatsAppDialog } from '@/features/customers/components/customer-tables/customer-whatsapp-dialog';
 import type { CustomerWhatsApp } from '@/features/messages/whatsapp-helper';
@@ -113,7 +113,8 @@ export function InactiveCustomersTable({ data }: InactiveCustomersTableProps) {
                       size='sm'
                       variant='outline'
                       className='h-8 w-8 p-0 border-emerald-500/50 hover:bg-emerald-500/10'
-                      title='Preparar mensaje'
+                      title='Preparar mensaje de WhatsApp'
+                      aria-label={`Preparar mensaje de WhatsApp para ${customer.user_name}`}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -126,7 +127,7 @@ export function InactiveCustomersTable({ data }: InactiveCustomersTableProps) {
                         });
                       }}
                     >
-                      <IconCopy className='h-4 w-4 text-emerald-500' />
+                      <IconBrandWhatsapp className='h-4 w-4 text-emerald-500' />
                     </Button>
                   <Link href={`/panel/clientes?search=${encodeURIComponent(customer.user_name)}`}>
                     <Button 

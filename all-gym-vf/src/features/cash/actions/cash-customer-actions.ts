@@ -17,6 +17,7 @@ import { reconcileLocalCustomerOnClock } from "@/features/cash/lib/local-device-
 import { generateRoutineProposal } from "@/features/customers/actions/customer-routine-actions";
 import { getUserAccessContext, hasPermission } from "@/lib/auth/authorization";
 import { z } from "zod";
+import type { EnrollmentQuote } from "@/features/enrollment/enrollment-types";
 
 const pendingMembershipSchema = z.object({
   id: z.string().uuid(), customer_id: z.string().uuid(), full_name: z.string(),
@@ -36,11 +37,11 @@ export async function listPendingCashMemberships(search = ""): Promise<PendingMe
 }
 
 export async function collectPendingCashMembership(membershipId: string, discountAmount: number,
-  paymentMethod: "cash" | "card" | "transfer", intake?: ReturnType<typeof buildCashCustomerIntake>) {
+  paymentMethod: "cash" | "card" | "transfer", intake?: ReturnType<typeof buildCashCustomerIntake>, enrollment?: EnrollmentQuote) {
   try {
     const response = await cashMutation(
       `/payments/membership/pending/${encodeURIComponent(membershipId)}/collect`,
-      { discountAmount, paymentMethod, ...(intake && Object.keys(intake).length > 0 && { intake }) },
+      { discountAmount, paymentMethod, ...(enrollment && { enrollment }), ...(intake && Object.keys(intake).length > 0 && { intake }) },
     );
     const result = await parseCustomerApiResponse(response,
       (body) => z.object({ customer_id: z.string().uuid(), payment_id: z.string().uuid() }).parse(body));

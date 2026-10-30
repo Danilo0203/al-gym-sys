@@ -13,4 +13,8 @@ test("GIF sigue siendo imagen; MP4 usa video en bucle, inline, silenciado y con 
   const preview = ExerciseMedia({ src: "blob:preview", alt: "MP4 seleccionado", isVideo: true, controls: false });
   assert.equal(preview.type, "video");
   assert.equal(preview.props.controls, false);
+  const thumbnail = ExerciseMedia({ src: `${base}.mp4`, alt: "", controls: false, autoPlay: false });
+  assert.equal(thumbnail.props.autoPlay, false);
+  assert.equal(thumbnail.props.controls, false);
+  assert.equal(thumbnail.props.preload, "metadata");
 });

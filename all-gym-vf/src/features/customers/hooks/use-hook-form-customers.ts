@@ -217,6 +217,7 @@ const optionalEmailSchema = z
 
 const customerSheetBaseSchema = z
   .object({
+    enrollment: z.object({ year: z.number().int(), fee: z.number().positive() }).optional(),
     email: optionalEmailSchema,
     password: z.string(),
     confirm_password: z.string(),

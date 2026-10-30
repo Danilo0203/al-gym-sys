@@ -45,6 +45,7 @@ import {
 
 import { ExerciseMedia } from "./exercise-media";
 import { ExerciseBatchUpload } from "./exercise-batch-upload";
+import { DeleteExerciseDialog } from "./delete-exercise-dialog";
 
 interface ExerciseCatalogManagerProps {
   exercises: ExerciseCatalogItem[];
@@ -124,6 +125,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
   const { data: currentUser } = useCurrentUser();
   const canCreate = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("exercises.create"));
   const canUpdate = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("exercises.update"));
+  const canDelete = Boolean(currentUser?.isOwner || currentUser?.permissions?.includes("exercises.delete"));
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [catalogFilter, setCatalogFilter] = useState<ExerciseCatalogFilter>("all");
@@ -479,6 +481,7 @@ export function ExerciseCatalogManager({ exercises, totalCount }: ExerciseCatalo
                   exercise={exercise}
                   showHiddenPreview={catalogFilter === "hidden"}
                   canUpdate={canUpdate}
+                  canDelete={canDelete}
                   onEdit={() => openEditDialog(exercise)}
                   onToggleFavorite={() => handleToggleFavorite(exercise)}
                   onTogglePreviewVisibility={() => handleTogglePreviewVisibility(exercise)}
@@ -868,6 +871,7 @@ function ExerciseCard({
   isTogglingFavorite = false,
   isTogglingPreview = false,
   canUpdate = true,
+  canDelete = false,
 }: {
   exercise: ExerciseCatalogItem;
   showHiddenPreview: boolean;
@@ -877,6 +881,7 @@ function ExerciseCard({
   isTogglingFavorite: boolean;
   isTogglingPreview: boolean;
   canUpdate?: boolean;
+  canDelete?: boolean;
 }) {
   const displayName = getExerciseDisplayName(exercise);
   const isStoredLocally = isExerciseStoredLocally(exercise);
@@ -967,6 +972,7 @@ function ExerciseCard({
             <PencilLine />
           </TooltipIconButton>
           )}
+          {canDelete && <DeleteExerciseDialog id={exercise.id} name={displayName} />}
         </div>
       </CardFooter>
     </Card>

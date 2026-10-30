@@ -76,6 +76,24 @@ async function getLocalHeaders() {
   return cookieHeader ? { cookie: cookieHeader } : undefined;
 }
 
+export async function deleteExerciseCatalogItem(exerciseId: number): Promise<ExerciseCatalogMutationResult> {
+  try {
+    const authError = await ensureAdminAccess("exercises.delete");
+    if (authError) return { success: false, error: authError };
+    const id = z.number().int().positive().parse(exerciseId);
+    const response = await fetchAuthBackend(`/exercises/${id}`, {
+      method: "DELETE", headers: await getLocalHeaders(),
+    });
+    if (!response.ok) return { success: false, error: "No se pudo eliminar el ejercicio. Actualiza el catálogo e inténtalo de nuevo." };
+    revalidatePath("/panel/ejercicios");
+    revalidatePath("/panel/rutinas");
+    revalidatePath("/panel/clientes");
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "No se pudo eliminar el ejercicio." };
+  }
+}
+
 export async function updateExerciseCatalogItem(input: {
   exerciseId: number;
   displayName: string;

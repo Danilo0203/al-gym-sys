@@ -194,8 +194,8 @@ export function useUpdateCustomerStatus() {
     onSuccess: (customer: CustomerDetail) => {
       toast.success(
         customer.is_active
-          ? "Cliente reactivado correctamente. Esta acción todavía no sincroniza con reloj biométrico en Fase A."
-          : "Cliente suspendido correctamente. Esta acción todavía no sincroniza con reloj biométrico en Fase A.",
+          ? "Cliente reactivado correctamente. Revisa la vigencia de su membresía."
+          : "Cliente suspendido correctamente. Se conservó su historial.",
       );
       queryClient.invalidateQueries({ queryKey: customersKeys.detail(customer.id) });
       queryClient.invalidateQueries({ queryKey: customersKeys.lists() });

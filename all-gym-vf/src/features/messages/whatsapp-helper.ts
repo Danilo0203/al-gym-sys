@@ -16,6 +16,26 @@ export interface WhatsAppContext {
   isSubscriptionExpired: boolean;
 }
 
+export function normalizeWhatsAppPhone(phone: string | null): string | null {
+  const value = phone?.trim();
+  if (!value || !/^\+?[\d\s().-]+$/.test(value)) return null;
+
+  const digits = value.replace(/\D/g, "").replace(/^00/, "");
+  // Los teléfonos locales de los clientes se guardan con ocho dígitos.
+  if (/^[1-9]\d{7}$/.test(digits) && !value.startsWith("+") && !value.startsWith("00")) {
+    return `502${digits}`;
+  }
+
+  return /^[1-9]\d{8,14}$/.test(digits) ? digits : null;
+}
+
+export function buildWhatsAppUrl(phone: string | null, message: string): string | null {
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
+  if (!normalizedPhone || !message.trim()) return null;
+
+  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
+}
+
 export function buildWhatsAppContext(customer: CustomerWhatsApp): WhatsAppContext {
   const now = new Date();
 

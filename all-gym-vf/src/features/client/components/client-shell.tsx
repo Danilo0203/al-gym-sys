@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { IconCreditCard, IconUserCircle, IconBarbell, IconWifi, IconWifiOff } from "@tabler/icons-react";
 import { ModeToggle } from "@/components/layout/ThemeToggle/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ClientSignOutButton } from "@/features/client/components/client-sign-out-button";
 import { useOnlineStatus } from "@/features/client/hooks/use-online-status";
 import { cn } from "@/lib/utils";
@@ -37,13 +36,12 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
     <div className="h-svh overflow-y-auto overscroll-y-contain bg-muted/40 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
       <div className="mx-auto flex min-h-svh max-w-4xl flex-col">
         <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex items-center justify-between gap-3 rounded-[24px] border border-border/60 bg-card/65 px-4 py-3 shadow-sm">
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-[10px] uppercase tracking-[0.28em] text-muted-foreground">All Gym Member</p>
-              <div className="flex items-center gap-2">
-                <h1 className="shrink-0 text-lg font-black tracking-tight">Mi espacio</h1>
-                <span className="shrink-0 text-muted-foreground/50">/</span>
-                <p className="truncate text-sm font-medium text-muted-foreground">{activeItem.label}</p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <IconBarbell className="size-7 shrink-0 text-primary" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold tracking-tight">ALL GYM</p>
+                <h1 className="truncate text-xs text-muted-foreground">Mi {activeItem.label.toLowerCase()}</h1>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -64,11 +62,11 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+7.5rem)] pt-5">{children}</main>
+        <main className="flex-1 px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+6.5rem)]">{children}</main>
 
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <Card className="pointer-events-auto mx-auto max-w-4xl rounded-[28px] border-border/70 bg-background/95 p-2 shadow-lg backdrop-blur">
-            <nav className="grid grid-cols-3 gap-2">
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20">
+          <div className="pointer-events-auto mx-auto max-w-4xl border-t border-border bg-background/95 px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur">
+            <nav className="grid grid-cols-3 gap-2" aria-label="Mi espacio">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -79,11 +77,10 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
                     asChild
                     variant={isActive ? "default" : "ghost"}
                     className={cn(
-                      "h-12 flex-col gap-1 rounded-2xl transition-all",
-                      isActive && "shadow-md shadow-primary/20",
+                      "h-12 flex-col gap-1 rounded-xl transition-colors",
                     )}
                   >
-                    <Link href={item.href}>
+                    <Link href={item.href} aria-current={isActive ? "page" : undefined}>
                       <Icon className="h-4 w-4" />
                       <span className="text-[11px]">{item.label}</span>
                     </Link>
@@ -91,7 +88,7 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
                 );
               })}
             </nav>
-          </Card>
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
 import type { ActivityLevel, BodyType, DietType } from "@/lib/fitness/types";
 import type { TrainingProfileInput } from "@/lib/training/types";
+import type { EnrollmentQuote } from "@/features/enrollment/enrollment-types";
 
 export interface CreateCustomerData {
+  enrollment?: EnrollmentQuote;
   origin?: "customers" | "cash";
   // Auth
   email?: string;
@@ -56,6 +58,7 @@ export interface CreateCustomerData {
 }
 
 export interface RenewSubscriptionData {
+  enrollment?: EnrollmentQuote;
   origin?: "customers" | "cash";
   full_name?: string;
   phone?: string;

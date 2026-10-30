@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SubscriptionStatusBadge } from "@/components/subscription-status-badge";
 import { useCustomer } from "@/features/customers/hooks/use-customers";
+import { RoleTransitionButton } from "@/features/users/components/role-transition-button";
+import { EnrollmentPanel } from "@/features/enrollment/enrollment-panel";
 
 interface CustomerViewPageProps {
   customerId: string;
@@ -81,12 +83,14 @@ export default function CustomerViewPage({ customerId }: CustomerViewPageProps) 
               </div>
             </div>
           </div>
-          <div className="text-sm text-muted-foreground">
-            Último ingreso: <span className="font-medium text-foreground">{formatDateTime(customer.last_check_in)}</span>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>Último ingreso: <span className="font-medium text-foreground">{formatDateTime(customer.last_check_in)}</span></p>
+            <RoleTransitionButton profile={customer} />
           </div>
         </CardContent>
       </Card>
 
+      <EnrollmentPanel customerId={customerId} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>Perfil básico</CardTitle></CardHeader>

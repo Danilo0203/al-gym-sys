@@ -13,6 +13,12 @@ function Write-Utf8File([string]$Path, [string]$Text) {
     [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding($false)))
 }
 
+function Initialize-EnvironmentFile([string]$Path, [string]$Defaults) {
+    # Updates must retain technician settings, including LAN access and cookies.
+    if (Test-Path -LiteralPath $Path) { return }
+    Write-Utf8File $Path $Defaults
+}
+
 function Invoke-Checked([string]$File, [string[]]$Arguments) {
     & $File @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Falló $([IO.Path]::GetFileName($File)) (código $LASTEXITCODE)." }

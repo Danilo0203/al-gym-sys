@@ -11,6 +11,7 @@ import {
 import { AlertModal } from "@/components/modal/alert-modal";
 import { CustomerFormSheet, type CustomerData } from "../customer-form-sheet";
 import { CustomerStatusActionSummary } from "../customer-status-action-summary";
+import { RoleTransitionButton } from "@/features/users/components/role-transition-button";
 import {
   useCustomer,
   useCustomerBodyAssessments,
@@ -210,27 +211,7 @@ export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate }) => {
           </TooltipProvider>
         ) : null}
 
-        {canUpdate ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 hover:bg-destructive/10"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  <span className="sr-only">Eliminar completamente</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Eliminar completamente</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : null}
+        <RoleTransitionButton profile={{ ...data, role: "client" }} compact />
       </div>
     </div>
   );

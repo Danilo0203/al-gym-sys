@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CustomerStatusActionSummary } from "@/features/customers/components/customer-status-action-summary";
 import { CustomerAccountDialog } from "@/features/customers/components/customer-account-dialog";
+import { RoleTransitionButton } from "@/features/users/components/role-transition-button";
 import { CustomerFormSheet, type CustomerData } from "@/features/customers/components/customer-form-sheet";
 import { useUpdateCustomerStatus } from "@/features/customers/hooks/use-customers";
 import type { CustomerDetail, CustomerHistoryResponse } from "@/features/customers/lib/local-customers";
@@ -349,6 +350,7 @@ export function CustomerHistoryClient({
 
             <div className="flex w-full shrink-0 flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
               {isRefreshing ? <span className="text-xs text-muted-foreground">Actualizando…</span> : null}
+              <RoleTransitionButton profile={profile} />
               <Link href="/panel/clientes" className="flex-1 sm:flex-none">
                 <Button
                   variant="outline"

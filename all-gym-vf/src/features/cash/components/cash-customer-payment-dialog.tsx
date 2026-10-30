@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { CustomerFormSheet } from "@/features/customers/components/customer-form-sheet";
+import { EnrollmentPanel } from "@/features/enrollment/enrollment-panel";
 import { submitLegacyCashCustomer } from "@/features/cash/lib/legacy-customer-operations";
 import { getCustomerFormPrefill } from "@/features/customers/lib/customer-form-prefill";
 import type { CustomerData } from "@/features/customers/hooks/use-hook-form-customers";
@@ -345,6 +346,7 @@ export function CashCustomerPaymentDialog({
                         Último cobro registrado el {formatDate(selectedCustomer.last_payment_date)}.
                       </p>
                     </div>
+                    <EnrollmentPanel key={selectedCustomer.id} customerId={selectedCustomer.id} />
                     <Button className="w-full" disabled={isLoadingCustomer} onClick={handleOpenRenew}>
                       <IconRefresh className="h-4 w-4" />
                       {primaryActionLabel}

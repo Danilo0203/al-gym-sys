@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { IconAlertTriangle, IconCopy } from "@tabler/icons-react";
+import { IconAlertTriangle, IconBrandWhatsapp, IconCopy } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { buildWhatsAppContext, interpolateMessage, type CustomerWhatsApp } from "@/features/messages/whatsapp-helper";
+import { buildWhatsAppContext, buildWhatsAppUrl, interpolateMessage, normalizeWhatsAppPhone, type CustomerWhatsApp } from "@/features/messages/whatsapp-helper";
 import { copyMessageText } from "@/features/messages/copy-message";
 
 const PLACEHOLDERS = [
@@ -29,6 +29,8 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
 
   const ctx = buildWhatsAppContext(customer);
   const { text: interpolatedText, hasNoAttendanceData } = interpolateMessage(messageText, ctx);
+  const phone = normalizeWhatsAppPhone(customer.phone);
+  const whatsAppUrl = buildWhatsAppUrl(customer.phone, interpolatedText);
 
   useEffect(() => {
     if (!open) {
@@ -76,15 +78,24 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <IconCopy className="h-5 w-5 text-emerald-500" />
+            <IconBrandWhatsapp className="h-5 w-5 text-emerald-500" />
             Preparar mensaje para {customer.full_name || "Cliente"}
           </DialogTitle>
           <DialogDescription>
-            Escribe un mensaje y cópialo para usarlo sin conexión.
+            Escribe el mensaje y abre el chat del cliente en WhatsApp. El texto quedará listo para que lo envíes.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {phone ? (
+            <p className="text-sm text-muted-foreground">WhatsApp: +{phone}</p>
+          ) : (
+            <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">
+              {customer.phone?.trim()
+                ? "El teléfono del cliente no es válido. Corrígelo en su ficha para abrir WhatsApp."
+                : "Este cliente no tiene teléfono registrado. Agrégalo en su ficha para abrir WhatsApp."}
+            </p>
+          )}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Mensaje</label>
             <Textarea
@@ -127,17 +138,28 @@ export function CustomerWhatsAppDialog({ open, onOpenChange, customer }: Custome
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button
+              variant="outline"
               onClick={() => void handleCopy()}
               disabled={!messageText.trim()}
-              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              className="gap-1.5"
             >
               <IconCopy className="h-4 w-4" />
               Copiar mensaje
+            </Button>
+            <Button
+              onClick={() => {
+                if (whatsAppUrl) window.open(whatsAppUrl, "_blank", "noopener,noreferrer");
+              }}
+              disabled={!whatsAppUrl}
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+            >
+              <IconBrandWhatsapp className="h-4 w-4" />
+              Abrir WhatsApp
             </Button>
           </div>
         </div>

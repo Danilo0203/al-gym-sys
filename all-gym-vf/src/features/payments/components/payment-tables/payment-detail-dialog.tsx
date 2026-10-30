@@ -7,10 +7,13 @@ import { es } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { getPaymentDetail, type PaymentDetail } from "@/features/payments/actions/get-payments";
+import { SaleDetailDialog } from "@/features/cash/components/sale-detail-dialog";
+import { useCurrentUser } from "@/features/profile/hooks/use-profile";
 
 const money = (value: number) => `Q${value.toFixed(2)}`;
 
 export function PaymentDetailDialog({ paymentId }: { paymentId: string }) {
+  const { data: user } = useCurrentUser();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<PaymentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +55,7 @@ export function PaymentDetailDialog({ paymentId }: { paymentId: string }) {
             <dt>ID del pago</dt><dd className="break-all font-mono text-xs">{detail.id}</dd>
           </dl>
         )}
+        {detail && (user?.isOwner || user?.permissions?.includes("cash.operate")) && <SaleDetailDialog id={paymentId} byPayment />}
       </DialogContent>
     </Dialog>
   );

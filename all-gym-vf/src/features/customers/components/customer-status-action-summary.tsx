@@ -41,7 +41,7 @@ export function CustomerStatusActionSummary({
         iconClassName: "bg-destructive/14 text-destructive",
         badgeLabel: "Se suspenderá en ALGYM",
         title: "Cambio listo para confirmar",
-        description: "El cliente quedará inactivo dentro del sistema administrativo.",
+        description: "Quedará inactivo y no podrá iniciar sesión ni ingresar al gimnasio.",
         stateBadge: <Badge variant="success">Activo</Badge>,
       }
     : {
@@ -49,7 +49,7 @@ export function CustomerStatusActionSummary({
         iconClassName: "bg-emerald-500/14 text-emerald-400",
         badgeLabel: "Se reactivará en ALGYM",
         title: "Reactivación lista para confirmar",
-        description: "El cliente volverá a estado activo dentro del sistema administrativo.",
+        description: "Volverá a estar activo. Para ingresar al gimnasio necesitará una membresía vigente.",
         stateBadge: <Badge variant="secondary">Inactivo</Badge>,
       };
 
@@ -85,11 +85,11 @@ export function CustomerStatusActionSummary({
       <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
           <IconInfoCircle className="size-4" />
-          <span>Importante en Fase A</span>
+          <span>Qué cambia</span>
         </div>
         <div className="text-sm text-muted-foreground">
-          Esta acción actualiza `profiles.is_active` en el backend local. Todavía no sincroniza reloj biométrico,
-          membresías ni pagos.
+          Se conservarán su cuenta, correo e historial. Se solicitará actualizar su acceso en el reloj;
+          si no está disponible, la sincronización quedará pendiente. Sus membresías y pagos no cambian.
         </div>
       </div>
     </div>

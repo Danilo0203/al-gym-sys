@@ -17,6 +17,7 @@ export interface UserData {
   created_at: string;
   last_sign_in_at?: string | null;
   biometric_id: number | null;
+  birth_date?: string | null;
 }
 
 export interface CreateUserData {

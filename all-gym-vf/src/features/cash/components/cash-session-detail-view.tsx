@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { CashMovementView, CashSessionDetailData, PaymentMethod } from "@/features/cash/actions/cash-actions";
 import { ReversePaymentDialog } from "@/features/cash/components/reverse-payment-dialog";
 import { ReverseProductSaleDialog } from "@/features/cash/components/reverse-product-sale-dialog";
+import { SaleDetailDialog } from "./sale-detail-dialog";
 
 type MovementStoryRole = "original" | "void" | "corrected";
 
@@ -579,7 +580,10 @@ export function CashSessionDetailView({
                           <Badge variant={stateBadge.variant}>{stateBadge.label}</Badge>
                         </TableCell>
                         <TableCell>{movement.created_by_name}</TableCell>
-                        <TableCell className="text-right">{reverseAction}</TableCell>
+                        <TableCell className="text-right"><div className="flex justify-end gap-2">
+                          {movement.movement_type === "sale" && <SaleDetailDialog id={movement.id} />}
+                          {reverseAction}
+                        </div></TableCell>
                       </TableRow>
                     );
                   });

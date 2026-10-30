@@ -24,6 +24,7 @@ export async function submitLegacyCashCustomer(
   context: { entrypoint: "cash"; suggestedBasePrice?: number; suggestedCycles?: number },
 ) {
   const customerPayload: CreateCustomerData = {
+    enrollment: values.enrollment,
     email: values.email || undefined,
     origin: context.entrypoint,
     password: values.password || undefined,
@@ -135,6 +136,7 @@ export async function submitLegacyCashCustomer(
         renewPayload.discount_amount,
         renewPayload.payment_method,
         preparedRenewal.intake,
+        values.enrollment,
       );
     }
 
