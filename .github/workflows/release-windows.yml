@@ -1,0 +1,130 @@
+name: Release Windows installer
+
+# Publica AlGym-Setup-X.Y.Z-win-x64.exe como GitHub Release.
+# La PC del gimnasio (tarea "AlGym Update") detecta la nueva versión y se actualiza sola.
+#
+# Disparadores:
+#   - git tag v0.4.0 && git push origin v0.4.0
+#   - Actions > Release Windows installer > Run workflow (con versión manual)
+#
+# Requisitos del repositorio (Settings > Secrets and variables > Actions):
+#   - Secret  ALGYM_BACKEND_TOKEN : token de solo lectura (Contents: Read) para
+#             Danilo0203/algym-local-backend.
+#   - Variable ALGYM_BACKEND_REF  : rama/tag del backend a empaquetar (por defecto "main").
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión X.Y.Z (sin la v)'
+        required: true
+      backend_ref:
+        description: 'Rama o tag del backend'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Marcar como prerelease (la PC del gimnasio NO la instalará)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Resolver versión
+        id: meta
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'push') { $version = '${{ github.ref_name }}'.TrimStart('v') }
+          else { $version = '${{ inputs.version }}'.Trim().TrimStart('v') }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Versión inválida: $version" }
+          $backendRef = '${{ inputs.backend_ref }}'
+          if (-not $backendRef) { $backendRef = '${{ vars.ALGYM_BACKEND_REF }}' }
+          if (-not $backendRef) { $backendRef = 'main' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "backend_ref=$backendRef" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout frontend / sync
+        uses: actions/checkout@v4
+        with:
+          path: al-gym-sys
+
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          repository: Danilo0203/algym-local-backend
+          ref: ${{ steps.meta.outputs.backend_ref }}
+          token: ${{ secrets.ALGYM_BACKEND_TOKEN }}
+          path: algym-local-backend
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Cache de dependencias externas (Node, PostgreSQL, WinSW, VC++)
+        uses: actions/cache@v4
+        with:
+          path: al-gym-sys/build/windows/downloads
+          key: algym-vendors-${{ hashFiles('al-gym-sys/deploy/windows/vendors.json') }}
+
+      - name: Compilar instalador
+        shell: powershell
+        run: |
+          & .\al-gym-sys\deploy\windows\Build-WindowsInstaller.ps1 `
+            -BackendPath .\algym-local-backend `
+            -Version '${{ steps.meta.outputs.version }}'
+          if (-not $?) { exit 1 }
+
+      - name: Preparar archivos del release
+        id: files
+        shell: pwsh
+        run: |
+          $version = '${{ steps.meta.outputs.version }}'
+          $exe = "al-gym-sys/build/windows/AlGym-Setup-$version-win-x64.exe"
+          if (-not (Test-Path $exe)) { throw "No se generó $exe" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$exe.sha256" -Value "$hash  AlGym-Setup-$version-win-x64.exe" -NoNewline -Encoding ascii
+          $front = git -C al-gym-sys rev-parse HEAD
+          $back = git -C algym-local-backend rev-parse HEAD
+          @"
+          Instalador de AlGym $version para Windows x64.
+
+          - Frontend/sync: $front
+          - Backend (${{ steps.meta.outputs.backend_ref }}): $back
+          - SHA256: ``$hash``
+
+          La PC del gimnasio lo instalará automáticamente en la siguiente revisión programada.
+          "@ | Set-Content release-notes.md -Encoding utf8
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+
+      - name: Publicar release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.meta.outputs.version }}'
+          $tag = "v$version"
+          $exe = '${{ steps.files.outputs.exe }}'
+          $flags = @()
+          if ('${{ inputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
+          gh release view $tag --repo '${{ github.repository }}' *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $exe "$exe.sha256" --clobber --repo '${{ github.repository }}'
+          } else {
+            gh release create $tag $exe "$exe.sha256" --repo '${{ github.repository }}' `
+              --title "AlGym $version" --notes-file release-notes.md --target '${{ github.sha }}' @flags
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }

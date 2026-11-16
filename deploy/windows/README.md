@@ -441,3 +441,47 @@ Esta publicacion agrega proteccion de finales de linea para SQL y shell, evitand
 que Git para Windows cambie los hashes de migraciones ya instaladas. No modifica
 el ejecutable 0.3.5 entregado ni los respaldos privados de la USB. Las pruebas de
 Windows disponibles fueron en Windows 11 ARM; Windows 10 x64 sigue pendiente.
+
+## Actualización automática desde GitHub
+
+Flujo: cambios en cualquier PC → `git push` → tag `vX.Y.Z` → GitHub Actions
+(`.github/workflows/release-windows.yml`) compila `AlGym-Setup-X.Y.Z-win-x64.exe`
+y lo publica como Release → la PC del gimnasio lo detecta en su revisión diaria y
+lo instala sola en modo silencioso (respaldo previo, servicios detenidos,
+migraciones, servicios reiniciados, verificación con `Test-InstalledAlGym.ps1`).
+
+### Configuración única en GitHub
+1. Settings › Secrets and variables › Actions › **Secret** `ALGYM_BACKEND_TOKEN`:
+   token fine-grained con *Contents: Read* sobre `algym-local-backend`.
+2. **Variable** `ALGYM_BACKEND_REF` (opcional): rama del backend a empaquetar; por defecto `main`.
+
+### Publicar una versión
+```
+git tag v0.4.0
+git push origin v0.4.0
+```
+O bien Actions › *Release Windows installer* › *Run workflow*. Un release marcado
+como *prerelease* no se instala automáticamente (sirve para probar). La versión
+debe ser mayor que la instalada.
+
+### Configuración única en la PC del gimnasio
+PowerShell como Administrador, desde `C:\Program Files\AlGym\tools` (o desde esta carpeta):
+```
+.\Configure-AutoUpdate.ps1            # pide token de solo lectura de al-gym-sys; programa 03:00
+.\Configure-AutoUpdate.ps1 -At 23:30  # otra hora
+.\Configure-AutoUpdate.ps1 -Disable   # desactivar
+Start-ScheduledTask -TaskName 'AlGym Update'   # actualizar ahora
+```
+Archivos (solo SYSTEM y Administradores): `C:\ProgramData\AlGym\private\updater\`
+(`update.json`, `github-token.txt`, `status.json`, `logs\`). Descargas en
+`C:\ProgramData\AlGym\updates\` (se conservan las dos últimas).
+
+### Comportamiento ante errores
+- SHA256 incorrecto o release incompleto: no instala nada.
+- Si el instalador falla: el respaldo previo queda en `backups\`, se intenta
+  reiniciar los servicios y se registra el error. Tras 3 fallos de la misma
+  versión deja de reintentarla (use `Update-AlGym.ps1 -Force`).
+- No hay reversión automática: las migraciones ya aplicadas no se deshacen.
+  Para volver atrás, publique una versión mayor con la corrección.
+- La instalación silenciosa solo se permite como actualización; la primera
+  instalación sigue siendo interactiva (cuenta propietaria).

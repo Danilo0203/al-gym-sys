@@ -62,19 +62,27 @@ Type: files; Name: "{group}\Importar datos de Hostinger.lnk"
 Type: filesandordirs; Name: "{app}\services"
 
 [Code]
-function RunTool(Script: String): Boolean;
+function RunToolWith(Script: String; Extra: String): Boolean;
 var Code: Integer;
 begin
   Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -ExecutionPolicy Bypass -STA -File "' + ExpandConstant('{app}\tools\') + Script +
-    '" -AppRoot "' + ExpandConstant('{app}') + '" -DataRoot "' + ExpandConstant('{commonappdata}\AlGym') + '"',
+    '" -AppRoot "' + ExpandConstant('{app}') + '" -DataRoot "' + ExpandConstant('{commonappdata}\AlGym') + '"' + Extra,
     ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Code);
   Result := Result and (Code = 0);
 end;
 
+function RunTool(Script: String): Boolean;
+begin
+  Result := RunToolWith(Script, '');
+end;
+
+// A silent install is only allowed as an update of an existing installation
+// (the automatic updater). A first install needs the owner account dialog.
 function InitializeSetup(): Boolean;
 begin
-  Result := not WizardSilent;
+  Result := (not WizardSilent) or
+    FileExists(ExpandConstant('{commonappdata}\AlGym\private\installation.json'));
   if not Result then MsgBox('Esta versión requiere instalación interactiva para preparar la cuenta propietaria.', mbError, MB_OK);
 end;
 
@@ -103,7 +111,10 @@ begin
       RaiseException('No se pudo iniciar Microsoft Visual C++.');
     if (Code <> 0) and (Code <> 3010) and (Code <> 1638) then
       RaiseException('No se pudo instalar Microsoft Visual C++. Código: ' + IntToStr(Code));
-    if not RunTool('Install-AlGym.ps1') then
+    if WizardSilent then begin
+      if not RunToolWith('Install-AlGym.ps1', ' -Unattended') then
+        RaiseException('La configuración de AlGym no terminó. Los datos se conservaron; vuelva a ejecutar el instalador.');
+    end else if not RunTool('Install-AlGym.ps1') then
       RaiseException('La configuración de AlGym no terminó. Los datos se conservaron; vuelva a ejecutar el instalador.');
   end;
 end;

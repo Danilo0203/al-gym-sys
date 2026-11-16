@@ -1,4 +1,6 @@
-﻿param([Parameter(Mandatory=$true)][string]$AppRoot, [Parameter(Mandatory=$true)][string]$DataRoot)
+﻿param([Parameter(Mandatory=$true)][string]$AppRoot, [Parameter(Mandatory=$true)][string]$DataRoot,
+    # Silent update by the automatic updater: never show dialogs (no one can answer them).
+    [switch]$Unattended)
 . "$PSScriptRoot\Common.ps1"
 $configurationLog = Join-Path $env:TEMP ('AlGym-configuration-' + [guid]::NewGuid().ToString('N') + '.log')
 function Write-InstallStage([string]$Message) {
@@ -26,6 +28,7 @@ public static class AlGymConsoleMode {
 }
 
 function Get-OwnerAccount {
+    if ($Unattended) { throw 'Falta crear la cuenta propietaria; ejecute el instalador de forma interactiva.' }
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $form = New-Object Windows.Forms.Form
@@ -89,7 +92,7 @@ function Install-NodeService([string]$Id, [string]$Entry, [string]$EnvFile, [str
 }
 
 try {
-    Disable-ConsoleSelection
+    if (-not $Unattended) { Disable-ConsoleSelection }
     Write-InstallStage 'Validando la instalación local.'
     Assert-Administrator
     Assert-ServiceOwnership $AppRoot
@@ -259,8 +262,10 @@ SYNC_COMMAND_DELIVERY_PAUSED=true
 } catch {
     Write-InstallStage ('ERROR: ' + $_.Exception.Message)
     try { Stop-AlGymServices } catch { }
-    Add-Type -AssemblyName System.Windows.Forms
-    [Windows.Forms.MessageBox]::Show($_.Exception.Message + "`nLa instalación no está lista. Los datos existentes se conservaron. Puede volver a ejecutar el instalador.`nRegistro: $configurationLog", 'AlGym - Instalación incompleta') | Out-Null
+    if (-not $Unattended) {
+        Add-Type -AssemblyName System.Windows.Forms
+        [Windows.Forms.MessageBox]::Show($_.Exception.Message + "`nLa instalación no está lista. Los datos existentes se conservaron. Puede volver a ejecutar el instalador.`nRegistro: $configurationLog", 'AlGym - Instalación incompleta') | Out-Null
+    }
     Write-Error $_ -ErrorAction Continue
     exit 1
 }
