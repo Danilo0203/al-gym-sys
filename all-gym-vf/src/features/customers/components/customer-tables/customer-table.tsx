@@ -53,16 +53,17 @@ interface CustomerTableProps {
   data: Customer[];
   totalItems: number;
   canUpdate: boolean;
+  canDelete: boolean;
 }
 
-export function CustomerTable({ data, totalItems, canUpdate }: CustomerTableProps) {
+export function CustomerTable({ data, totalItems, canUpdate, canDelete }: CustomerTableProps) {
   const router = useRouter();
   const [pageSize] = useQueryState("perPage", parseAsInteger.withDefault(10));
   const pageCount = Math.max(1, Math.ceil(totalItems / pageSize));
   const fullNameColumnSize = useMemo(() => estimateNameColumnWidth(data), [data]);
   const columns = useMemo(
-    () => getColumns({ fullNameColumnSize, canUpdate }),
-    [canUpdate, fullNameColumnSize],
+    () => getColumns({ fullNameColumnSize, canUpdate, canDelete }),
+    [canUpdate, canDelete, fullNameColumnSize],
   );
 
   const { table } = useDataTable({

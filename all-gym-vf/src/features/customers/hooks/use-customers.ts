@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   createCustomer,
   createCustomerBodyAssessment,
+  deleteCustomerPermanently,
   getCustomerBodyAssessments,
   getCustomerDetail,
   getCustomerHealthProfile,
@@ -203,6 +204,27 @@ export function useUpdateCustomerStatus() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Error al actualizar el estado del cliente.");
+    },
+  });
+}
+
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteCustomerPermanently(id),
+    onSuccess: (deleted) => {
+      toast.success(`${deleted.full_name} se eliminó permanentemente. Sus pagos y movimientos de caja se conservaron.`);
+      if (deleted.clock_removal === "pending") {
+        toast.warning("No se pudo quitar del reloj biométrico en este momento. Revisa la sincronización del reloj.");
+      }
+      queryClient.removeQueries({ queryKey: customersKeys.detail(deleted.id) });
+      queryClient.invalidateQueries({ queryKey: customersKeys.lists() });
+      router.refresh();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "No se pudo eliminar el cliente.");
     },
   });
 }

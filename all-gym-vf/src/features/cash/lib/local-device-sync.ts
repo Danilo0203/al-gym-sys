@@ -60,3 +60,36 @@ export async function reconcileLocalCustomerOnClock(customerId: string): Promise
 export async function reconcileLocalInternalUserOnClock(userId: string): Promise<DeviceSyncResult> {
   return reconcileLocalProfileOnClock("user_id", userId);
 }
+
+/**
+ * Queues removal of a permanently deleted customer from the clock. The profile
+ * no longer exists, so the sync server is given the biometric ID directly.
+ */
+export async function removeDeletedCustomerFromClock(
+  biometricId: number,
+  fullName: string,
+): Promise<DeviceSyncResult> {
+  const url = localSyncUrl();
+  const token = process.env.GYM_SYNC_API_TOKEN?.trim();
+  const deviceId = process.env.DEFAULT_ZK_DEVICE_SN?.trim();
+  if (!url || !token || !deviceId) return { attempted: false, pending: true };
+  url.pathname = "/api/device-users/delete";
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ biometric_id: biometricId, full_name: fullName, device_id: deviceId }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    });
+    const result = await response.json().catch(() => null) as { success?: boolean; queued?: boolean } | null;
+    const queued = response.ok && result?.success === true && result.queued === true;
+    return { attempted: true, synced: queued, queued, method: queued ? "queue" : "none" };
+  } catch {
+    return { attempted: true, synced: false, queued: false, method: "none" };
+  }
+}

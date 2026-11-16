@@ -11,11 +11,13 @@ import {
 import { AlertModal } from "@/components/modal/alert-modal";
 import { CustomerFormSheet, type CustomerData } from "../customer-form-sheet";
 import { CustomerStatusActionSummary } from "../customer-status-action-summary";
+import { CustomerDeleteDialog } from "../customer-delete-dialog";
 import { RoleTransitionButton } from "@/features/users/components/role-transition-button";
 import {
   useCustomer,
   useCustomerBodyAssessments,
   useCustomerHealthProfile,
+  useDeleteCustomer,
   useUpdateCustomerStatus,
 } from "../../hooks/use-customers";
 import type { Customer } from "./columns";
@@ -23,6 +25,7 @@ import type { EquipmentOption, FocusArea, PrimaryGoal, RestrictedMovement } from
 import {
   IconEdit,
   IconLoader2,
+  IconTrash,
   IconUserCheck,
   IconUserOff,
 } from "@tabler/icons-react";
@@ -36,10 +39,13 @@ function parseRestrictedMovements(value?: string | string[] | null): RestrictedM
 interface CellActionProps {
   data: Customer;
   canUpdate: boolean;
+  canDelete: boolean;
 }
 
-export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate }) => {
+export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate, canDelete }) => {
   const [statusOpen, setStatusOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteMutation = useDeleteCustomer();
   const [editOpen, setEditOpen] = useState(false);
   const { data: customerDetails, isPending: isPendingDetails } = useCustomer(
     editOpen ? data.id : null,
@@ -121,8 +127,26 @@ export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate }) => {
     }
   };
 
+  const onConfirmDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync(data.id);
+      setDeleteOpen(false);
+    } catch {
+      // The mutation already shows the error; keep the dialog open to retry or cancel.
+    }
+  };
+
   return (
     <div onClick={(event) => event.stopPropagation()}>
+      {canDelete ? (
+        <CustomerDeleteDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          customerName={data.full_name}
+          loading={deleteMutation.isPending}
+          onConfirm={onConfirmDelete}
+        />
+      ) : null}
       <AlertModal
         isOpen={statusOpen}
         onClose={() => setStatusOpen(false)}
@@ -212,6 +236,30 @@ export const CellAction: React.FC<CellActionProps> = ({ data, canUpdate }) => {
         ) : null}
 
         <RoleTransitionButton profile={{ ...data, role: "client" }} compact />
+
+        {canDelete ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:bg-destructive/10"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <IconTrash className="h-4 w-4 text-destructive" />
+                  <span className="sr-only">Eliminar cliente permanentemente</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Eliminar permanentemente</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : null}
       </div>
     </div>
   );

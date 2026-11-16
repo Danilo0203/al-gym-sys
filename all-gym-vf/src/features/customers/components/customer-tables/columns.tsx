@@ -84,6 +84,7 @@ function WhatsAppCell({ customer }: { customer: Customer }) {
 interface CustomerColumnsOptions {
   fullNameColumnSize?: number;
   canUpdate?: boolean;
+  canDelete?: boolean;
 }
 
 export function getColumns(options: CustomerColumnsOptions = {}): ColumnDef<Customer>[] {
@@ -210,11 +211,17 @@ export function getColumns(options: CustomerColumnsOptions = {}): ColumnDef<Cust
     },
     {
       id: "actions",
-      size: 120,
+      size: 160,
       header: "ACCIONES",
       enableSorting: false,
       meta: { label: "Acciones" },
-      cell: ({ row }) => <CellAction data={row.original} canUpdate={options.canUpdate ?? false} />,
+      cell: ({ row }) => (
+        <CellAction
+          data={row.original}
+          canUpdate={options.canUpdate ?? false}
+          canDelete={options.canDelete ?? false}
+        />
+      ),
     },
   ];
 }

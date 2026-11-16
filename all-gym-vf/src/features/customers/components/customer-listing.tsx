@@ -31,6 +31,7 @@ export default async function CustomerListingPage() {
     <CustomerListingClient
       query={query.toString()}
       canUpdate={hasPermission(access, "customers.update")}
+      canDelete={hasPermission(access, "customers.delete")}
     />
   );
 }

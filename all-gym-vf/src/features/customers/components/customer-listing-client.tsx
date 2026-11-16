@@ -17,13 +17,14 @@ import { CustomerTable } from "./customer-tables/customer-table";
 interface CustomerListingClientProps {
   query?: string;
   canUpdate: boolean;
+  canDelete: boolean;
 }
 
 function selectedFilterValue(value: string | string[] | null): string | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-export function CustomerListingClient({ canUpdate }: CustomerListingClientProps) {
+export function CustomerListingClient({ canUpdate, canDelete }: CustomerListingClientProps) {
   const [params] = useQueryStates(searchParams);
 
   const rawIsActive = selectedFilterValue(params.is_active);
@@ -92,6 +93,7 @@ export function CustomerListingClient({ canUpdate }: CustomerListingClientProps)
       }))}
       totalItems={customersQuery.data.meta.total}
       canUpdate={canUpdate}
+      canDelete={canDelete}
     />
   );
 }

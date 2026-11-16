@@ -221,6 +221,17 @@ export const updateCustomerStatusInputSchema = z.object({
   is_active: z.boolean(),
 });
 
+/** Response of DELETE /customers/:id (permanent deletion). */
+export const deletedCustomerSchema = z.object({
+  id: z.uuid(),
+  full_name: z.string(),
+  biometric_id: z.number().int().nullable(),
+  /** Added by the Next route: whether the clock removal was queued. */
+  clock_removal: z.enum(["queued", "pending", "not_needed"]).optional(),
+});
+
+export type DeletedCustomer = z.infer<typeof deletedCustomerSchema>;
+
 export type CustomerListItem = z.infer<typeof customerListItemSchema>;
 export type CustomerDetail = z.infer<typeof customerDetailSchema>;
 export type CustomerListResponse = z.infer<typeof customerListResponseSchema>;

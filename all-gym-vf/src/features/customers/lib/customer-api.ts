@@ -7,6 +7,7 @@ import {
   customerHistoryResponseSchema,
   customerListResponseSchema,
   customerSidebarResponseSchema,
+  deletedCustomerSchema,
   parseCustomerApiResponse,
   updateCustomerInputSchema,
   updateCustomerAccountInputSchema,
@@ -16,6 +17,7 @@ import {
   type CustomerHistoryResponse,
   type CustomerListResponse,
   type CustomerSidebarResponse,
+  type DeletedCustomer,
   type UpdateCustomerInput,
   type UpdateCustomerAccountInput,
 } from "./local-customers";
@@ -181,6 +183,12 @@ export async function updateCustomerAccount(
   });
 
   return parseCustomerApiResponse(response, (parsed) => customerDetailSchema.parse(parsed));
+}
+
+export async function deleteCustomerPermanently(id: string): Promise<DeletedCustomer> {
+  const response = await fetchCustomersApi(`/api/customers/${id}`, { method: "DELETE" });
+
+  return parseCustomerApiResponse(response, (parsed) => deletedCustomerSchema.parse(parsed));
 }
 
 export async function updateCustomerStatus(id: string, isActive: boolean): Promise<CustomerDetail> {
